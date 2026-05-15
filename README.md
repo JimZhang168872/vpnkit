@@ -36,4 +36,26 @@ Stop the managed mihomo:
 - systemd mode: `systemctl --user stop mihomo`
 - PID mode:     `kill $(cat ~/.local/state/vpnkit/mihomo.pid)`
 
-Phase 1 ships the installer, service manager, env helper, and a working Dashboard tab streaming live traffic from mihomo's external-controller API. Profiles / Proxies / Connections / Rules / Settings land in subsequent phases.
+Phase 1 ships the installer, service manager, env helper, and a working Dashboard tab streaming live traffic from mihomo's external-controller API.
+
+## Phase 2 features
+
+Profiles tab:
+- `a` add subscription (popup form: name + URL)
+- `u` update selected subscription (fetches, parses, writes `config.yaml`, reloads mihomo)
+- `d` delete; `Enter` activate; `↑↓` / `j k` navigate
+
+Proxies tab:
+- Live group/node view from mihomo's `/proxies` (polled every 5 s)
+- `Enter` to expand a group; `t` to run a delay test against the highlighted group
+- `↑↓` / `j k` navigate
+
+Supported subscription formats: Clash YAML, SIP008 JSON, Base64-encoded URI list,
+and single-URI variants of `vmess://`, `ss://`, `ssr://`, `trojan://`, `vless://`,
+`hysteria://`, `hysteria2://`, `tuic://`.
+
+Default rule template: Loyalsoldier (changeable via `~/.config/vpnkit/config.toml`).
+User overlay: `~/.config/mihomo/patch.yaml` is deep-merged on every update.
+
+Connections / Rules / Logs / Settings (full editor + theme + cache management)
+land in Phase 3 and Phase 4.
