@@ -49,6 +49,20 @@ func Run() error {
 		RuleTemplate:     st.Cfg.RuleTemplate,
 	})
 	profMgr.Load(toProfilesProfiles(st.Cfg.Profiles), st.Cfg.ActiveProfile)
+	profMgr.SetOnChange(func() {
+		persisted := make([]store.Profile, 0)
+		for _, p := range profMgr.All() {
+			persisted = append(persisted, store.Profile{
+				Name:        p.Name,
+				URL:         p.URL,
+				UserAgent:   p.UserAgent,
+				LastUpdated: p.LastUpdated,
+			})
+		}
+		st.Cfg.Profiles = persisted
+		st.Cfg.ActiveProfile = profMgr.Active()
+		_ = st.Save()
+	})
 
 	model := NewModel(client, profMgr)
 	prog := tea.NewProgram(model, tea.WithAltScreen())

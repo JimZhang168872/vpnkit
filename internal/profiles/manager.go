@@ -37,10 +37,27 @@ type Manager struct {
 	mu       sync.Mutex
 	profiles []Profile
 	active   string
+	onChange func()
 }
 
 // New constructs a Manager.
 func New(cfg Config) *Manager { return &Manager{cfg: cfg} }
+
+// SetOnChange installs a callback fired after each profile mutation.
+func (m *Manager) SetOnChange(fn func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onChange = fn
+}
+
+func (m *Manager) fireChange() {
+	m.mu.Lock()
+	cb := m.onChange
+	m.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
 
 // Load replaces the profile list (e.g. from store.Cfg.Profiles).
 func (m *Manager) Load(list []Profile, active string) {
@@ -80,16 +97,17 @@ func (m *Manager) Active() string {
 // SetActive marks a profile name as active.
 func (m *Manager) SetActive(name string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.active = name
+	m.mu.Unlock()
+	m.fireChange()
 }
 
 // Add registers a new profile.
 func (m *Manager) Add(p Profile) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for _, e := range m.profiles {
 		if e.Name == p.Name {
+			m.mu.Unlock()
 			return errors.New("profiles: duplicate name")
 		}
 	}
@@ -97,13 +115,14 @@ func (m *Manager) Add(p Profile) error {
 	if m.active == "" {
 		m.active = p.Name
 	}
+	m.mu.Unlock()
+	m.fireChange()
 	return nil
 }
 
 // Remove deletes a profile by name.
 func (m *Manager) Remove(name string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	out := m.profiles[:0]
 	for _, p := range m.profiles {
 		if p.Name != name {
@@ -114,6 +133,8 @@ func (m *Manager) Remove(name string) {
 	if m.active == name {
 		m.active = ""
 	}
+	m.mu.Unlock()
+	m.fireChange()
 }
 
 // Update fetches the named profile's URL, converts, assembles, and writes config.yaml.
@@ -159,5 +180,6 @@ func (m *Manager) Update(ctx context.Context, name string) (int, error) {
 	p.LastUpdated = time.Now()
 	p.NodeCount = len(res.Proxies)
 	m.mu.Unlock()
+	m.fireChange()
 	return len(res.Proxies), nil
 }
