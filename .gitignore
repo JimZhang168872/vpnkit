@@ -16,3 +16,8 @@
 # Local dev / cache
 *.gz
 mihomo
+
+# Go
+/bin/
+*.coverprofile
+coverage.html
