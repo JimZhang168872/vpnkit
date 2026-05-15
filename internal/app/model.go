@@ -7,6 +7,7 @@ import (
 	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/stub"
 	tabprofiles "vpnkit/internal/tabs/profiles"
+	tabproxies "vpnkit/internal/tabs/proxies"
 )
 
 // Tab is the index of the currently-active tab.
@@ -35,6 +36,7 @@ type Model struct {
 
 	dashboard   dashboard.Model
 	profilesTab tabprofiles.Model
+	proxiesTab  tabproxies.Model
 	stubs       [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
 
 	profilesMgr *profiles.Manager
@@ -52,6 +54,9 @@ func NewModel(client *api.Client, mgr *profiles.Manager) Model {
 		if i == TabProfiles {
 			continue
 		}
+		if i == TabProxies {
+			continue
+		}
 		stubs[i] = stub.New(TabNames[i])
 	}
 	pt := tabprofiles.New(mgr)
@@ -64,6 +69,7 @@ func NewModel(client *api.Client, mgr *profiles.Manager) Model {
 		dashboard:   dashboard.New(),
 		profilesTab: pt,
 		profilesMgr: mgr,
+		proxiesTab:  tabproxies.New(),
 		stubs:       stubs,
 		apiClient:   client,
 	}

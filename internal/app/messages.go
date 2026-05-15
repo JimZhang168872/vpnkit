@@ -18,6 +18,9 @@ type (
 	TickMsg              = msg.Tick
 	ProfileUpdated       = msg.ProfileUpdated
 	ProfileError         = msg.ProfileError
+	ProxiesSnapshot      = msg.ProxiesSnapshot
+	ProxyGroup           = msg.ProxyGroup
+	DelayResults         = msg.DelayResults
 )
 
 const (

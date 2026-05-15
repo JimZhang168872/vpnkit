@@ -6,8 +6,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	tabprofiles "vpnkit/internal/tabs/profiles"
 	"vpnkit/internal/profiles"
+	tabprofiles "vpnkit/internal/tabs/profiles"
+	tabproxies "vpnkit/internal/tabs/proxies"
 )
 
 // Update implements tea.Model.
@@ -46,6 +47,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 		return m, nil
 	case tea.KeyMsg:
+		// Proxies-tab-specific keys.
+		if m.activeTab == TabProxies {
+			switch v.String() {
+			case "up", "k":
+				m.proxiesTab.MoveUp()
+				return m, nil
+			case "down", "j":
+				m.proxiesTab.MoveDown()
+				return m, nil
+			case "enter":
+				m.proxiesTab.ToggleExpand()
+				return m, nil
+			case "t":
+				grp := m.proxiesTab.SelectedGroup()
+				if grp != "" && m.apiClient != nil {
+					return m, tabproxies.DelayCmd(m.apiClient, grp)
+				}
+				return m, nil
+			}
+		}
 		// Profiles-tab-specific keys (only when not showing form).
 		if m.activeTab == TabProfiles && !m.showAddForm {
 			switch v.String() {
@@ -120,6 +141,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
+	case ProxiesSnapshot, DelayResults:
+		m.proxiesTab, cmd = m.proxiesTab.Update(msg)
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":

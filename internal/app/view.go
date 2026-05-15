@@ -15,6 +15,8 @@ func (m Model) View() string {
 	switch m.activeTab {
 	case TabDashboard:
 		body = m.dashboard.View(bodyWidth, bodyHeight)
+	case TabProxies:
+		body = m.proxiesTab.View(bodyWidth, bodyHeight)
 	case TabProfiles:
 		body = m.profilesTab.View(bodyWidth, bodyHeight)
 	default:

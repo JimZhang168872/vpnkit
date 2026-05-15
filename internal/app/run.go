@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
+	"vpnkit/internal/msg"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/profiles"
 	"vpnkit/internal/service"
@@ -61,6 +62,7 @@ func Run() error {
 	}()
 	go streamTraffic(prog, client)
 	go pollVersion(prog, client)
+	go pollProxies(prog, client)
 
 	_, err = prog.Run()
 	return err
@@ -84,6 +86,24 @@ func streamTraffic(prog *tea.Program, client *api.Client) {
 		}
 		cancel()
 		time.Sleep(2 * time.Second) // backoff before reconnect
+	}
+}
+
+func pollProxies(prog *tea.Program, client *api.Client) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		proxies, err := client.GetProxies(ctx)
+		cancel()
+		if err == nil {
+			groups := map[string]msg.ProxyGroup{}
+			for name, info := range proxies {
+				groups[name] = msg.ProxyGroup{Name: name, Type: info.Type, Now: info.Now, All: info.All}
+			}
+			prog.Send(msg.ProxiesSnapshot{Groups: groups})
+		}
+		<-ticker.C
 	}
 }
 
