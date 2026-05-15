@@ -51,3 +51,34 @@ const (
 
 // Tick is emitted by periodic timers.
 type Tick struct{ T time.Time }
+
+// ProxiesSnapshot is one /proxies tick from mihomo.
+type ProxiesSnapshot struct {
+	Groups map[string]ProxyGroup
+}
+
+// ProxyGroup is the dashboard-friendly form of an entry in /proxies.
+type ProxyGroup struct {
+	Name string
+	Type string
+	Now  string
+	All  []string
+}
+
+// ProfileUpdated is dispatched when a profile finishes updating.
+type ProfileUpdated struct {
+	Name      string
+	NodeCount int
+}
+
+// ProfileError is dispatched when a profile operation fails.
+type ProfileError struct {
+	Name string
+	Err  error
+}
+
+// DelayResults is dispatched after a group delay test.
+type DelayResults struct {
+	Group   string
+	Results map[string]int
+}
