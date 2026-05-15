@@ -2,60 +2,27 @@
 package app
 
 import (
-	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"vpnkit/internal/api"
+	"vpnkit/internal/msg"
 )
 
-// TrafficMsg carries one /traffic sample.
-type TrafficMsg api.Traffic
-
-// VersionMsg announces the mihomo version (or error) returned by /version.
-type VersionMsg struct {
-	Version string
-	Err     error
-}
-
-// ServiceStatusMsg snapshots the service backend status.
-type ServiceStatusMsg struct {
-	Running bool
-	PID     int
-	Mode    string
-	Since   time.Time
-}
-
-// BootstrapProgressMsg announces a phase of the first-run flow.
-type BootstrapProgressMsg struct {
-	Phase string // "downloading" | "installing-service" | "starting" | "ready"
-	Note  string
-	Err   error
-}
-
-// FlashMsg is a transient status-bar notification.
-type FlashMsg struct {
-	Text  string
-	Kind  FlashKind
-	Until time.Time
-}
-
-// FlashKind distinguishes severity for styling.
-type FlashKind int
+// Re-exports so app-package consumers keep referring to TrafficMsg / VersionMsg /
+// … while the canonical types live in internal/msg. Tab packages also import
+// internal/msg directly, breaking the app↔dashboard cycle.
+type (
+	TrafficMsg           = msg.Traffic
+	VersionMsg           = msg.Version
+	ServiceStatusMsg     = msg.ServiceStatus
+	BootstrapProgressMsg = msg.BootstrapProgress
+	FlashMsg             = msg.Flash
+	FlashKind            = msg.FlashKind
+	TickMsg              = msg.Tick
+)
 
 const (
-	FlashInfo FlashKind = iota
-	FlashWarn
-	FlashError
+	FlashInfo  = msg.FlashInfo
+	FlashWarn  = msg.FlashWarn
+	FlashError = msg.FlashError
 )
 
-// TickMsg is emitted by periodic timers.
-type TickMsg struct{ T time.Time }
-
-// QuitMsg signals graceful exit.
+// QuitMsg signals graceful exit. Kept local because it is purely app-internal.
 type QuitMsg struct{}
-
-// Compile-time interface checks.
-var (
-	_ tea.Msg = TrafficMsg{}
-	_ tea.Msg = VersionMsg{}
-)
