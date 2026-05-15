@@ -57,5 +57,21 @@ and single-URI variants of `vmess://`, `ss://`, `ssr://`, `trojan://`, `vless://
 Default rule template: Loyalsoldier (changeable via `~/.config/vpnkit/config.toml`).
 User overlay: `~/.config/mihomo/patch.yaml` is deep-merged on every update.
 
-Connections / Rules / Logs / Settings (full editor + theme + cache management)
-land in Phase 3 and Phase 4.
+Settings (full editor + theme + cache management) lands in Phase 4.
+
+## Phase 3 features
+
+Connections tab:
+- Real-time table of active connections (WebSocket `/connections`)
+- `↑↓` / `j k` navigate; `x` close selected connection; `/` filter
+
+Rules tab:
+- Active rule list + rule-providers status (polled every 30 s)
+- `/` filter rules by type / payload / target proxy
+
+Settings tab (Phase 3 = Logs viewer):
+- Live tail of mihomo logs (journalctl or PID-mode log file)
+- `p` pause / resume
+
+Full Settings polish (core version switch, patch editor, theme, command palette)
+lands in Phase 4.
