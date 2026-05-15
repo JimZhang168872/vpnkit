@@ -73,5 +73,19 @@ Settings tab (Phase 3 = Logs viewer):
 - Live tail of mihomo logs (journalctl or PID-mode log file)
 - `p` pause / resume
 
-Full Settings polish (core version switch, patch editor, theme, command palette)
-lands in Phase 4.
+## Phase 4 features
+
+Settings tab is now a sub-menu (`↑↓` navigate sub-pages):
+
+- **Mihomo Core** — installed binary path/size, `u` upgrade to latest release
+- **Service** — `s/S/r/u` start / stop / restart / uninstall
+- **External Controller** — port + masked secret; `r` regenerate secret
+- **Default Rules** — `j k` cycle (loyalsoldier / minimal), `Enter` save
+- **Patch Editor** — full textarea over `~/.config/mihomo/patch.yaml`; `Ctrl+S` save
+- **Logs** — live mihomo log tail; `p` pause / resume
+- **Cache** — show `~/.cache/vpnkit/` size; `c` clear
+- **About** — versions + license
+
+Profiles list now persists to `~/.config/vpnkit/config.toml` on every add / remove / activate / update — survives restart.
+
+`vpnkit` is feature-complete for daily use: install / subscribe / switch / observe / configure — all in the TUI.
