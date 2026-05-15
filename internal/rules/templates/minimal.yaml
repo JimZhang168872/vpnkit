@@ -1,0 +1,4 @@
+rules:
+  - GEOIP,CN,🎯 Direct
+  - GEOIP,LAN,🎯 Direct
+  - MATCH,🚀 Proxy

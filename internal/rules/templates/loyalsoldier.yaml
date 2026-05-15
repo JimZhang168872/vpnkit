@@ -1,0 +1,28 @@
+rule-providers:
+  reject:        {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/reject.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt"}
+  icloud:        {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/icloud.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt"}
+  apple:         {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/apple.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt"}
+  google:        {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/google.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt"}
+  proxy:         {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/proxy.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt"}
+  direct:        {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/direct.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt"}
+  private:       {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/private.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt"}
+  gfw:           {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/gfw.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt"}
+  greatfire:     {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/greatfire.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/greatfire.txt"}
+  tld-not-cn:    {type: http, behavior: domain, format: text, interval: 86400, path: ./ruleset/tld-not-cn.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt"}
+  telegramcidr:  {type: http, behavior: ipcidr, format: text, interval: 86400, path: ./ruleset/telegramcidr.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt"}
+  cncidr:        {type: http, behavior: ipcidr, format: text, interval: 86400, path: ./ruleset/cncidr.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt"}
+  lancidr:       {type: http, behavior: ipcidr, format: text, interval: 86400, path: ./ruleset/lancidr.txt, url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt"}
+
+rules:
+  - RULE-SET,reject,🛑 Reject
+  - RULE-SET,private,🎯 Direct
+  - RULE-SET,direct,🎯 Direct
+  - RULE-SET,lancidr,🎯 Direct
+  - RULE-SET,cncidr,🎯 Direct
+  - GEOIP,CN,🎯 Direct
+  - RULE-SET,proxy,🚀 Proxy
+  - RULE-SET,gfw,🚀 Proxy
+  - RULE-SET,greatfire,🚀 Proxy
+  - RULE-SET,tld-not-cn,🚀 Proxy
+  - RULE-SET,telegramcidr,🚀 Proxy
+  - MATCH,🚀 Proxy
