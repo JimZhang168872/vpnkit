@@ -3,13 +3,27 @@ package dashboard
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"vpnkit/internal/app"
+	"vpnkit/internal/api"
 )
 
 const historySize = 60
+
+// Message types (copied from app to avoid circular imports).
+type trafficMsg api.Traffic
+type versionMsg struct {
+	Version string
+	Err     error
+}
+type serviceStatusMsg struct {
+	Running bool
+	PID     int
+	Mode    string
+	Since   time.Time
+}
 
 // Model holds the dashboard's local state.
 type Model struct {
@@ -35,16 +49,16 @@ func (Model) Init() tea.Cmd { return nil }
 // Update absorbs messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch v := msg.(type) {
-	case app.TrafficMsg:
+	case trafficMsg:
 		m.lastUp = v.Up
 		m.lastDown = v.Down
 		m.upHist = pushRing(m.upHist, v.Up, historySize)
 		m.downHist = pushRing(m.downHist, v.Down, historySize)
-	case app.VersionMsg:
+	case versionMsg:
 		if v.Err == nil {
 			m.mihomoVer = v.Version
 		}
-	case app.ServiceStatusMsg:
+	case serviceStatusMsg:
 		m.running = v.Running
 	}
 	return m, nil
