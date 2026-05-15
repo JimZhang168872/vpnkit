@@ -1,0 +1,14 @@
+[Unit]
+Description=mihomo proxy core (managed by vpnkit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{.Binary}} -d {{.ConfigDir}}
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=default.target
