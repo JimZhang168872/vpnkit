@@ -21,6 +21,13 @@ type (
 	ProxiesSnapshot      = msg.ProxiesSnapshot
 	ProxyGroup           = msg.ProxyGroup
 	DelayResults         = msg.DelayResults
+
+	ConnectionsSnapshot = msg.ConnectionsSnapshot
+	ConnectionItem      = msg.ConnectionItem
+	RulesSnapshot       = msg.RulesSnapshot
+	RuleEntry           = msg.RuleEntry
+	RuleProviderEntry   = msg.RuleProviderEntry
+	LogLine             = msg.LogLine
 )
 
 const (

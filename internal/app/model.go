@@ -6,8 +6,11 @@ import (
 	"vpnkit/internal/profiles"
 	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/stub"
-	tabprofiles "vpnkit/internal/tabs/profiles"
-	tabproxies "vpnkit/internal/tabs/proxies"
+	tabconnections "vpnkit/internal/tabs/connections"
+	tablogs        "vpnkit/internal/tabs/logs"
+	tabprofiles    "vpnkit/internal/tabs/profiles"
+	tabproxies     "vpnkit/internal/tabs/proxies"
+	tabrules       "vpnkit/internal/tabs/rules"
 )
 
 // Tab is the index of the currently-active tab.
@@ -34,10 +37,13 @@ type Model struct {
 	width     int
 	height    int
 
-	dashboard   dashboard.Model
-	profilesTab tabprofiles.Model
-	proxiesTab  tabproxies.Model
-	stubs       [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
+	dashboard      dashboard.Model
+	profilesTab    tabprofiles.Model
+	proxiesTab     tabproxies.Model
+	connectionsTab tabconnections.Model
+	rulesTab       tabrules.Model
+	logsTab        tablogs.Model
+	stubs          [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
 
 	profilesMgr *profiles.Manager
 	showAddForm bool
@@ -51,10 +57,7 @@ type Model struct {
 func NewModel(client *api.Client, mgr *profiles.Manager) Model {
 	stubs := [NumTabs]stub.Model{}
 	for i := TabProxies; i < NumTabs; i++ {
-		if i == TabProfiles {
-			continue
-		}
-		if i == TabProxies {
+		if i == TabProfiles || i == TabProxies || i == TabConnections || i == TabRules || i == TabSettings {
 			continue
 		}
 		stubs[i] = stub.New(TabNames[i])
@@ -64,14 +67,17 @@ func NewModel(client *api.Client, mgr *profiles.Manager) Model {
 		pt.SetProfiles(mgr.All(), mgr.Active())
 	}
 	return Model{
-		keys:        DefaultKeys(),
-		activeTab:   TabDashboard,
-		dashboard:   dashboard.New(),
-		profilesTab: pt,
-		profilesMgr: mgr,
-		proxiesTab:  tabproxies.New(),
-		stubs:       stubs,
-		apiClient:   client,
+		keys:           DefaultKeys(),
+		activeTab:      TabDashboard,
+		dashboard:      dashboard.New(),
+		profilesTab:    pt,
+		profilesMgr:    mgr,
+		proxiesTab:     tabproxies.New(),
+		connectionsTab: tabconnections.New(),
+		rulesTab:       tabrules.New(),
+		logsTab:        tablogs.New(),
+		stubs:          stubs,
+		apiClient:      client,
 	}
 }
 

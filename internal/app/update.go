@@ -47,6 +47,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 		return m, nil
 	case tea.KeyMsg:
+		// Connections-tab-specific keys.
+		if m.activeTab == TabConnections {
+			switch v.String() {
+			case "up", "k":
+				m.connectionsTab.MoveUp()
+				return m, nil
+			case "down", "j":
+				m.connectionsTab.MoveDown()
+				return m, nil
+			case "x":
+				if id := m.connectionsTab.SelectedID(); id != "" && m.apiClient != nil {
+					client := m.apiClient
+					return m, func() tea.Msg {
+						_ = client.CloseConnection(context.Background(), id)
+						return nil
+					}
+				}
+				return m, nil
+			}
+		}
+		// Logs-tab-specific keys.
+		if m.activeTab == TabSettings {
+			if v.String() == "p" {
+				m.logsTab.TogglePause()
+				return m, nil
+			}
+		}
 		// Proxies-tab-specific keys.
 		if m.activeTab == TabProxies {
 			switch v.String() {
@@ -143,6 +170,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard, cmd = m.dashboard.Update(msg)
 	case ProxiesSnapshot, DelayResults:
 		m.proxiesTab, cmd = m.proxiesTab.Update(msg)
+	case ConnectionsSnapshot:
+		m.connectionsTab, cmd = m.connectionsTab.Update(msg)
+	case RulesSnapshot:
+		m.rulesTab, cmd = m.rulesTab.Update(msg)
+	case LogLine:
+		m.logsTab, cmd = m.logsTab.Update(msg)
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":

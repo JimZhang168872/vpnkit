@@ -19,6 +19,12 @@ func (m Model) View() string {
 		body = m.proxiesTab.View(bodyWidth, bodyHeight)
 	case TabProfiles:
 		body = m.profilesTab.View(bodyWidth, bodyHeight)
+	case TabConnections:
+		body = m.connectionsTab.View(bodyWidth, bodyHeight)
+	case TabRules:
+		body = m.rulesTab.View(bodyWidth, bodyHeight)
+	case TabSettings:
+		body = m.logsTab.View(bodyWidth, bodyHeight)
 	default:
 		body = m.stubs[m.activeTab].View(bodyWidth, bodyHeight)
 	}
