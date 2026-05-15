@@ -1,0 +1,18 @@
+# Go build artifacts
+/vpnkit
+/bin/
+/dist/
+*.test
+*.out
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local Claude / agents state
+.claude/
+
+# Local dev / cache
+*.gz
+mihomo
