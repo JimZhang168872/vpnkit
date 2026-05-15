@@ -169,28 +169,24 @@ func renderSubSidebar(active SubPage, height int) string {
 }
 
 // Stubs for sub-page Models — replaced in subsequent tasks.
-type cacheModel struct{}
 type rulesModel struct{}
 type controllerModel struct{}
 type serviceModel struct{}
 type coreModel struct{}
 type patchModel struct{}
 
-func newCache(paths.XDG) cacheModel                   { return cacheModel{} }
 func newRules(*store.Store) rulesModel                { return rulesModel{} }
 func newController(*store.Store) controllerModel      { return controllerModel{} }
 func newService(service.Manager) serviceModel         { return serviceModel{} }
 func newCore(paths.XDG, *store.Store) coreModel       { return coreModel{} }
 func newPatch(paths.XDG) patchModel                   { return patchModel{} }
 
-func (m cacheModel) Update(tea.Msg) (cacheModel, tea.Cmd)           { return m, nil }
 func (m rulesModel) Update(tea.Msg) (rulesModel, tea.Cmd)           { return m, nil }
 func (m controllerModel) Update(tea.Msg) (controllerModel, tea.Cmd) { return m, nil }
 func (m serviceModel) Update(tea.Msg) (serviceModel, tea.Cmd)       { return m, nil }
 func (m coreModel) Update(tea.Msg) (coreModel, tea.Cmd)             { return m, nil }
 func (m patchModel) Update(tea.Msg) (patchModel, tea.Cmd)           { return m, nil }
 
-func (m cacheModel) View(_, _ int) string      { return "  Cache: (T3)" }
 func (m rulesModel) View(_, _ int) string      { return "  Default Rules: (T4)" }
 func (m controllerModel) View(_, _ int) string { return "  External Controller: (T5)" }
 func (m serviceModel) View(_, _ int) string    { return "  Service: (T6)" }
