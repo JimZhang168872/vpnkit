@@ -169,14 +169,10 @@ func renderSubSidebar(active SubPage, height int) string {
 }
 
 // Stubs for sub-page Models — replaced in subsequent tasks.
-type coreModel struct{}
 type patchModel struct{}
 
-func newCore(paths.XDG, *store.Store) coreModel       { return coreModel{} }
 func newPatch(paths.XDG) patchModel                   { return patchModel{} }
 
-func (m coreModel) Update(tea.Msg) (coreModel, tea.Cmd)             { return m, nil }
 func (m patchModel) Update(tea.Msg) (patchModel, tea.Cmd)           { return m, nil }
 
-func (m coreModel) View(_, _ int) string       { return "  Mihomo Core: (T7)" }
 func (m patchModel) View(_, _ int) string      { return "  Patch Editor: (T8)" }
