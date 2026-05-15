@@ -67,11 +67,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		// Logs-tab-specific keys.
+		// Settings-tab-specific keys: forward to settingsTab unless it's a global tab/quit key.
 		if m.activeTab == TabSettings {
-			if v.String() == "p" {
-				m.logsTab.TogglePause()
-				return m, nil
+			if v.String() == "1" || v.String() == "2" || v.String() == "3" ||
+				v.String() == "4" || v.String() == "5" || v.String() == "6" ||
+				v.String() == "tab" || v.String() == "shift+tab" || v.String() == "q" || v.String() == "ctrl+c" {
+				// Fall through to global cascade.
+			} else {
+				var c tea.Cmd
+				m.settingsTab, c = m.settingsTab.Update(msg)
+				return m, c
 			}
 		}
 		// Proxies-tab-specific keys.
@@ -175,7 +180,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RulesSnapshot:
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
-		m.logsTab, cmd = m.logsTab.Update(msg)
+		lm := m.settingsTab.LogsModel()
+		*lm, _ = lm.Update(msg)
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":

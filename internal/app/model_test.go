@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	tabsettings "vpnkit/internal/tabs/settings"
 )
 
 func TestTabSwitching(t *testing.T) {
-	m := NewModel(nil, nil)
+	m := NewModel(nil, nil, tabsettings.Deps{})
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})

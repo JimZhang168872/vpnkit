@@ -14,6 +14,7 @@ import (
 	"vpnkit/internal/profiles"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
+	tabsettings "vpnkit/internal/tabs/settings"
 )
 
 // Run launches the vpnkit TUI. Returns the bubbletea exit error.
@@ -64,7 +65,13 @@ func Run() error {
 		_ = st.Save()
 	})
 
-	model := NewModel(client, profMgr)
+	settingsDeps := tabsettings.Deps{
+		Paths:     p,
+		Store:     st,
+		Service:   svc,
+		APIClient: client,
+	}
+	model := NewModel(client, profMgr, settingsDeps)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {

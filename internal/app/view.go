@@ -24,7 +24,7 @@ func (m Model) View() string {
 	case TabRules:
 		body = m.rulesTab.View(bodyWidth, bodyHeight)
 	case TabSettings:
-		body = m.logsTab.View(bodyWidth, bodyHeight)
+		body = m.settingsTab.View(bodyWidth, bodyHeight)
 	default:
 		body = m.stubs[m.activeTab].View(bodyWidth, bodyHeight)
 	}
