@@ -1,0 +1,99 @@
+package installer
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// Asset is one GitHub release artifact.
+type Asset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+}
+
+// Release is a subset of GitHub's release schema sufficient for our needs.
+type Release struct {
+	Tag    string  `json:"tag_name"`
+	Assets []Asset `json:"assets"`
+}
+
+// AssetURL returns the URL of the asset whose name matches exactly.
+func (r Release) AssetURL(name string) (string, error) {
+	for _, a := range r.Assets {
+		if a.Name == name {
+			return a.URL, nil
+		}
+	}
+	return "", fmt.Errorf("asset %q not found in release %s", name, r.Tag)
+}
+
+// ReleaseClient queries the GitHub Releases API.
+type ReleaseClient struct {
+	BaseURL string // e.g. "https://api.github.com"
+	Token   string // optional GITHUB_TOKEN; empty => unauthenticated
+	HTTP    *http.Client
+}
+
+// NewReleaseClient constructs a client with a 10s timeout.
+func NewReleaseClient(baseURL, token string) *ReleaseClient {
+	if baseURL == "" {
+		baseURL = "https://api.github.com"
+	}
+	return &ReleaseClient{
+		BaseURL: baseURL,
+		Token:   token,
+		HTTP:    &http.Client{Timeout: 10 * time.Second},
+	}
+}
+
+// Latest fetches MetaCubeX/mihomo's latest release.
+func (c *ReleaseClient) Latest() (Release, error) {
+	return c.byPath("/repos/MetaCubeX/mihomo/releases/latest")
+}
+
+// ByTag fetches a specific tagged release.
+func (c *ReleaseClient) ByTag(tag string) (Release, error) {
+	return c.byPath(fmt.Sprintf("/repos/MetaCubeX/mihomo/releases/tags/%s", tag))
+}
+
+func (c *ReleaseClient) byPath(path string) (Release, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return Release{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return Release{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Release{}, fmt.Errorf("github: %s", resp.Status)
+	}
+	var r Release
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return Release{}, err
+	}
+	return r, nil
+}
+
+// ApplyMirror prefixes the GitHub URL with `mirror` (trailing slash respected).
+// Empty mirror returns url unchanged.
+func ApplyMirror(url, mirror string) string {
+	if mirror == "" {
+		return url
+	}
+	if !strings.HasSuffix(mirror, "/") {
+		mirror += "/"
+	}
+	return mirror + url
+}
