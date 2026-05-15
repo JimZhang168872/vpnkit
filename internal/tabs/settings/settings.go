@@ -168,11 +168,3 @@ func renderSubSidebar(active SubPage, height int) string {
 		Padding(1, 1).Render(strings.Join(rows, "\n"))
 }
 
-// Stubs for sub-page Models — replaced in subsequent tasks.
-type patchModel struct{}
-
-func newPatch(paths.XDG) patchModel                   { return patchModel{} }
-
-func (m patchModel) Update(tea.Msg) (patchModel, tea.Cmd)           { return m, nil }
-
-func (m patchModel) View(_, _ int) string      { return "  Patch Editor: (T8)" }
