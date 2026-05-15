@@ -82,3 +82,48 @@ type DelayResults struct {
 	Group   string
 	Results map[string]int
 }
+
+// ConnectionsSnapshot wraps api's snapshot for tea routing.
+type ConnectionsSnapshot struct {
+	DownloadTotal int64
+	UploadTotal   int64
+	Items         []ConnectionItem
+}
+
+// ConnectionItem is a UI-friendly connection entry.
+type ConnectionItem struct {
+	ID       string
+	Host     string
+	Port     string
+	Network  string
+	Rule     string
+	Chains   []string
+	Upload   int64
+	Download int64
+}
+
+// RulesSnapshot wraps the /rules + /providers state.
+type RulesSnapshot struct {
+	Rules     []RuleEntry
+	Providers []RuleProviderEntry
+}
+
+// RuleEntry is a single rule for UI.
+type RuleEntry struct {
+	Type    string
+	Payload string
+	Proxy   string
+}
+
+// RuleProviderEntry is one rule-provider's state.
+type RuleProviderEntry struct {
+	Name      string
+	Behavior  string
+	RuleCount int
+	UpdatedAt string
+}
+
+// LogLine is one log line streamed from the service manager.
+type LogLine struct {
+	Text string
+}
