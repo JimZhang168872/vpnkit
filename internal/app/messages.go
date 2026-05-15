@@ -16,6 +16,8 @@ type (
 	FlashMsg             = msg.Flash
 	FlashKind            = msg.FlashKind
 	TickMsg              = msg.Tick
+	ProfileUpdated       = msg.ProfileUpdated
+	ProfileError         = msg.ProfileError
 )
 
 const (

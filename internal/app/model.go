@@ -3,8 +3,10 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
+	"vpnkit/internal/profiles"
 	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/stub"
+	tabprofiles "vpnkit/internal/tabs/profiles"
 )
 
 // Tab is the index of the currently-active tab.
@@ -31,25 +33,39 @@ type Model struct {
 	width     int
 	height    int
 
-	dashboard dashboard.Model
-	stubs     [NumTabs]stub.Model // index 0 unused; entries for 1..5
+	dashboard   dashboard.Model
+	profilesTab tabprofiles.Model
+	stubs       [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
+
+	profilesMgr *profiles.Manager
+	showAddForm bool
+	addForm     tabprofiles.Form
 
 	apiClient *api.Client
 	flash     string // single-line transient
 }
 
-// NewModel constructs the initial model. apiClient may be nil during early bootstrap.
-func NewModel(client *api.Client) Model {
+// NewModel constructs the initial model. client and mgr may be nil during tests.
+func NewModel(client *api.Client, mgr *profiles.Manager) Model {
 	stubs := [NumTabs]stub.Model{}
 	for i := TabProxies; i < NumTabs; i++ {
+		if i == TabProfiles {
+			continue
+		}
 		stubs[i] = stub.New(TabNames[i])
 	}
+	pt := tabprofiles.New(mgr)
+	if mgr != nil {
+		pt.SetProfiles(mgr.All(), mgr.Active())
+	}
 	return Model{
-		keys:      DefaultKeys(),
-		activeTab: TabDashboard,
-		dashboard: dashboard.New(),
-		stubs:     stubs,
-		apiClient: client,
+		keys:        DefaultKeys(),
+		activeTab:   TabDashboard,
+		dashboard:   dashboard.New(),
+		profilesTab: pt,
+		profilesMgr: mgr,
+		stubs:       stubs,
+		apiClient:   client,
 	}
 }
 

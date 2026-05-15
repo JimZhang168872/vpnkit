@@ -15,10 +15,19 @@ func (m Model) View() string {
 	switch m.activeTab {
 	case TabDashboard:
 		body = m.dashboard.View(bodyWidth, bodyHeight)
+	case TabProfiles:
+		body = m.profilesTab.View(bodyWidth, bodyHeight)
 	default:
 		body = m.stubs[m.activeTab].View(bodyWidth, bodyHeight)
 	}
 
 	rows := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
+
+	if m.showAddForm {
+		formView := m.addForm.View()
+		body = lipgloss.Place(bodyWidth, bodyHeight, lipgloss.Center, lipgloss.Center, formView)
+		rows = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
+	}
+
 	return rows + "\n" + m.renderStatusBar(m.width)
 }

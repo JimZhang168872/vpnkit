@@ -8,7 +8,7 @@ import (
 )
 
 func TestTabSwitching(t *testing.T) {
-	m := NewModel(nil)
+	m := NewModel(nil, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})

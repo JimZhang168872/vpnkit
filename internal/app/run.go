@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/profiles"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 )
@@ -37,7 +39,16 @@ func Run() error {
 	})
 	client := api.New(fmt.Sprintf("http://127.0.0.1:%d", st.Cfg.ControllerPort), st.Cfg.ControllerSecret)
 
-	model := NewModel(client)
+	profMgr := profiles.New(profiles.Config{
+		ConfigYAMLPath:   p.MihomoConfigFile(),
+		PatchPath:        filepath.Join(p.MihomoConfig, "patch.yaml"),
+		ControllerPort:   st.Cfg.ControllerPort,
+		ControllerSecret: st.Cfg.ControllerSecret,
+		RuleTemplate:     st.Cfg.RuleTemplate,
+	})
+	profMgr.Load(toProfilesProfiles(st.Cfg.Profiles), st.Cfg.ActiveProfile)
+
+	model := NewModel(client, profMgr)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
@@ -86,4 +97,13 @@ func pollVersion(prog *tea.Program, client *api.Client) {
 		prog.Send(VersionMsg{Version: v.Version, Err: err})
 		<-ticker.C
 	}
+}
+
+// toProfilesProfiles converts store.Profile slice to profiles.Profile slice.
+func toProfilesProfiles(in []store.Profile) []profiles.Profile {
+	out := make([]profiles.Profile, len(in))
+	for i, x := range in {
+		out[i] = profiles.Profile{Name: x.Name, URL: x.URL, UserAgent: x.UserAgent, LastUpdated: x.LastUpdated}
+	}
+	return out
 }
