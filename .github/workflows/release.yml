@@ -23,3 +23,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # When multiple tags point to the same commit, `git describe` may pick
+          # a tag other than the one that triggered this workflow. Pin to the
+          # exact tag that was pushed so the release goes to the right place.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
