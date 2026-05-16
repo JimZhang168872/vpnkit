@@ -52,6 +52,12 @@ func main() {
 		case "use":
 			dispatchUse(os.Args[2:])
 			return
+		case "init":
+			dispatchInit(os.Args[2:])
+			return
+		case "uninstall":
+			dispatchUninstall(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(); err != nil {
@@ -173,6 +179,38 @@ func dispatchNodes(args []string) {
 	}
 	if err := runNodes(os.Stdout, c, rest[0], jsonOut); err != nil {
 		dieUserErr("vpnkit nodes: %v", err)
+	}
+}
+
+func dispatchInit(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	restore := fs.String("restore", "", "path to a profiles backup TOML to merge")
+	_ = fs.Bool("non-interactive", false, "(no-op; init is always non-interactive)")
+	_ = fs.Parse(args)
+	if err := runInit(os.Stdout, *restore); err != nil {
+		dieRuntime("vpnkit init: %v", err)
+	}
+}
+
+func dispatchUninstall(args []string) {
+	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
+	yes := fs.Bool("yes", false, "skip interactive confirmation")
+	purge := fs.Bool("purge", false, "also delete profiles (no backup)")
+	keepMihomo := fs.Bool("keep-mihomo", false, "do not delete ~/.local/bin/mihomo")
+	keepProfiles := fs.Bool("keep-profiles", true, "back up profiles to --backup-dir before delete")
+	backupDir := fs.String("backup-dir", "/tmp", "where to write the profiles backup")
+	_ = fs.Parse(args)
+	// --purge implies !keep-profiles. --keep-profiles=false (without --purge)
+	// also skips the backup — same end state.
+	purgeEffective := *purge || !*keepProfiles
+	opts := uninstallOptions{
+		Yes:        *yes,
+		Purge:      purgeEffective,
+		KeepMihomo: *keepMihomo,
+		BackupDir:  *backupDir,
+	}
+	if err := runUninstall(os.Stdout, opts); err != nil {
+		dieRuntime("vpnkit uninstall: %v", err)
 	}
 }
 
