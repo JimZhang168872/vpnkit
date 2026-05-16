@@ -251,7 +251,7 @@ Connections
 |---|---|
 | `↑` `↓` `j` `k` | navigate |
 | `x` | close highlighted connection (mihomo terminates it) |
-| `/` | filter (substring match against host or rule) — Phase 4 limitation: filter input is currently set programmatically only |
+| `/` | enter filter mode (live narrows by host or rule) — `Enter` keeps filter, `Esc` clears |
 
 #### 2.5 Rules (tab `5`)
 
@@ -276,7 +276,12 @@ Rules
 
 **Shows**: full active rule list and rule-providers state, polled every 30 s.
 
-**Keys**: `[/]` and `[u]` are listed in the footer but UI for filter input + provider refresh dispatch are Phase 4 placeholders.
+**Keys**:
+
+| Key | Action |
+|---|---|
+| `/` | enter filter mode (live narrows by type / payload / proxy) — `Enter` keeps filter, `Esc` clears |
+| `u` | trigger refresh on every rule-provider (results land at the next 30 s poll) |
 
 #### 2.6 Settings (tab `6`)
 
@@ -686,7 +691,7 @@ Connections
 |---|---|
 | `↑` `↓` `j` `k` | 上下移动 |
 | `x` | 关闭选中连接（mihomo 切断） |
-| `/` | 过滤（按 host/rule 子串匹配）— Phase 4 当前限制：filter 输入只能程序化设置 |
+| `/` | 进入过滤模式（按 host/rule 子串实时缩小）— `Enter` 保留过滤、`Esc` 清空 |
 
 #### 2.5 Rules（tab `5`）
 
@@ -711,7 +716,12 @@ Rules
 
 **展示**：当前生效的全部规则 + rule-providers 状态，每 30 秒轮询。
 
-**快捷键**：底部 `[/]` 和 `[u]` 是占位 — Phase 4 的 filter 输入和 provider 刷新分发还没做完整 UI。
+**快捷键**：
+
+| 键 | 动作 |
+|---|---|
+| `/` | 进入过滤模式（按 type / payload / proxy 实时缩小）— `Enter` 保留过滤、`Esc` 清空 |
+| `u` | 触发所有 rule-provider 刷新（结果在下一次 30 秒轮询时呈现） |
 
 #### 2.6 Settings（tab `6`）
 
