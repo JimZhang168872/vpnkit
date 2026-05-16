@@ -34,18 +34,19 @@ func dispatchGroup(args []string) {
 			dieRuntime("vpnkit group ls: %v", err)
 		}
 	case "add":
+		if len(args) < 2 {
+			dieUserErr("vpnkit group add: usage: vpnkit group add <name> --type <t> --proxies a,b,c [...]")
+		}
+		name := args[1]
 		fs := flag.NewFlagSet("group add", flag.ExitOnError)
 		typ := fs.String("type", "select", "group type: select|url-test|fallback|load-balance|relay")
 		proxies := fs.String("proxies", "", "comma-separated proxy names")
 		url := fs.String("url", "", "(optional) test URL")
 		interval := fs.Int("interval", 0, "(optional) test interval seconds")
 		tolerance := fs.Int("tolerance", 0, "(optional) tolerance ms")
-		_ = fs.Parse(args[1:])
-		if fs.NArg() < 1 {
-			dieUserErr("vpnkit group add: usage: vpnkit group add <name> --type <t> --proxies a,b,c [...]")
-		}
+		_ = fs.Parse(args[2:])
 		opts := groupAddOpts{
-			Name:      fs.Arg(0),
+			Name:      name,
 			Type:      *typ,
 			Proxies:   splitCSVCmd(*proxies),
 			URL:       *url,
