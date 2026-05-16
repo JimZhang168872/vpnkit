@@ -86,6 +86,10 @@ curl https://www.google.com         # traffic now goes through mihomo
 
 Stop the managed mihomo: `systemctl --user stop mihomo` (or `kill $(cat ~/.local/state/vpnkit/mihomo.pid)` in PID mode).
 
+> 📖 **Step-by-step walkthrough**: see [`docs/USAGE.md`](docs/USAGE.md) for a
+> zero-to-first-proxy guide, every TUI page explained, and a primer on
+> `systemctl --user` / `loginctl enable-linger` / `HTTP_PROXY` / `PATH`.
+
 ### First launch behind the GFW
 
 mihomo's first start needs to download `geoip.metadb` and other geo data from
@@ -241,6 +245,10 @@ curl https://www.google.com         # 流量已走 mihomo
 ```
 
 停掉服务：`systemctl --user stop mihomo`（PID 模式下用 `kill $(cat ~/.local/state/vpnkit/mihomo.pid)`）。
+
+> 📖 **完整教程**：[`docs/USAGE.md`](docs/USAGE.md) 有从零到第一个代理的全流程、
+> 每个 TUI 页面详解，以及 `systemctl --user` / `loginctl enable-linger` /
+> `HTTP_PROXY` / `PATH` 的入门讲解。
 
 ### 被墙环境第一次启动
 
