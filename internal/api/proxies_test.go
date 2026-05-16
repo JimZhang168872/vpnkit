@@ -14,6 +14,13 @@ func TestGetProxies(t *testing.T) {
 			"proxies": map[string]any{
 				"GLOBAL": map[string]any{"type": "Selector", "now": "DIRECT", "all": []string{"DIRECT", "REJECT"}},
 				"DIRECT": map[string]any{"type": "Direct"},
+				"HK-01": map[string]any{
+					"type": "Shadowsocks",
+					"history": []map[string]any{
+						{"time": "2026-05-16T10:00:00Z", "delay": 45},
+						{"time": "2026-05-16T10:01:00Z", "delay": 47},
+					},
+				},
 			},
 		})
 	}))
@@ -29,6 +36,13 @@ func TestGetProxies(t *testing.T) {
 	}
 	if len(g.All) != 2 {
 		t.Errorf("All: %v", g.All)
+	}
+	hk, ok := out["HK-01"]
+	if !ok {
+		t.Fatal("HK-01 missing")
+	}
+	if len(hk.History) != 2 || hk.History[1].Delay != 47 {
+		t.Errorf("HK-01 history: %+v", hk.History)
 	}
 }
 

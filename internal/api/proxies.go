@@ -8,11 +8,18 @@ import (
 	"net/url"
 )
 
+// ProxyHistory is one delay measurement entry from mihomo's per-node history.
+type ProxyHistory struct {
+	Time  string `json:"time"`
+	Delay int    `json:"delay"`
+}
+
 // ProxyInfo mirrors one entry in /proxies' "proxies" map.
 type ProxyInfo struct {
-	Type string   `json:"type"`
-	Now  string   `json:"now"`
-	All  []string `json:"all"`
+	Type    string         `json:"type"`
+	Now     string         `json:"now"`
+	All     []string       `json:"all"`
+	History []ProxyHistory `json:"history"`
 }
 
 type proxiesResponse struct {
