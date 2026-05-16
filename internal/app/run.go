@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
+	"vpnkit/internal/config"
 	"vpnkit/internal/msg"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/portutil"
@@ -48,6 +49,11 @@ func Run() error {
 		return fmt.Errorf("reconcile ports: %w", err)
 	}
 	client := api.New(fmt.Sprintf("http://127.0.0.1:%d", st.Cfg.ControllerPort), st.Cfg.ControllerSecret)
+	// Force the security-owned keys (ports, auth, bind-address, …) into any
+	// pre-existing config.yaml — e.g. an upgrade from a pre-auth version
+	// where bootstrap would otherwise never regenerate. If the file is
+	// absent, bootstrap will create it from scratch.
+	configChanged, _ := ensureConfigSecurity(st, p.MihomoConfigFile())
 
 	profMgr := profiles.New(profiles.Config{
 		ConfigYAMLPath:   p.MihomoConfigFile(),
@@ -91,6 +97,14 @@ func Run() error {
 			Store:   st,
 			Service: svc,
 		})()
+		// If we patched config.yaml above AND mihomo is already running
+		// (e.g. systemd auto-started it on login from a stale config), nudge
+		// it to re-read so the new auth/ports take effect without a restart.
+		if configChanged {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = client.ReloadConfig(ctx, "")
+			cancel()
+		}
 		prog.Send(msg)
 	}()
 	go streamTraffic(prog, client)
@@ -229,6 +243,23 @@ func streamLogs(prog *tea.Program, svc service.Manager) {
 		cancel()
 		time.Sleep(2 * time.Second)
 	}
+}
+
+// ensureConfigSecurity force-rewrites the security-owned keys (ports, auth,
+// bind-address, allow-lan, secret) in mihomo's config.yaml so the store stays
+// the single source of truth. No-op if the file does not exist (bootstrap
+// will create it). Returns true if the file was modified.
+func ensureConfigSecurity(st *store.Store, configFile string) (bool, error) {
+	if _, err := os.Stat(configFile); err != nil {
+		return false, nil
+	}
+	return config.EnsureSecurityFields(configFile, config.SecurityFields{
+		MixedPort:        st.Cfg.MixedPort,
+		ControllerPort:   st.Cfg.ControllerPort,
+		ControllerSecret: st.Cfg.ControllerSecret,
+		ProxyUser:        st.Cfg.ProxyUser,
+		ProxyPass:        st.Cfg.ProxyPass,
+	})
 }
 
 // reconcilePorts picks free TCP ports for mixed-port and external-controller.
