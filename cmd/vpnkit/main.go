@@ -61,6 +61,15 @@ func main() {
 		case "update":
 			dispatchUpdate(os.Args[2:])
 			return
+		case "chain":
+			dispatchChain(os.Args[2:])
+			return
+		case "group":
+			dispatchGroup(os.Args[2:])
+			return
+		case "ext":
+			dispatchExt(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {

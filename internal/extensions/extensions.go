@@ -15,19 +15,19 @@ import (
 // Chain pins one subscription node to dial through an upstream node/group
 // (mihomo `dialer-proxy` field). Both Node and Via are mihomo proxy names.
 type Chain struct {
-	Node string `toml:"node"`
-	Via  string `toml:"via"`
+	Node string `toml:"node" json:"node"`
+	Via  string `toml:"via"  json:"via"`
 }
 
 // Group is a user-defined proxy-group appended to the assembled config after
 // any subscription-supplied or synthesized groups.
 type Group struct {
-	Name      string   `toml:"name"`
-	Type      string   `toml:"type"` // select | url-test | fallback | load-balance | relay
-	Proxies   []string `toml:"proxies"`
-	URL       string   `toml:"url,omitempty"`
-	Interval  int      `toml:"interval,omitempty"`
-	Tolerance int      `toml:"tolerance,omitempty"`
+	Name      string   `toml:"name"                 json:"name"`
+	Type      string   `toml:"type"                 json:"type"` // select | url-test | fallback | load-balance | relay
+	Proxies   []string `toml:"proxies"              json:"proxies"`
+	URL       string   `toml:"url,omitempty"        json:"url,omitempty"`
+	Interval  int      `toml:"interval,omitempty"   json:"interval,omitempty"`
+	Tolerance int      `toml:"tolerance,omitempty"  json:"tolerance,omitempty"`
 }
 
 // Extensions is the full content of extensions.toml.
