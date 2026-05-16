@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,10 +27,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showAddForm = false
 				if name != "" && url != "" && m.profilesMgr != nil {
 					if err := m.profilesMgr.Add(profiles.Profile{Name: name, URL: url}); err != nil {
-						m.flash = "add: " + err.Error()
+						m.flash = "❌ add: " + err.Error()
 					} else {
 						m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-						m.flash = "added " + name
+						m.flash = "✅ added " + name
 					}
 				}
 				return m, nil
@@ -116,6 +117,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.proxiesTab.MoveDown()
 				return m, nil
 			case "enter":
+				if grp, node, ok := m.proxiesTab.SelectedNode(); ok {
+					if m.apiClient != nil {
+						client := m.apiClient
+						return m, func() tea.Msg {
+							ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+							defer cancel()
+							if err := client.PutProxy(ctx, grp, node); err != nil {
+								return ProfileError{Name: grp + "/" + node, Err: err}
+							}
+							return nil
+						}
+					}
+					return m, nil
+				}
 				m.proxiesTab.ToggleExpand()
 				return m, nil
 			case "t":
@@ -163,7 +178,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if sel.Name != "" && m.profilesMgr != nil {
 					m.profilesMgr.Remove(sel.Name)
 					m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-					m.flash = "removed " + sel.Name
+					m.flash = "🗑️  removed " + sel.Name
 				}
 				return m, nil
 			case "enter":
@@ -171,7 +186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if sel.Name != "" && m.profilesMgr != nil {
 					m.profilesMgr.SetActive(sel.Name)
 					m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-					m.flash = "active = " + sel.Name
+					m.flash = "⭐ active = " + sel.Name
 				}
 				return m, nil
 			case "up", "k":
@@ -217,19 +232,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":
-			m.flash = "mihomo ready"
+			m.flash = "🟢 mihomo ready"
 		case "error":
 			if v.Err != nil {
-				m.flash = "bootstrap: " + v.Err.Error()
+				m.flash = "❌ bootstrap: " + v.Err.Error()
 			}
 		default:
-			m.flash = "bootstrapping: " + v.Phase
+			m.flash = "🟡 bootstrapping: " + v.Phase
 		}
 	case ProfileUpdated:
-		m.flash = fmt.Sprintf("%s: %d nodes", v.Name, v.NodeCount)
+		m.flash = fmt.Sprintf("✅ %s: %d nodes", v.Name, v.NodeCount)
 	case ProfileError:
 		if v.Err != nil {
-			m.flash = v.Name + ": " + v.Err.Error()
+			m.flash = "❌ " + v.Name + ": " + v.Err.Error()
 		}
 	}
 	return m, cmd
