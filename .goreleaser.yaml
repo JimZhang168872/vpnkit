@@ -22,7 +22,7 @@ archives:
     files:
       - LICENSE
       - README.md
-      - docs/USAGE.md
+      - README_zh.md
 
 checksum:
   name_template: "SHA256SUMS"
