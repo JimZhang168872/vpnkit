@@ -7,7 +7,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const sidebarWidth = 16
+// sidebarWidth is wide enough to fit "▶ [N] EMOJI Settings" without wrapping.
+// Each emoji takes 2 terminal columns, plus the bracket prefix, space, label,
+// active-marker space, and the right-border character.
+const sidebarWidth = 24
 
 var (
 	activeStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
