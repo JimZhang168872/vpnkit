@@ -21,7 +21,7 @@ const (
 	SubService
 	SubController
 	SubRules
-	SubPatch
+	SubExtensions
 	SubLogs
 	SubCache
 	SubAbout
@@ -34,7 +34,7 @@ var SubPageNames = [NumSubPages]string{
 	"Service",
 	"External Controller",
 	"Default Rules",
-	"Patch Editor",
+	"Extensions",
 	"Logs",
 	"Cache",
 	"About",
@@ -42,10 +42,13 @@ var SubPageNames = [NumSubPages]string{
 
 // Deps are wires for sub-pages.
 type Deps struct {
-	Paths     paths.XDG
-	Store     *store.Store
-	Service   service.Manager
-	APIClient *api.Client
+	Paths          paths.XDG
+	Store          *store.Store
+	Service        service.Manager
+	APIClient      *api.Client
+	ExtensionsPath string         // ~/.config/vpnkit/extensions.toml (empty in tests = uses Paths)
+	ProxyNames     ProxyNamesFunc // returns proxy+group names from latest snapshot
+	ApplyFunc      func() error   // reassemble + reload mihomo; nil in tests
 }
 
 // Model is the Settings tab.
@@ -59,12 +62,19 @@ type Model struct {
 	controller controllerModel
 	service    serviceModel
 	core       coreModel
-	patch      patchModel
+	extensions extensionsModel
 	logs       logs.Model
 }
 
 // New constructs the Settings tab Model with all sub-pages instantiated.
 func New(deps Deps) Model {
+	extPath := deps.ExtensionsPath
+	if extPath == "" {
+		// Fallback for tests / unwired callers — keeps the sub-page usable.
+		extPath = "/tmp/extensions.toml"
+	}
+	ex := newExtensions(extPath, deps.ProxyNames)
+	ex.applyFunc = deps.ApplyFunc
 	return Model{
 		deps:       deps,
 		about:      newAbout(),
@@ -73,7 +83,7 @@ func New(deps Deps) Model {
 		controller: newController(deps.Store),
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
-		patch:      newPatch(deps.Paths),
+		extensions: ex,
 		logs:       logs.New(),
 	}
 }
@@ -115,8 +125,8 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.service, cmd = m.service.Update(message)
 	case SubCore:
 		m.core, cmd = m.core.Update(message)
-	case SubPatch:
-		m.patch, cmd = m.patch.Update(message)
+	case SubExtensions:
+		m.extensions, cmd = m.extensions.Update(message)
 	case SubLogs:
 		m.logs, cmd = m.logs.Update(message)
 	}
@@ -141,8 +151,8 @@ func (m Model) View(width, height int) string {
 		body = m.service.View(bodyWidth, height)
 	case SubCore:
 		body = m.core.View(bodyWidth, height)
-	case SubPatch:
-		body = m.patch.View(bodyWidth, height)
+	case SubExtensions:
+		body = m.extensions.View(bodyWidth, height)
 	case SubLogs:
 		body = m.logs.View(bodyWidth, height)
 	}
@@ -167,4 +177,3 @@ func renderSubSidebar(active SubPage, height int) string {
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))
 }
-
