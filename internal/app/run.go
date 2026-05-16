@@ -83,12 +83,6 @@ func Run(version string) error {
 		_ = st.Save()
 	})
 
-	settingsDeps := tabsettings.Deps{
-		Paths:     p,
-		Store:     st,
-		Service:   svc,
-		APIClient: client,
-	}
 	// Closure that profile-update + startup-reload paths use to push config
 	// changes into the live mihomo. Tries hot reload first, restarts the
 	// service on any error (e.g. controller-secret drift between store.toml
@@ -96,7 +90,37 @@ func Run(version string) error {
 	applyCfg := func(ctx context.Context) error {
 		return applyConfig(ctx, client, svc)
 	}
+
+	// modelRef is set just below; closures captured into settingsDeps read
+	// through it to break the chicken-and-egg between Deps and Model.
+	var modelRef *Model
+	settingsDeps := tabsettings.Deps{
+		Paths:          p,
+		Store:          st,
+		Service:        svc,
+		APIClient:      client,
+		ExtensionsPath: filepath.Join(p.VpnkitConfig, "extensions.toml"),
+		ProxyNames: func() []string {
+			if modelRef == nil {
+				return nil
+			}
+			return modelRef.CurrentProxyNames()
+		},
+		ApplyFunc: func() error {
+			active := profMgr.Active()
+			if active == "" {
+				return fmt.Errorf("no active profile — set one first via Profiles tab")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if _, err := profMgr.Update(ctx, active); err != nil {
+				return err
+			}
+			return applyCfg(ctx)
+		},
+	}
 	model := NewModel(client, profMgr, settingsDeps, applyCfg)
+	modelRef = &model
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
