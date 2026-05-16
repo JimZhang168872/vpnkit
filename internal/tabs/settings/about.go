@@ -19,8 +19,9 @@ func (m aboutModel) View(width, height int) string {
 		"  vpnkit — TUI for managing the mihomo proxy core (non-root).\n" +
 		"\n" +
 		"  Built with Go " + runtime.Version() + " · bubbletea · lipgloss.\n" +
-		"  License: same as mihomo (GPL-3.0).\n" +
+		"  License: MIT (vpnkit) · GPL-3.0 (mihomo upstream).\n" +
 		"\n" +
-		"  Source: https://github.com/MetaCubeX/mihomo (upstream core)\n"
+		"  Source : https://github.com/JimZhang168872/vpnkit\n" +
+		"  Upstream: https://github.com/MetaCubeX/mihomo\n"
 	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(body)
 }
