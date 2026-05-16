@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/msg"
 )
 
@@ -35,5 +36,61 @@ func TestFilterHidesNonMatching(t *testing.T) {
 	}
 	if strings.Contains(view, "beta") {
 		t.Errorf("beta should be filtered out:\n%s", view)
+	}
+}
+
+func TestFilterInputModeLiveUpdate(t *testing.T) {
+	m := New()
+	m, _ = m.Update(msg.ConnectionsSnapshot{Items: []msg.ConnectionItem{
+		{ID: "1", Host: "alpha.example.com"},
+		{ID: "2", Host: "beta.example.com"},
+	}})
+	_ = m.StartFilter()
+	if !m.IsFiltering() {
+		t.Fatal("expected filtering=true after StartFilter")
+	}
+	for _, r := range "alpha" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	view := m.View(120, 24)
+	if !strings.Contains(view, "alpha") || strings.Contains(view, "beta") {
+		t.Errorf("filter not live: %s", view)
+	}
+}
+
+func TestFilterEscClears(t *testing.T) {
+	m := New()
+	m, _ = m.Update(msg.ConnectionsSnapshot{Items: []msg.ConnectionItem{{ID: "1", Host: "h"}}})
+	_ = m.StartFilter()
+	for _, r := range "x" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.IsFiltering() {
+		t.Error("Esc should exit filter mode")
+	}
+	view := m.View(120, 24)
+	if !strings.Contains(view, "h") {
+		t.Errorf("Esc should clear filter and show all rows again")
+	}
+}
+
+func TestFilterEnterKeepsFilter(t *testing.T) {
+	m := New()
+	m, _ = m.Update(msg.ConnectionsSnapshot{Items: []msg.ConnectionItem{
+		{ID: "1", Host: "alpha"},
+		{ID: "2", Host: "beta"},
+	}})
+	_ = m.StartFilter()
+	for _, r := range "alp" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.IsFiltering() {
+		t.Error("Enter should exit filter input mode")
+	}
+	view := m.View(120, 24)
+	if !strings.Contains(view, "alpha") || strings.Contains(view, "beta") {
+		t.Errorf("filter should still be applied after Enter")
 	}
 }

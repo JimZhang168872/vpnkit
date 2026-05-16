@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
@@ -12,19 +13,37 @@ import (
 
 // Model is the Connections tab.
 type Model struct {
-	items   []msg.ConnectionItem
-	totalUp int64
-	totalDn int64
-	filter  string
-	cursor  int
+	items       []msg.ConnectionItem
+	totalUp     int64
+	totalDn     int64
+	filter      string
+	cursor      int
+	filterInput textinput.Model
+	filtering   bool
 }
 
 // New returns an empty tab model.
-func New() Model { return Model{} }
+func New() Model {
+	ti := textinput.New()
+	ti.Placeholder = "filter (host or rule)…"
+	ti.Prompt = "/ "
+	ti.CharLimit = 64
+	return Model{filterInput: ti}
+}
 
 func (Model) Init() tea.Cmd { return nil }
 
-// Update absorbs ConnectionsSnapshot.
+// IsFiltering reports whether the filter input is currently focused.
+func (m Model) IsFiltering() bool { return m.filtering }
+
+// StartFilter focuses the input and switches the tab into filter mode.
+func (m *Model) StartFilter() tea.Cmd {
+	m.filtering = true
+	m.filterInput.SetValue(m.filter)
+	return m.filterInput.Focus()
+}
+
+// Update absorbs ConnectionsSnapshot and filter-input key events.
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if ev, ok := message.(msg.ConnectionsSnapshot); ok {
 		m.items = ev.Items
@@ -33,6 +52,27 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		if m.cursor >= len(m.items) {
 			m.cursor = 0
 		}
+		return m, nil
+	}
+	if m.filtering {
+		if km, ok := message.(tea.KeyMsg); ok {
+			switch km.Type {
+			case tea.KeyEsc:
+				m.filterInput.Blur()
+				m.filterInput.SetValue("")
+				m.filter = ""
+				m.filtering = false
+				return m, nil
+			case tea.KeyEnter:
+				m.filterInput.Blur()
+				m.filtering = false
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.filterInput, cmd = m.filterInput.Update(message)
+		m.filter = m.filterInput.Value()
+		return m, cmd
 	}
 	return m, nil
 }
@@ -90,7 +130,11 @@ func (m Model) View(width, height int) string {
 		rows = append(rows, fmt.Sprintf("%s%-30s  %-6s  %-12s  %-12s  %s",
 			prefix, truncate(it.Host, 30), it.Port, human(it.Upload), human(it.Download), it.Rule))
 	}
-	rows = append(rows, "", "[/] filter  [x] close selected  [↑↓] navigate")
+	if m.filtering {
+		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
+	} else {
+		rows = append(rows, "", "[/] filter  [x] close selected  [↑↓] navigate")
+	}
 	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 

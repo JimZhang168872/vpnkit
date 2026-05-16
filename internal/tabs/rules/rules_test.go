@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/msg"
 )
 
@@ -38,5 +39,21 @@ func TestRulesFilter(t *testing.T) {
 	view := m.View(120, 24)
 	if !strings.Contains(view, "google") || strings.Contains(view, "reject") {
 		t.Errorf("filter broken:\n%s", view)
+	}
+}
+
+func TestRulesFilterInput(t *testing.T) {
+	m := New()
+	m, _ = m.Update(msg.RulesSnapshot{Rules: []msg.RuleEntry{
+		{Type: "RULE-SET", Payload: "google", Proxy: "P"},
+		{Type: "RULE-SET", Payload: "reject", Proxy: "R"},
+	}})
+	_ = m.StartFilter()
+	for _, r := range "goog" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	view := m.View(120, 24)
+	if !strings.Contains(view, "google") || strings.Contains(view, "reject") {
+		t.Errorf("filter not applied:\n%s", view)
 	}
 }

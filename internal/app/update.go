@@ -9,6 +9,7 @@ import (
 	"vpnkit/internal/profiles"
 	tabprofiles "vpnkit/internal/tabs/profiles"
 	tabproxies "vpnkit/internal/tabs/proxies"
+	tabrules "vpnkit/internal/tabs/rules"
 )
 
 // Update implements tea.Model.
@@ -49,7 +50,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Connections-tab-specific keys.
 		if m.activeTab == TabConnections {
+			if m.connectionsTab.IsFiltering() {
+				var c tea.Cmd
+				m.connectionsTab, c = m.connectionsTab.Update(msg)
+				return m, c
+			}
 			switch v.String() {
+			case "/":
+				cmd := m.connectionsTab.StartFilter()
+				return m, cmd
 			case "up", "k":
 				m.connectionsTab.MoveUp()
 				return m, nil
@@ -63,6 +72,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						_ = client.CloseConnection(context.Background(), id)
 						return nil
 					}
+				}
+				return m, nil
+			}
+		}
+		// Rules-tab-specific keys.
+		if m.activeTab == TabRules {
+			if m.rulesTab.IsFiltering() {
+				var c tea.Cmd
+				m.rulesTab, c = m.rulesTab.Update(msg)
+				return m, c
+			}
+			switch v.String() {
+			case "/":
+				cmd := m.rulesTab.StartFilter()
+				return m, cmd
+			case "u":
+				if m.apiClient != nil {
+					return m, tabrules.RefreshAllProvidersCmd(m.apiClient, m.rulesTab.ProviderNames())
 				}
 				return m, nil
 			}
