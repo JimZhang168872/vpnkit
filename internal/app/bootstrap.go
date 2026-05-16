@@ -41,7 +41,6 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 			}
 			_, err := d.InstallFunc(installer.Options{
 				Dst:     d.Paths.MihomoBinary(),
-				Mirror:  d.Store.Cfg.ReleaseMirror,
 				APIBase: "",
 			}, nil)
 			if err != nil {

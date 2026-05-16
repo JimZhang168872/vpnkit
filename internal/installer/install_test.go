@@ -39,7 +39,6 @@ func TestInstallLatestE2E(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "mihomo")
 	opts := Options{
 		APIBase:     srv.URL,
-		Mirror:      "",
 		Dst:         dst,
 		Version:     "",
 		ForceCompat: nil,

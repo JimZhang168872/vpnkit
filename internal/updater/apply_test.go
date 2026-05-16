@@ -69,7 +69,7 @@ func TestApplyVpnkitReplacesBinary(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := DownloadAndApplyVpnkit(srv.URL, sumHex, dst, "", nil); err != nil {
+	if err := DownloadAndApplyVpnkit(srv.URL, sumHex, dst); err != nil {
 		t.Fatalf("DownloadAndApplyVpnkit: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestApplyVpnkitRejectsBadSHA(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := DownloadAndApplyVpnkit(srv.URL, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dst, "", nil)
+	err := DownloadAndApplyVpnkit(srv.URL, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dst)
 	if err == nil {
 		t.Fatal("expected SHA mismatch error")
 	}
@@ -118,7 +118,7 @@ func TestApplyVpnkitWithoutSHACheck(t *testing.T) {
 		_, _ = w.Write(tarball)
 	}))
 	defer srv.Close()
-	if _, err := DownloadAndApplyVpnkit(srv.URL, "", dst, "", nil); err != nil {
+	if err := DownloadAndApplyVpnkit(srv.URL, "", dst); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(dst)
