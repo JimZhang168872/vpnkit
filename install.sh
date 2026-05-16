@@ -12,10 +12,26 @@ set -euo pipefail
 #   INSTALL_DIR         binary target (default: $HOME/.local/bin)
 #   INSTALL_FORCE       1 = reinstall even when same version is already present
 #   INSTALL_TAKEOVER    1 = overwrite ~/.config/mihomo/ if it was made by another clash tool
+#   INSTALL_MIRROR      URL prefix used to wrap every github.com / api.github.com download
+#                       (for users behind the GFW). e.g.:
+#                         INSTALL_MIRROR=https://ghproxy.com/  curl … | bash
+#                       This value is also persisted to ~/.config/vpnkit/config.toml
+#                       so subsequent mihomo binary + geo data downloads go through it.
 
 log()  { printf '%s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*" >&2; }
 fail() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+# mirror_wrap prefixes a URL with $INSTALL_MIRROR (trailing slash respected).
+# If INSTALL_MIRROR is unset/empty, returns the URL unchanged.
+mirror_wrap() {
+  local url="$1"
+  if [ -n "${INSTALL_MIRROR:-}" ]; then
+    printf '%s%s\n' "${INSTALL_MIRROR%/}/" "$url"
+  else
+    printf '%s\n' "$url"
+  fi
+}
 
 command -v curl       >/dev/null || fail "curl is required"
 command -v sha256sum  >/dev/null || fail "sha256sum is required (coreutils)"
@@ -38,10 +54,15 @@ esac
 # ───────── version resolve ─────────
 if [ -z "${VERSION:-}" ]; then
   log "🔎 resolving latest release …"
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  api_url="$(mirror_wrap "https://api.github.com/repos/$REPO/releases/latest")"
+  VERSION=$(curl -fsSL "$api_url" \
     | grep -oP '"tag_name":\s*"\K[^"]+' || true)
 fi
-[ -n "${VERSION:-}" ] || fail "cannot resolve latest version (set VERSION=v…)"
+if [ -z "${VERSION:-}" ]; then
+  warn "could not resolve latest version automatically"
+  warn "  some mirrors block api.github.com — try: VERSION=v0.8.0 …"
+  fail "set VERSION=v… and re-run"
+fi
 
 # ───────── pre-flight: existing install detection ─────────
 #
@@ -103,12 +124,12 @@ fi
 # ───────── download ─────────
 VER_NUM="${VERSION#v}"
 TARBALL="vpnkit_${VER_NUM}_linux_${arch}.tar.gz"
-BASE="https://github.com/$REPO/releases/download/$VERSION"
+BASE="$(mirror_wrap "https://github.com/$REPO/releases/download/$VERSION")"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-log "⬇️  downloading $TARBALL …"
+log "⬇️  downloading $TARBALL${INSTALL_MIRROR:+ via ${INSTALL_MIRROR}}…"
 curl -fsSL -o "$tmp/$TARBALL" "$BASE/$TARBALL" || fail "download failed"
 curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || fail "checksum download failed"
 
@@ -125,11 +146,10 @@ log "📦 installed $VERSION → $DEST/vpnkit"
 
 # ───────── init config ─────────
 log "🛠️  initializing config …"
-if [ -n "$backup_file" ] && [ -f "$backup_file" ]; then
-  "$DEST/vpnkit" init --restore "$backup_file" || warn "init with restore returned non-zero"
-else
-  "$DEST/vpnkit" init || warn "init returned non-zero"
-fi
+init_args=()
+[ -n "$backup_file" ] && [ -f "$backup_file" ] && init_args+=(--restore "$backup_file")
+[ -n "${INSTALL_MIRROR:-}" ] && init_args+=(--release-mirror "$INSTALL_MIRROR")
+"$DEST/vpnkit" init "${init_args[@]}" || warn "init returned non-zero"
 
 # ───────── done ─────────
 log ""

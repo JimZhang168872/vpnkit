@@ -42,7 +42,7 @@ func TestInitFromScratch(t *testing.T) {
 	defer restore()
 
 	var out bytes.Buffer
-	if err := runInit(&out, "" /* restorePath */); err != nil {
+	if err := runInit(&out, runInitOpts{}); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -72,13 +72,13 @@ func TestInitIdempotent(t *testing.T) {
 	defer restore()
 
 	var out bytes.Buffer
-	if err := runInit(&out, ""); err != nil {
+	if err := runInit(&out, runInitOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	tomlBefore, _ := os.ReadFile(p.VpnkitConfigFile())
 	yamlBefore, _ := os.ReadFile(p.MihomoConfigFile())
 
-	if err := runInit(&out, ""); err != nil {
+	if err := runInit(&out, runInitOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	tomlAfter, _ := os.ReadFile(p.VpnkitConfigFile())
@@ -89,6 +89,25 @@ func TestInitIdempotent(t *testing.T) {
 	}
 	if string(yamlBefore) != string(yamlAfter) {
 		t.Error("config.yaml changed on second init")
+	}
+}
+
+func TestInitWritesReleaseMirror(t *testing.T) {
+	p, restore := initEnv(t)
+	defer restore()
+
+	var out bytes.Buffer
+	if err := runInit(&out, runInitOpts{ReleaseMirror: "https://ghproxy.com/"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p.VpnkitConfigFile())
+	if !strings.Contains(string(data), `release_mirror = "https://ghproxy.com/"`) {
+		t.Errorf("release_mirror not persisted:\n%s", string(data))
+	}
+	// And mihomo config.yaml's geox-url should be mirror-prefixed.
+	yaml, _ := os.ReadFile(p.MihomoConfigFile())
+	if !strings.Contains(string(yaml), "ghproxy.com/https://github.com") {
+		t.Errorf("geox-url not mirror-prefixed:\n%s", string(yaml))
 	}
 }
 
@@ -107,7 +126,7 @@ func TestInitRestoresProfiles(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, backup); err != nil {
+	if err := runInit(&out, runInitOpts{RestorePath: backup}); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 

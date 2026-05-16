@@ -23,9 +23,36 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 ```
 
 自动识别 amd64/arm64、SHA256 校验、装到 `~/.local/bin/vpnkit`。
-锁版本用 `VERSION=v0.6.0 ./install.sh`。确认 `~/.local/bin` 在 `PATH` 上。
+锁版本用 `VERSION=v0.8.0 ./install.sh`。确认 `~/.local/bin` 在 `PATH` 上。
 
 源码编译：`git clone … && cd vpnkit && make install`（需要 Go 1.22+）。
+
+### 墙内安装
+
+如果你的机器直连不了 `github.com` / `api.github.com`，用任意一个公开的
+GitHub 加速服务把 install.sh 的下载**和**之后 mihomo 自己下 geo 数据**都**
+代理过去。公开镜像经常下线/限流，选一个当前能用的：
+
+```bash
+# 例（请换成你当前能用的）：
+MIRROR="https://ghproxy.com/"
+VERSION=v0.8.0  # pin：部分镜像不代理 api.github.com
+
+curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
+  | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
+```
+
+`INSTALL_MIRROR` 会同步写入 `~/.config/vpnkit/config.toml` 的 `release_mirror`，
+后续 mihomo 下 `geoip.metadb` / `geosite.dat` 都走同一镜像，不用再单独配。
+
+其他公开镜像备选：`https://mirror.ghproxy.com/`、`https://ghp.ci/`、
+`https://gh.api.99988866.xyz/`。挑一个先 ping 一下能不能用：
+
+```bash
+curl -fsSL --max-time 5 -o /dev/null \
+  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
+  && echo OK || echo "这个镜像挂了，换一个"
+```
 
 ## 3 分钟上手
 

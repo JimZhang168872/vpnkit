@@ -11,10 +11,17 @@ import (
 	"vpnkit/internal/store"
 )
 
+// runInitOpts groups the optional inputs to runInit.
+type runInitOpts struct {
+	RestorePath   string // optional backup TOML to merge profiles from
+	ReleaseMirror string // optional URL prefix for mihomo binary + geox-url downloads
+}
+
 // runInit creates ~/.config/vpnkit/config.toml and ~/.config/mihomo/config.yaml
-// when missing, then optionally restores a profiles section from a backup TOML
-// at restorePath (produced by `vpnkit uninstall --keep-profiles`). Idempotent.
-func runInit(out io.Writer, restorePath string) error {
+// when missing, optionally restores a profiles section from a backup TOML, and
+// writes ReleaseMirror into the store if provided (so mihomo bootstrap and
+// runtime geo downloads both go through that mirror). Idempotent.
+func runInit(out io.Writer, opts runInitOpts) error {
 	p := paths.Resolve()
 	if err := p.Ensure(); err != nil {
 		return fmt.Errorf("ensure dirs: %w", err)
@@ -34,23 +41,35 @@ func runInit(out io.Writer, restorePath string) error {
 		fmt.Fprintf(out, "✅ %s (created)\n", p.VpnkitConfigFile())
 	}
 
+	// Step 1b: persist a release mirror if the caller passed one. Idempotent
+	// (no-op when the value already matches). Writing here means the
+	// subsequent skeleton + EnsureSecurityFields paths see it as part of store.
+	storeDirty := false
+	if opts.ReleaseMirror != "" && st.Cfg.ReleaseMirror != opts.ReleaseMirror {
+		st.Cfg.ReleaseMirror = opts.ReleaseMirror
+		storeDirty = true
+	}
+
 	// Step 2: restore profiles if a backup was passed AND store has none yet.
 	// We do not overwrite a user's existing profiles to avoid double-counting.
-	if restorePath != "" && len(st.Cfg.Profiles) == 0 {
+	if opts.RestorePath != "" && len(st.Cfg.Profiles) == 0 {
 		var backup struct {
 			Profiles []store.Profile `toml:"profiles"`
 		}
-		data, rerr := os.ReadFile(restorePath)
+		data, rerr := os.ReadFile(opts.RestorePath)
 		if rerr != nil {
-			fmt.Fprintf(out, "⚠️  failed to read backup %s: %v\n", restorePath, rerr)
+			fmt.Fprintf(out, "⚠️  failed to read backup %s: %v\n", opts.RestorePath, rerr)
 		} else if err := toml.Unmarshal(data, &backup); err != nil {
-			fmt.Fprintf(out, "⚠️  failed to parse backup %s: %v\n", restorePath, err)
+			fmt.Fprintf(out, "⚠️  failed to parse backup %s: %v\n", opts.RestorePath, err)
 		} else if len(backup.Profiles) > 0 {
 			st.Cfg.Profiles = backup.Profiles
-			if err := st.Save(); err != nil {
-				return fmt.Errorf("save profiles: %w", err)
-			}
-			fmt.Fprintf(out, "📋 restored %d profile(s) from %s\n", len(backup.Profiles), restorePath)
+			storeDirty = true
+			fmt.Fprintf(out, "📋 restored %d profile(s) from %s\n", len(backup.Profiles), opts.RestorePath)
+		}
+	}
+	if storeDirty {
+		if err := st.Save(); err != nil {
+			return fmt.Errorf("save store: %w", err)
 		}
 	}
 

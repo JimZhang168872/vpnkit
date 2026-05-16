@@ -26,10 +26,40 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 ```
 
 Auto-detects amd64/arm64, verifies SHA256, installs to `~/.local/bin/vpnkit`.
-Pin a version with `VERSION=v0.6.0 ./install.sh`. Make sure `~/.local/bin` is on
-your `PATH`.
+Pin a version with `VERSION=v0.8.0 ./install.sh`. Make sure `~/.local/bin` is
+on your `PATH`.
 
 From source: `git clone … && cd vpnkit && make install` (needs Go 1.22+).
+
+### Installing from inside the GFW
+
+If `github.com` and `api.github.com` are unreachable from your host, route
+everything (the install script's downloads **and** mihomo's later geo-data
+downloads) through a public GitHub-accelerator mirror. Pick one that currently
+works for you — public mirrors come and go:
+
+```bash
+# Example mirror (replace with whatever is currently working for you):
+MIRROR="https://ghproxy.com/"
+VERSION=v0.8.0  # pin: some mirrors don't proxy api.github.com
+
+curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
+  | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
+```
+
+`INSTALL_MIRROR` is also persisted to `~/.config/vpnkit/config.toml` as
+`release_mirror`, so when mihomo later downloads its `geoip.metadb` /
+`geosite.dat` it goes through the same mirror — no further configuration
+needed.
+
+Other public mirrors people have used: `https://mirror.ghproxy.com/`,
+`https://ghp.ci/`, `https://gh.api.99988866.xyz/`. Pick one with a check:
+
+```bash
+curl -fsSL --max-time 5 -o /dev/null \
+  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
+  && echo OK || echo "mirror dead, try another"
+```
 
 ## First run (3 minutes)
 
