@@ -117,8 +117,19 @@ curl https://www.google.com         # now routed through mihomo
 eval "$(vpnkit env --unset)"        # turn off
 ```
 
-`vpnkit env` also writes a `~/.netrc` entry (mode 0600) so tools that prefer
-netrc (curl, git) pick up the proxy credentials there. `--no-netrc` to skip.
+The output sets both lower- and upper-case variables (`http_proxy`,
+`HTTP_PROXY`, …) so Go programs and uppercase-only readers also pick it up.
+`vpnkit env` also writes a `~/.netrc` entry (mode 0600). Use `--no-netrc` to skip.
+
+For a more permanent setup, install shell functions once into your rc file:
+
+```bash
+vpnkit env --shell zsh --functions >> ~/.zshrc
+exec zsh
+# from any new shell:
+proxy_on    # 🟢 proxy on
+proxy_off   # 🔴 proxy off
+```
 
 ## Multi-user / multi-instance safety
 

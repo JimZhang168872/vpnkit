@@ -9,11 +9,71 @@ import (
 
 func TestRenderBash(t *testing.T) {
 	got := Render(Options{Shell: "bash", Port: 7890, NoProxy: "localhost,127.0.0.1"})
+	// Lowercase variants — historical convention, curl/wget/git read these.
 	for _, want := range []string{
 		"export http_proxy=http://127.0.0.1:7890",
 		"export https_proxy=http://127.0.0.1:7890",
 		"export all_proxy=socks5h://127.0.0.1:7890",
 		"export no_proxy=localhost,127.0.0.1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	// Uppercase variants — Go programs (http.ProxyFromEnvironment) and many
+	// Java/JVM libs only read these.
+	for _, want := range []string{
+		"export HTTP_PROXY=http://127.0.0.1:7890",
+		"export HTTPS_PROXY=http://127.0.0.1:7890",
+		"export ALL_PROXY=socks5h://127.0.0.1:7890",
+		"export NO_PROXY=localhost,127.0.0.1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderUnsetClearsBothCases(t *testing.T) {
+	got := Render(Options{Shell: "bash", Unset: true})
+	for _, want := range []string{
+		"unset http_proxy", "unset HTTP_PROXY",
+		"unset https_proxy", "unset HTTPS_PROXY",
+		"unset all_proxy", "unset ALL_PROXY",
+		"unset no_proxy", "unset NO_PROXY",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestRenderFunctionsBash(t *testing.T) {
+	got := Render(Options{Shell: "bash", Functions: true})
+	for _, want := range []string{
+		"proxy_on()",
+		"proxy_off()",
+		`eval "$(vpnkit env --shell bash)"`,
+		`eval "$(vpnkit env --shell bash --unset)"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	// In functions mode, we must NOT have raw exports — those would set the
+	// vars at .zshrc-load time, before any user choice to enable.
+	if strings.Contains(got, "export http_proxy=") {
+		t.Errorf("functions mode should not emit raw exports:\n%s", got)
+	}
+}
+
+func TestRenderFunctionsFish(t *testing.T) {
+	got := Render(Options{Shell: "fish", Functions: true})
+	for _, want := range []string{
+		"function proxy_on",
+		"function proxy_off",
+		"end",
+		`vpnkit env --shell fish`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
@@ -28,12 +88,10 @@ func TestRenderFish(t *testing.T) {
 	}
 }
 
-func TestRenderUnset(t *testing.T) {
+func TestRenderUnsetSmokeTest(t *testing.T) {
 	got := Render(Options{Shell: "bash", Unset: true})
-	for _, want := range []string{"unset http_proxy", "unset https_proxy", "unset all_proxy", "unset no_proxy"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q: %s", want, got)
-		}
+	if !strings.Contains(got, "unset http_proxy") {
+		t.Errorf("missing unset:\n%s", got)
 	}
 }
 

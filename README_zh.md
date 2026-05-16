@@ -107,7 +107,18 @@ curl https://www.google.com         # 走 mihomo
 eval "$(vpnkit env --unset)"        # 关掉
 ```
 
-`vpnkit env` 同时会写一份 `~/.netrc`（权限 0600），让 curl/git 等读 netrc 的工具也能拿到代理凭据。`--no-netrc` 可跳过。
+输出同时设小写和大写两组（`http_proxy`、`HTTP_PROXY`…），Go 程序和只读大写的库都能识别。
+同时写一份 `~/.netrc`（权限 0600）让 curl/git 读 netrc 也能拿到凭据，`--no-netrc` 跳过。
+
+想要在所有 shell 都用，把 shell 函数追加进 rc 文件一次：
+
+```bash
+vpnkit env --shell zsh --functions >> ~/.zshrc
+exec zsh
+# 之后任何新 shell：
+proxy_on    # 🟢 proxy on
+proxy_off   # 🔴 proxy off
+```
 
 ## 多用户 / 多实例
 

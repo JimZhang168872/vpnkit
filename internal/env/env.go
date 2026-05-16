@@ -12,21 +12,30 @@ import (
 
 // Options drives the renderer.
 type Options struct {
-	Shell   string // bash|zsh|fish; empty = bash
-	Port    int    // mihomo mixed-port; default 7890
-	User    string // proxy basic-auth user (empty = no auth)
-	Pass    string // proxy basic-auth password
-	NoProxy string // optional no_proxy value
-	Unset   bool   // emit unset/erase instead of export/set
+	Shell     string // bash|zsh|fish; empty = bash
+	Port      int    // mihomo mixed-port; default 7890
+	User      string // proxy basic-auth user (empty = no auth)
+	Pass      string // proxy basic-auth password
+	NoProxy   string // optional no_proxy value
+	Unset     bool   // emit unset/erase instead of export/set
+	Functions bool   // emit proxy_on / proxy_off function definitions
 }
 
 // Render returns a snippet suitable for `eval "$(vpnkit env)"`.
+//
+// In Functions mode it emits shell function DEFINITIONS — `proxy_on` /
+// `proxy_off` — which the user appends to their rc file once and then
+// invokes by name. The functions internally `eval` `vpnkit env` so they
+// always pick up the current store creds, not a frozen snapshot.
 func Render(o Options) string {
 	if o.Port == 0 {
 		o.Port = 7890
 	}
 	if o.Shell == "" {
 		o.Shell = "bash"
+	}
+	if o.Functions {
+		return renderFunctions(o.Shell)
 	}
 	if o.Unset {
 		return renderUnset(o.Shell)
@@ -37,28 +46,47 @@ func Render(o Options) string {
 	}
 	httpURL := "http://" + authority
 	socksURL := "socks5h://" + authority
+	// Two cases per variable so Go programs (http.ProxyFromEnvironment) and
+	// uppercase-only readers also pick the proxy up. Cost is 4 extra lines.
+	pairs := []struct {
+		name string
+		val  string
+	}{
+		{"http_proxy", httpURL}, {"HTTP_PROXY", httpURL},
+		{"https_proxy", httpURL}, {"HTTPS_PROXY", httpURL},
+		{"all_proxy", socksURL}, {"ALL_PROXY", socksURL},
+	}
+	if o.NoProxy != "" {
+		pairs = append(pairs,
+			struct {
+				name string
+				val  string
+			}{"no_proxy", o.NoProxy},
+			struct {
+				name string
+				val  string
+			}{"NO_PROXY", o.NoProxy},
+		)
+	}
 	var b strings.Builder
-	switch o.Shell {
-	case "fish":
-		fmt.Fprintf(&b, "set -gx http_proxy %s\n", httpURL)
-		fmt.Fprintf(&b, "set -gx https_proxy %s\n", httpURL)
-		fmt.Fprintf(&b, "set -gx all_proxy %s\n", socksURL)
-		if o.NoProxy != "" {
-			fmt.Fprintf(&b, "set -gx no_proxy %s\n", o.NoProxy)
-		}
-	default: // bash, zsh
-		fmt.Fprintf(&b, "export http_proxy=%s\n", httpURL)
-		fmt.Fprintf(&b, "export https_proxy=%s\n", httpURL)
-		fmt.Fprintf(&b, "export all_proxy=%s\n", socksURL)
-		if o.NoProxy != "" {
-			fmt.Fprintf(&b, "export no_proxy=%s\n", o.NoProxy)
+	for _, p := range pairs {
+		switch o.Shell {
+		case "fish":
+			fmt.Fprintf(&b, "set -gx %s %s\n", p.name, p.val)
+		default:
+			fmt.Fprintf(&b, "export %s=%s\n", p.name, p.val)
 		}
 	}
 	return b.String()
 }
 
 func renderUnset(shell string) string {
-	vars := []string{"http_proxy", "https_proxy", "all_proxy", "no_proxy"}
+	vars := []string{
+		"http_proxy", "HTTP_PROXY",
+		"https_proxy", "HTTPS_PROXY",
+		"all_proxy", "ALL_PROXY",
+		"no_proxy", "NO_PROXY",
+	}
 	var b strings.Builder
 	for _, v := range vars {
 		switch shell {
@@ -69,6 +97,37 @@ func renderUnset(shell string) string {
 		}
 	}
 	return b.String()
+}
+
+// renderFunctions emits proxy_on / proxy_off as shell function definitions.
+// Suggested use:
+//
+//	vpnkit env --shell zsh --functions >> ~/.zshrc
+//
+// Then in any new shell:  proxy_on   (turn on)   /   proxy_off  (turn off)
+func renderFunctions(shell string) string {
+	switch shell {
+	case "fish":
+		return `function proxy_on
+  eval (vpnkit env --shell fish)
+  echo "🟢 proxy on"
+end
+function proxy_off
+  eval (vpnkit env --shell fish --unset)
+  echo "🔴 proxy off"
+end
+`
+	default: // bash, zsh
+		return `proxy_on() {
+  eval "$(vpnkit env --shell ` + shell + `)"
+  echo "🟢 proxy on"
+}
+proxy_off() {
+  eval "$(vpnkit env --shell ` + shell + ` --unset)"
+  echo "🔴 proxy off"
+}
+`
+	}
 }
 
 // WriteNetrc creates or updates the netrc entry for machine `host` with the

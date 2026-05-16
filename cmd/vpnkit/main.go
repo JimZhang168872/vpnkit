@@ -86,6 +86,7 @@ func runEnv(args []string) {
 	noProxy := fs.String("no-proxy", "localhost,127.0.0.1,::1", "comma-separated no_proxy")
 	unset := fs.Bool("unset", false, "emit unset/erase commands instead of export/set")
 	noNetrc := fs.Bool("no-netrc", false, "skip writing ~/.netrc")
+	functions := fs.Bool("functions", false, "emit proxy_on / proxy_off function defs (append once to ~/.zshrc)")
 	_ = fs.Parse(args)
 
 	flavor := "bash"
@@ -112,11 +113,11 @@ func runEnv(args []string) {
 
 	out := env.Render(env.Options{
 		Shell: flavor, Port: port, User: user, Pass: pass,
-		NoProxy: *noProxy, Unset: *unset,
+		NoProxy: *noProxy, Unset: *unset, Functions: *functions,
 	})
 	fmt.Print(out)
 
-	if !*unset && !*noNetrc && user != "" && pass != "" {
+	if !*unset && !*functions && !*noNetrc && user != "" && pass != "" {
 		if home, herr := os.UserHomeDir(); herr == nil {
 			netrcPath := filepath.Join(home, ".netrc")
 			_ = env.WriteNetrc(netrcPath, "127.0.0.1", user, pass)
