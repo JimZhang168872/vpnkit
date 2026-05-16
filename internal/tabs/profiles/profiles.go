@@ -72,7 +72,7 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 
 // View renders the tab.
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Profiles")
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("📋 Profiles")
 	var rows []string
 	rows = append(rows, header, "")
 	if len(m.list) == 0 {
@@ -81,7 +81,7 @@ func (m Model) View(width, height int) string {
 	for i, p := range m.list {
 		marker := "  "
 		if p.Name == m.active {
-			marker = "★ "
+			marker = "⭐ "
 		}
 		row := fmt.Sprintf("%s%-12s  %-40s  nodes=%d", marker, p.Name, truncate(p.URL, 40), p.NodeCount)
 		if i == m.cursor {

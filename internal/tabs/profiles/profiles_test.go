@@ -14,7 +14,7 @@ func TestRendersProfiles(t *testing.T) {
 		{Name: "main", URL: "https://example.com/sub", NodeCount: 3},
 	}, "main")
 	view := m.View(80, 24)
-	if !strings.Contains(view, "main") || !strings.Contains(view, "★") {
+	if !strings.Contains(view, "main") || !strings.Contains(view, "⭐") {
 		t.Errorf("missing label or active marker:\n%s", view)
 	}
 }

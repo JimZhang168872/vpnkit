@@ -80,12 +80,12 @@ func runStatus(out io.Writer, c *api.Client, st *store.Store, jsonOut bool) erro
 		return writeJSON(out, payload)
 	}
 
-	fmt.Fprintf(out, "mihomo  %s   ● running\n", v.Version)
-	fmt.Fprintf(out, "mode    %s\n", cfg.Mode)
-	fmt.Fprintf(out, "ports   mixed=%d   controller=%d\n", cfg.MixedPort, controllerPortFromClient(c))
+	fmt.Fprintf(out, "🟢 mihomo  %s   running\n", v.Version)
+	fmt.Fprintf(out, "🔧 mode    %s\n", cfg.Mode)
+	fmt.Fprintf(out, "🚪 ports   mixed=%d   controller=%d\n", cfg.MixedPort, controllerPortFromClient(c))
 
 	if len(groups) == 0 {
-		fmt.Fprintln(out, "groups  none")
+		fmt.Fprintln(out, "🚀 groups  none")
 	} else {
 		summary := ""
 		for i, g := range groups {
@@ -94,11 +94,11 @@ func runStatus(out io.Writer, c *api.Client, st *store.Store, jsonOut bool) erro
 			}
 			summary += fmt.Sprintf("%s → %s", g.Name, g.Now)
 		}
-		fmt.Fprintf(out, "groups  %d selectable (%s)\n", len(groups), summary)
+		fmt.Fprintf(out, "🚀 groups  %d selectable (%s)\n", len(groups), summary)
 	}
 
 	if profile != nil {
-		fmt.Fprintf(out, "profile %s\n", profile.Name)
+		fmt.Fprintf(out, "📋 profile %s\n", profile.Name)
 	}
 	return nil
 }

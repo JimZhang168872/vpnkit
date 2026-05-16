@@ -29,7 +29,7 @@ const (
 )
 
 var TabNames = [NumTabs]string{
-	"Dashboard", "Proxies", "Profiles", "Connections", "Rules", "Settings",
+	"🏠 Dashboard", "🚀 Proxies", "📋 Profiles", "🔗 Connections", "📜 Rules", "⚙️  Settings",
 }
 
 // Model is the top-level bubbletea model.

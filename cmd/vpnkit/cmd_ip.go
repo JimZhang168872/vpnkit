@@ -64,15 +64,15 @@ func runIP(out io.Writer, c *api.Client, st *store.Store, ipinfoURL string, json
 	rows := []struct {
 		k, v string
 	}{
-		{"ip", asString(info["ip"])},
-		{"country", asString(info["country"])},
-		{"region", asString(info["region"])},
-		{"city", asString(info["city"])},
-		{"org", asString(info["org"])},
-		{"via", via},
+		{"🌍 ip     ", asString(info["ip"])},
+		{"🏳️  country", asString(info["country"])},
+		{"📍 region ", asString(info["region"])},
+		{"🏙️  city   ", asString(info["city"])},
+		{"🏢 org    ", asString(info["org"])},
+		{"🛤️  via    ", via},
 	}
 	for _, r := range rows {
-		fmt.Fprintf(out, "%-8s %s\n", r.k, r.v)
+		fmt.Fprintf(out, "%s  %s\n", r.k, r.v)
 	}
 	return nil
 }

@@ -27,9 +27,9 @@ func (m Model) renderStatusBar(width int) string {
 
 func runDot(d interface{ UpHistoryLast() int64 }) string {
 	if d.UpHistoryLast() > 0 {
-		return "●"
+		return "🟢"
 	}
-	return "○"
+	return "⚪"
 }
 
 func fmtRate(n int64) string {
