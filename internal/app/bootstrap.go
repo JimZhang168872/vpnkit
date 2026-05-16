@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/config"
@@ -68,6 +70,23 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 		}
 		// systemd Install already does enable --now; PID Install is a no-op so we Start.
 		_ = d.Service.Start(ctx)
+		// Give the service a moment to crash on first launch (network blocked, bad config, etc.).
+		time.Sleep(3 * time.Second)
+		status, _ := d.Service.Status(ctx)
+		if !status.Running {
+			var logTail string
+			if reader, err := d.Service.Logs(ctx, false); err == nil && reader != nil {
+				if data, err := io.ReadAll(io.LimitReader(reader, 4096)); err == nil {
+					logTail = string(data)
+				}
+				reader.Close()
+			}
+			return BootstrapProgressMsg{
+				Phase: "error",
+				Note:  "mihomo failed to start (see Service tab logs)",
+				Err:   fmt.Errorf("mihomo not running after start. Last log lines:\n%s", logTail),
+			}
+		}
 		return BootstrapProgressMsg{Phase: "ready"}
 	}
 }

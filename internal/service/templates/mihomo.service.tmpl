@@ -2,6 +2,8 @@
 Description=mihomo proxy core (managed by vpnkit)
 After=network-online.target
 Wants=network-online.target
+StartLimitBurst=3
+StartLimitIntervalSec=30
 
 [Service]
 Type=simple

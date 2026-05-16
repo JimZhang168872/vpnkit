@@ -19,6 +19,12 @@ func TestRenderUnit(t *testing.T) {
 	if !strings.Contains(s, "WantedBy=default.target") {
 		t.Error("missing WantedBy")
 	}
+	if !strings.Contains(s, "StartLimitBurst=3") {
+		t.Error("missing StartLimitBurst")
+	}
+	if !strings.Contains(s, "StartLimitIntervalSec=30") {
+		t.Error("missing StartLimitIntervalSec")
+	}
 }
 
 func TestFakeSystemctlInvocations(t *testing.T) {
