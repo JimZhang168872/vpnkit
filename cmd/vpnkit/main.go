@@ -23,6 +23,24 @@ func main() {
 		case "env":
 			runEnv(os.Args[2:])
 			return
+		case "status":
+			dispatchStatus(os.Args[2:])
+			return
+		case "ip":
+			dispatchIP(os.Args[2:])
+			return
+		case "mode":
+			dispatchMode(os.Args[2:])
+			return
+		case "groups":
+			dispatchGroups(os.Args[2:])
+			return
+		case "nodes":
+			dispatchNodes(os.Args[2:])
+			return
+		case "use":
+			dispatchUse(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(); err != nil {
@@ -61,4 +79,76 @@ func runEnv(args []string) {
 	port := 7890 // Phase 1: mixed-port hardcoded in skeleton; Phase 2 will plumb through store.
 	out := env.Render(env.Options{Shell: flavor, Port: port, NoProxy: *noProxy, Unset: *unset})
 	fmt.Print(out)
+}
+
+func dispatchStatus(args []string) {
+	jsonOut, _ := parseFlags(args)
+	c, st, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit status: %v", err)
+	}
+	if err := runStatus(os.Stdout, c, st, jsonOut); err != nil {
+		dieRuntime("vpnkit status: %v", err)
+	}
+}
+
+func dispatchIP(args []string) {
+	jsonOut, _ := parseFlags(args)
+	c, _, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit ip: %v", err)
+	}
+	if err := runIP(os.Stdout, c, "", jsonOut); err != nil {
+		dieRuntime("vpnkit ip: %v", err)
+	}
+}
+
+func dispatchMode(args []string) {
+	jsonOut, rest := parseFlags(args)
+	c, _, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit mode: %v", err)
+	}
+	if err := runMode(os.Stdout, c, rest, jsonOut); err != nil {
+		dieUserErr("vpnkit mode: %v", err)
+	}
+}
+
+func dispatchGroups(args []string) {
+	jsonOut, _ := parseFlags(args)
+	c, _, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit groups: %v", err)
+	}
+	if err := runGroups(os.Stdout, c, jsonOut); err != nil {
+		dieRuntime("vpnkit groups: %v", err)
+	}
+}
+
+func dispatchNodes(args []string) {
+	jsonOut, rest := parseFlags(args)
+	if len(rest) < 1 {
+		dieUserErr("vpnkit nodes: usage: vpnkit nodes <group> [--json]")
+	}
+	c, _, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit nodes: %v", err)
+	}
+	if err := runNodes(os.Stdout, c, rest[0], jsonOut); err != nil {
+		dieUserErr("vpnkit nodes: %v", err)
+	}
+}
+
+func dispatchUse(args []string) {
+	jsonOut, rest := parseFlags(args)
+	if len(rest) < 2 {
+		dieUserErr("vpnkit use: usage: vpnkit use <group> <node> [--json]")
+	}
+	c, _, err := loadClient()
+	if err != nil {
+		dieRuntime("vpnkit use: %v", err)
+	}
+	if err := runUse(os.Stdout, c, rest[0], rest[1], jsonOut); err != nil {
+		dieUserErr("vpnkit use: %v", err)
+	}
 }
