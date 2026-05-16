@@ -86,6 +86,19 @@ curl https://www.google.com         # traffic now goes through mihomo
 
 Stop the managed mihomo: `systemctl --user stop mihomo` (or `kill $(cat ~/.local/state/vpnkit/mihomo.pid)` in PID mode).
 
+### CLI commands
+
+```bash
+vpnkit status                       # mihomo state, mode, ports, groups, profile
+vpnkit ip                           # exit IP via mihomo proxy (ipinfo.io)
+vpnkit mode [rule|global|direct]    # show or set mode
+vpnkit groups                       # list user-selectable proxy groups
+vpnkit nodes '🚀 Proxy'              # list members + cached delay
+vpnkit use '🚀 Proxy' 'HK-01'        # switch to a specific node
+```
+
+All of the above accept `--json` for scripting. Exit codes: `0` ok, `1` user error, `2` runtime error.
+
 > 📖 **Step-by-step walkthrough**: see [`docs/USAGE.md`](docs/USAGE.md) for a
 > zero-to-first-proxy guide, every TUI page explained, and a primer on
 > `systemctl --user` / `loginctl enable-linger` / `HTTP_PROXY` / `PATH`.
@@ -249,6 +262,19 @@ curl https://www.google.com         # 流量已走 mihomo
 > 📖 **完整教程**：[`docs/USAGE.md`](docs/USAGE.md) 有从零到第一个代理的全流程、
 > 每个 TUI 页面详解，以及 `systemctl --user` / `loginctl enable-linger` /
 > `HTTP_PROXY` / `PATH` 的入门讲解。
+
+### 命令行子命令
+
+```bash
+vpnkit status                       # mihomo 状态、模式、端口、代理组、当前订阅
+vpnkit ip                           # 经 mihomo 代理查出口 IP（ipinfo.io）
+vpnkit mode [rule|global|direct]    # 显示或设置模式
+vpnkit groups                       # 列出用户可选 proxy 组
+vpnkit nodes '🚀 Proxy'              # 列出某组成员 + 缓存延迟
+vpnkit use '🚀 Proxy' 'HK-01'        # 切到指定节点
+```
+
+每条都接受 `--json`，方便脚本化。退出码：`0` 成功，`1` 用户错（参数错/组不存在），`2` 运行时错（mihomo 不可达）。
 
 ### 被墙环境第一次启动
 

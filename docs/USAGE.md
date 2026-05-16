@@ -152,6 +152,28 @@ proxy-off() { eval "$(vpnkit env --shell zsh --unset)"; }
 
 For browsers / GUI apps, configure the system proxy separately (GNOME Settings → Network → Network Proxy → Manual → HTTP/HTTPS proxy = `127.0.0.1:7890`).
 
+#### 1.8 CLI scripting
+
+If you'd rather not stay in the TUI, six top-level subcommands cover everyday
+operations:
+
+```bash
+vpnkit status                            # mihomo state, mode, ports, groups, profile
+vpnkit ip                                # exit IP via mihomo proxy (ipinfo.io)
+vpnkit mode                              # show current mode
+vpnkit mode global                       # switch mode
+vpnkit groups                            # list user-selectable groups
+vpnkit nodes '🚀 Proxy'                   # list members + cached delays
+vpnkit use '🚀 Proxy' 'HK-01'             # switch node
+```
+
+Append `--json` to anything for `jq`-able output. Exit codes: `0` success, `1`
+user error (bad arg, group missing), `2` runtime error (mihomo unreachable).
+
+The `via` line of `vpnkit ip` shows the first user-selectable group's current
+selection (e.g. `🚀 Proxy → HK-01`) — it's a hint about the route, not a
+guarantee, since mihomo's actual chain depends on which rule matched.
+
 ---
 
 ### 2. TUI page-by-page reference
@@ -591,6 +613,24 @@ proxy-off() { eval "$(vpnkit env --shell zsh --unset)"; }
 ```
 
 浏览器 / GUI 应用要单独配系统代理（GNOME 设置 → 网络 → 网络代理 → 手动 → HTTP/HTTPS = `127.0.0.1:7890`）。
+
+#### 1.8 命令行脚本化
+
+如果不想每次都进 TUI，6 个顶层子命令覆盖日常操作：
+
+```bash
+vpnkit status                            # mihomo 状态、模式、端口、组、订阅
+vpnkit ip                                # 经 mihomo 代理查出口 IP
+vpnkit mode                              # 显示当前模式
+vpnkit mode global                       # 切模式
+vpnkit groups                            # 列出用户可选 proxy 组
+vpnkit nodes '🚀 Proxy'                   # 列出某组成员 + 缓存延迟
+vpnkit use '🚀 Proxy' 'HK-01'             # 切到指定节点
+```
+
+任何子命令加 `--json` 就出 `jq` 可读输出。退出码：`0` 成功、`1` 用户错（参数错、组不存在）、`2` 运行时错（mihomo 不可达）。
+
+`vpnkit ip` 的 `via` 行是"第一个用户可选组的当前选中"（如 `🚀 Proxy → HK-01`），只是路由提示，不保证就是这次请求实际走的链 — mihomo 真正用哪条要看规则匹配。
 
 ---
 
