@@ -17,12 +17,18 @@ func (m Model) renderStatusBar(width int) string {
 	if m.flash != "" {
 		right = " " + m.flash + " "
 	}
-	gapLen := width - lipgloss.Width(left) - lipgloss.Width(right)
+	// Update badge sits between the dashboard segment and the right-side
+	// help/flash, dimmed so it doesn't fight for attention.
+	badge := ""
+	if m.updateBadge != "" {
+		badge = lipgloss.NewStyle().Faint(true).Render(" " + m.updateBadge + " ")
+	}
+	gapLen := width - lipgloss.Width(left) - lipgloss.Width(badge) - lipgloss.Width(right)
 	if gapLen < 0 {
 		gapLen = 0
 	}
 	gap := strings.Repeat(" ", gapLen)
-	return lipgloss.NewStyle().Reverse(true).Width(width).Render(left + gap + right)
+	return lipgloss.NewStyle().Reverse(true).Width(width).Render(left + badge + gap + right)
 }
 
 func runDot(d interface{ UpHistoryLast() int64 }) string {

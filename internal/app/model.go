@@ -57,6 +57,9 @@ type Model struct {
 	// regeneration). May be nil in tests.
 	applyCfg func(context.Context) error
 	flash    string // single-line transient
+	// updateBadge is set when pollUpdate finds a new release. Format is the
+	// short string we drop into the status bar; e.g. "⚡ v0.9.0".
+	updateBadge string
 }
 
 // NewModel constructs the initial model. client and mgr may be nil during tests.

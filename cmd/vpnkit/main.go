@@ -58,9 +58,12 @@ func main() {
 		case "uninstall":
 			dispatchUninstall(os.Args[2:])
 			return
+		case "update":
+			dispatchUpdate(os.Args[2:])
+			return
 		}
 	}
-	if err := app.Run(); err != nil {
+	if err := app.Run(version); err != nil {
 		fmt.Fprintln(os.Stderr, "vpnkit:", err)
 		os.Exit(1)
 	}
@@ -213,6 +216,25 @@ func dispatchUninstall(args []string) {
 	}
 	if err := runUninstall(os.Stdout, opts); err != nil {
 		dieRuntime("vpnkit uninstall: %v", err)
+	}
+}
+
+func dispatchUpdate(args []string) {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	check := fs.Bool("check", false, "only print what's available, don't install")
+	vpnkitOnly := fs.Bool("vpnkit-only", false, "only update vpnkit itself, leave mihomo alone")
+	mihomoOnly := fs.Bool("mihomo-only", false, "only update mihomo core, leave vpnkit alone")
+	yes := fs.Bool("yes", false, "skip interactive confirmation")
+	_ = fs.Parse(args)
+	p := paths.Resolve()
+	st, err := store.Load(p.VpnkitConfigFile())
+	if err != nil {
+		dieRuntime("vpnkit update: %v", err)
+	}
+	if err := runUpdate(os.Stdout, updateOptions{
+		Check: *check, VpnkitOnly: *vpnkitOnly, MihomoOnly: *mihomoOnly, Yes: *yes,
+	}, st, version); err != nil {
+		dieRuntime("vpnkit update: %v", err)
 	}
 }
 

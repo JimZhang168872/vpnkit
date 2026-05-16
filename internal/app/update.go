@@ -246,6 +246,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.Err != nil {
 			m.flash = "❌ " + v.Name + ": " + v.Err.Error()
 		}
+	case UpdateAvailableMsg:
+		// Build the badge string from whatever piece is upgradable. Keep it
+		// short — the status bar is tight.
+		switch {
+		case v.Info.VpnkitNeedsUpdate && v.Info.MihomoNeedsUpdate:
+			m.updateBadge = "⚡ vpnkit " + v.Info.VpnkitLatest + " + mihomo " + v.Info.MihomoLatest
+		case v.Info.VpnkitNeedsUpdate:
+			m.updateBadge = "⚡ vpnkit " + v.Info.VpnkitLatest + " (run `vpnkit update`)"
+		case v.Info.MihomoNeedsUpdate:
+			m.updateBadge = "⚡ mihomo " + v.Info.MihomoLatest + " (run `vpnkit update`)"
+		}
 	}
 	return m, cmd
 }

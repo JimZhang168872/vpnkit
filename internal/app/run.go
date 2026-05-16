@@ -20,8 +20,10 @@ import (
 	tabsettings "vpnkit/internal/tabs/settings"
 )
 
-// Run launches the vpnkit TUI. Returns the bubbletea exit error.
-func Run() error {
+// Run launches the vpnkit TUI. `version` is the current vpnkit binary
+// version (from main.version / ldflags); passing empty/"dev" disables the
+// startup update check. Returns the bubbletea exit error.
+func Run(version string) error {
 	p := paths.Resolve()
 	if err := p.Ensure(); err != nil {
 		return fmt.Errorf("paths: %w", err)
@@ -111,6 +113,7 @@ func Run() error {
 		}
 		prog.Send(msg)
 	}()
+	go pollUpdate(prog, version, p.MihomoBinary(), st.Cfg.ReleaseMirror)
 	go streamTraffic(prog, client)
 	go pollVersion(prog, client)
 	go pollProxies(prog, client)
