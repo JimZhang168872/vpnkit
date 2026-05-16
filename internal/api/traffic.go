@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	"vpnkit/internal/netx"
 )
 
 // Traffic is one /traffic sample from mihomo (bytes per second since last tick).
@@ -22,7 +24,9 @@ func (c *Client) Traffic(ctx context.Context) (<-chan Traffic, <-chan error) {
 	go func() {
 		defer close(out)
 		defer close(errCh)
-		client := &http.Client{Timeout: 0} // long-lived
+		// Control-plane: bypass env proxy. Timeout=0 because the stream lives
+		// as long as ctx is alive.
+		client := netx.NoProxyClient(0)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/traffic", nil)
 		if err != nil {
 			errCh <- err

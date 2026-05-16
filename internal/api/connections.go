@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
+	"vpnkit/internal/netx"
 )
 
 // ConnectionsSnapshot is one /connections tick.
@@ -64,8 +65,11 @@ func (c *Client) Connections(ctx context.Context) (<-chan ConnectionsSnapshot, <
 		if c.Secret != "" {
 			header["Authorization"] = []string{"Bearer " + c.Secret}
 		}
+		// Control-plane: explicit no-proxy HTTPClient — coder/websocket would
+		// otherwise use http.DefaultTransport which honors HTTP_PROXY env.
 		conn, _, err := websocket.Dial(ctx, wsURL+"/connections", &websocket.DialOptions{
 			HTTPHeader: header,
+			HTTPClient: netx.NoProxyClient(0),
 		})
 		if err != nil {
 			errCh <- err

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"vpnkit/internal/netx"
 )
 
 // Asset is one GitHub release artifact.
@@ -46,7 +48,10 @@ func NewReleaseClient(baseURL, token string) *ReleaseClient {
 	return &ReleaseClient{
 		BaseURL: baseURL,
 		Token:   token,
-		HTTP:    &http.Client{Timeout: 10 * time.Second},
+		// Control-plane: never honor user env HTTP_PROXY — this client runs
+		// before mihomo is up; routing it through 127.0.0.1:7890 would
+		// deadlock first-launch bootstrap.
+		HTTP: netx.NoProxyClient(10 * time.Second),
 	}
 }
 

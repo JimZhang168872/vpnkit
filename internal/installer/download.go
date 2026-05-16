@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"vpnkit/internal/netx"
 )
 
 // ProgressFunc reports bytes downloaded so far and the total expected (-1 if unknown).
@@ -27,8 +29,8 @@ func Download(url, expectedSHA, dst string, progress ProgressFunc) error {
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Do(req)
+	// Control-plane: bypass env proxy (see internal/netx for the rule).
+	resp, err := netx.NoProxyClient(5 * time.Minute).Do(req)
 	if err != nil {
 		return err
 	}

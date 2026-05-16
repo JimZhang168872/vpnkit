@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"vpnkit/internal/netx"
 )
 
 // vpnkitAssetName returns the tarball name goreleaser produces for `version`
@@ -45,7 +47,8 @@ func DownloadAndApplyVpnkit(url, expectedSHA, dstPath string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := (&http.Client{Timeout: 5 * time.Minute}).Do(req)
+	// Control-plane: bypass env proxy (we may be upgrading mihomo itself).
+	resp, err := netx.NoProxyClient(5 * time.Minute).Do(req)
 	if err != nil {
 		return err
 	}

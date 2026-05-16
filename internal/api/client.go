@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"vpnkit/internal/netx"
 )
 
 // Client is a thread-safe mihomo external-controller client.
@@ -25,7 +27,11 @@ func New(baseURL, secret string) *Client {
 	return &Client{
 		BaseURL: baseURL,
 		Secret:  secret,
-		HTTP:    &http.Client{Timeout: 5 * time.Second},
+		// Control-plane: bypass env proxy. We talk to mihomo on 127.0.0.1,
+		// and the user often has HTTP_PROXY set pointing at the very mihomo
+		// we're calling — routing through it would loop or fail when mihomo
+		// is still bootstrapping.
+		HTTP: netx.NoProxyClient(5 * time.Second),
 	}
 }
 
