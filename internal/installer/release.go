@@ -52,12 +52,22 @@ func NewReleaseClient(baseURL, token string) *ReleaseClient {
 
 // Latest fetches MetaCubeX/mihomo's latest release.
 func (c *ReleaseClient) Latest() (Release, error) {
-	return c.byPath("/repos/MetaCubeX/mihomo/releases/latest")
+	return c.LatestForRepo("MetaCubeX/mihomo")
 }
 
-// ByTag fetches a specific tagged release.
+// ByTag fetches a specific tagged release of MetaCubeX/mihomo.
 func (c *ReleaseClient) ByTag(tag string) (Release, error) {
-	return c.byPath(fmt.Sprintf("/repos/MetaCubeX/mihomo/releases/tags/%s", tag))
+	return c.ByTagForRepo("MetaCubeX/mihomo", tag)
+}
+
+// LatestForRepo fetches `<owner>/<repo>`'s latest non-prerelease release.
+func (c *ReleaseClient) LatestForRepo(repo string) (Release, error) {
+	return c.byPath(fmt.Sprintf("/repos/%s/releases/latest", repo))
+}
+
+// ByTagForRepo fetches a specific tag.
+func (c *ReleaseClient) ByTagForRepo(repo, tag string) (Release, error) {
+	return c.byPath(fmt.Sprintf("/repos/%s/releases/tags/%s", repo, tag))
 }
 
 func (c *ReleaseClient) byPath(path string) (Release, error) {
