@@ -48,6 +48,7 @@ func Run() error {
 		ControllerPort:   st.Cfg.ControllerPort,
 		ControllerSecret: st.Cfg.ControllerSecret,
 		RuleTemplate:     st.Cfg.RuleTemplate,
+		ReleaseMirror:    st.Cfg.ReleaseMirror,
 	})
 	profMgr.Load(toProfilesProfiles(st.Cfg.Profiles), st.Cfg.ActiveProfile)
 	profMgr.SetOnChange(func() {

@@ -45,6 +45,23 @@ func TestAssembleMergesEverything(t *testing.T) {
 	}
 }
 
+func TestAssembleAppliesReleaseMirror(t *testing.T) {
+	out, err := Assemble(AssembleInput{
+		Result:           Result{Source: "uri", Proxies: nil},
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		RuleTemplate:     "minimal",
+		ReleaseMirror:    "https://ghproxy.com/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "ghproxy.com/https://github.com") {
+		t.Errorf("missing mirror-prefixed geox-url:\n%s", out)
+	}
+}
+
 func TestAssembleKeepsExistingGroupsFromClash(t *testing.T) {
 	r := Result{
 		Source: "clash",

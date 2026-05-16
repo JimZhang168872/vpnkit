@@ -55,6 +55,7 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 				ControllerPort:   d.Store.Cfg.ControllerPort,
 				ControllerSecret: d.Store.Cfg.ControllerSecret,
 				RuleTemplate:     d.Store.Cfg.RuleTemplate,
+				ReleaseMirror:    d.Store.Cfg.ReleaseMirror,
 			})
 			if err != nil {
 				return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("config: %w", err)}

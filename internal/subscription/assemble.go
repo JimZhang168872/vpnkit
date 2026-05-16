@@ -20,6 +20,7 @@ type AssembleInput struct {
 	LogLevel         string
 	RuleTemplate     string
 	PatchPath        string
+	ReleaseMirror    string
 }
 
 // Assemble produces the final config.yaml bytes by combining:
@@ -71,6 +72,10 @@ func Assemble(in AssembleInput) ([]byte, error) {
 		doc[k] = v
 	}
 
+	if in.ReleaseMirror != "" {
+		doc["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
+	}
+
 	if in.PatchPath != "" {
 		if err := patch.Apply(in.PatchPath, doc); err != nil {
 			return nil, fmt.Errorf("patch: %w", err)
@@ -101,6 +106,23 @@ func groupsToAny(in []map[string]any) []any {
 		out[i] = g
 	}
 	return out
+}
+
+// mihomoGeoxURL returns the geox-url map with each GitHub URL routed through mirror.
+func mihomoGeoxURL(mirror string) map[string]string {
+	if mirror == "" {
+		return nil
+	}
+	if mirror[len(mirror)-1] != '/' {
+		mirror += "/"
+	}
+	base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+	return map[string]string{
+		"geoip":   mirror + base + "/geoip.metadb",
+		"mmdb":    mirror + base + "/country.mmdb",
+		"geosite": mirror + base + "/geosite.dat",
+		"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+	}
 }
 
 var _ proto.Proxy

@@ -46,6 +46,35 @@ func TestBuildSkeletonUnknownTemplate(t *testing.T) {
 	}
 }
 
+func TestBuildSkeletonAppliesReleaseMirror(t *testing.T) {
+	yaml, err := BuildSkeleton(SkeletonInput{
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "x",
+		RuleTemplate:     "minimal",
+		ReleaseMirror:    "https://ghproxy.com/",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(yaml)
+	if !strings.Contains(s, "geox-url") {
+		t.Errorf("expected geox-url block:\n%s", s)
+	}
+	if !strings.Contains(s, "https://ghproxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb") {
+		t.Errorf("geoip URL not mirror-prefixed:\n%s", s)
+	}
+}
+
+func TestBuildSkeletonNoMirror(t *testing.T) {
+	yaml, _ := BuildSkeleton(SkeletonInput{
+		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "x", RuleTemplate: "minimal",
+	})
+	if strings.Contains(string(yaml), "geox-url") {
+		t.Errorf("geox-url should be absent when mirror is unset:\n%s", string(yaml))
+	}
+}
+
 func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {

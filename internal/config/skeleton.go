@@ -15,6 +15,7 @@ type SkeletonInput struct {
 	ControllerSecret string
 	LogLevel         string
 	RuleTemplate     string
+	ReleaseMirror    string
 }
 
 // BuildSkeleton assembles a complete (proxy-less) config.yaml suitable as a starting
@@ -60,6 +61,10 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 		base[k] = v
 	}
 
+	if in.ReleaseMirror != "" {
+		base["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
+	}
+
 	out, err := yaml.Marshal(base)
 	if err != nil {
 		return nil, err
@@ -71,4 +76,21 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 		`\U0001F6D1`, "🛑",
 	).Replace(string(out))
 	return []byte(result), nil
+}
+
+// mihomoGeoxURL returns the geox-url map with each GitHub URL routed through mirror.
+func mihomoGeoxURL(mirror string) map[string]string {
+	if mirror == "" {
+		return nil
+	}
+	if mirror[len(mirror)-1] != '/' {
+		mirror += "/"
+	}
+	base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+	return map[string]string{
+		"geoip":   mirror + base + "/geoip.metadb",
+		"mmdb":    mirror + base + "/country.mmdb",
+		"geosite": mirror + base + "/geosite.dat",
+		"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+	}
 }

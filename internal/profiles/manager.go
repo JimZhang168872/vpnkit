@@ -29,6 +29,7 @@ type Config struct {
 	ControllerSecret string
 	MixedPort        int
 	RuleTemplate     string
+	ReleaseMirror    string
 }
 
 // Manager holds the active profile list and writes config files.
@@ -168,6 +169,7 @@ func (m *Manager) Update(ctx context.Context, name string) (int, error) {
 		ControllerSecret: cfg.ControllerSecret,
 		RuleTemplate:     cfg.RuleTemplate,
 		PatchPath:        cfg.PatchPath,
+		ReleaseMirror:    cfg.ReleaseMirror,
 	})
 	if err != nil {
 		return 0, err
