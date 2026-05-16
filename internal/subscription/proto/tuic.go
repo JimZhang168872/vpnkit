@@ -3,29 +3,29 @@ package proto
 import (
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 )
 
 func init() { Register("tuic", parseTUIC) }
 
 func parseTUIC(uri string) (Proxy, error) {
-	u, err := url.Parse(uri)
+	parts, err := splitProxyURI(uri)
 	if err != nil {
 		return nil, fmt.Errorf("tuic: %w", err)
 	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		return nil, err
+	// userinfo is "uuid:password"; split on the FIRST ':' so that ':' inside
+	// the password stays with the password.
+	uuid, pw := parts.UserInfo, ""
+	if i := strings.Index(parts.UserInfo, ":"); i >= 0 {
+		uuid = parts.UserInfo[:i]
+		pw, _ = url.PathUnescape(parts.UserInfo[i+1:])
 	}
-	uuid := u.User.Username()
-	pw, _ := u.User.Password()
-	q := u.Query()
+	q := parts.Query
 	p := Proxy{
-		"name":     u.Fragment,
+		"name":     parts.Fragment,
 		"type":     "tuic",
-		"server":   u.Hostname(),
-		"port":     port,
+		"server":   parts.Host,
+		"port":     parts.Port,
 		"uuid":     uuid,
 		"password": pw,
 	}

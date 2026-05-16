@@ -3,29 +3,24 @@ package proto
 import (
 	"fmt"
 	"net/url"
-	"strconv"
 )
 
 func init() { Register("trojan", parseTrojan) }
 
 func parseTrojan(uri string) (Proxy, error) {
-	u, err := url.Parse(uri)
+	parts, err := splitProxyURI(uri)
 	if err != nil {
 		return nil, fmt.Errorf("trojan: %w", err)
 	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		return nil, fmt.Errorf("trojan: port: %w", err)
-	}
-	pw, _ := url.PathUnescape(u.User.Username())
-	q := u.Query()
+	pw, _ := url.PathUnescape(parts.UserInfo)
 	p := Proxy{
-		"name":     u.Fragment,
+		"name":     parts.Fragment,
 		"type":     "trojan",
-		"server":   u.Hostname(),
-		"port":     port,
+		"server":   parts.Host,
+		"port":     parts.Port,
 		"password": pw,
 	}
+	q := parts.Query
 	if sni := q.Get("sni"); sni != "" {
 		p["sni"] = sni
 	} else if peer := q.Get("peer"); peer != "" {

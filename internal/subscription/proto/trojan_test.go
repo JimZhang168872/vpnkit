@@ -36,3 +36,18 @@ func TestTrojanAllowInsecure(t *testing.T) {
 		t.Errorf("skip-cert-verify: %v", p["skip-cert-verify"])
 	}
 }
+
+// TestTrojan_PasswordContainsSlash covers password values with "/".
+// url.Parse misinterprets "/" in authority; parser must tolerate it.
+func TestTrojan_PasswordContainsSlash(t *testing.T) {
+	uri := "trojan://CBAI0bv97b21KRjXw3fDArlnW/ymWTur@jim.gulujili.xyz:443?sni=jim.gulujili.xyz#TJ-slash"
+	p, err := Parse(uri)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if p["type"] != "trojan" || p["server"] != "jim.gulujili.xyz" || p["port"] != 443 ||
+		p["password"] != "CBAI0bv97b21KRjXw3fDArlnW/ymWTur" || p["name"] != "TJ-slash" ||
+		p["sni"] != "jim.gulujili.xyz" {
+		t.Errorf("got %+v", p)
+	}
+}

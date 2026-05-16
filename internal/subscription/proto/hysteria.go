@@ -13,32 +13,28 @@ func init() {
 }
 
 func parseHysteria2(uri string) (Proxy, error) {
-	u, err := url.Parse(uri)
+	parts, err := splitProxyURI(uri)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("hysteria2: %w", err)
 	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil {
-		return nil, err
-	}
-	q := u.Query()
+	password, _ := url.PathUnescape(parts.UserInfo)
 	p := Proxy{
-		"name":     u.Fragment,
+		"name":     parts.Fragment,
 		"type":     "hysteria2",
-		"server":   u.Hostname(),
-		"port":     port,
-		"password": u.User.Username(),
+		"server":   parts.Host,
+		"port":     parts.Port,
+		"password": password,
 	}
-	if v := q.Get("obfs"); v != "" {
+	if v := parts.Query.Get("obfs"); v != "" {
 		p["obfs"] = v
-		if pwd := q.Get("obfs-password"); pwd != "" {
+		if pwd := parts.Query.Get("obfs-password"); pwd != "" {
 			p["obfs-password"] = pwd
 		}
 	}
-	if sni := q.Get("sni"); sni != "" {
+	if sni := parts.Query.Get("sni"); sni != "" {
 		p["sni"] = sni
 	}
-	if q.Get("insecure") == "1" {
+	if parts.Query.Get("insecure") == "1" {
 		p["skip-cert-verify"] = true
 	}
 	return p, nil
@@ -78,5 +74,3 @@ func parseHysteriaV1(uri string) (Proxy, error) {
 	}
 	return p, nil
 }
-
-var _ = fmt.Errorf
