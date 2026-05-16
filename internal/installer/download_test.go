@@ -15,6 +15,18 @@ import (
 	"vpnkit/internal/netx"
 )
 
+// Clear proxy env leaks from the parent shell — SmartClient inside Download
+// would otherwise route httptest URLs through a still-listening mihomo on
+// 127.0.0.1:7890, garbling the test fixtures.
+func init() {
+	for _, k := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy",
+	} {
+		_ = os.Unsetenv(k)
+	}
+}
+
 func TestDownloadAndVerify(t *testing.T) {
 	payload := []byte("hello mihomo")
 	var buf bytes.Buffer
@@ -32,7 +44,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	dst := filepath.Join(t.TempDir(), "mihomo")
 	progresses := []int64{}
-	_, err := Download(srv.URL+"/mihomo.gz", expected, dst, "", func(n, total int64) {
+	_, err := Download(srv.URL+"/mihomo.gz", expected, dst, "", nil, func(n, total int64) {
 		progresses = append(progresses, n)
 	})
 	if err != nil {
@@ -62,7 +74,7 @@ func TestDownloadSHAMismatch(t *testing.T) {
 	defer srv.Close()
 
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	_, err := Download(srv.URL, "00deadbeef", dst, "", nil)
+	_, err := Download(srv.URL, "00deadbeef", dst, "", nil, nil)
 	if err == nil {
 		t.Fatal("expected SHA mismatch error")
 	}
@@ -95,7 +107,7 @@ func TestDownloadHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	if _, err := Download(srv.URL, "", dst, "", nil); err == nil {
+	if _, err := Download(srv.URL, "", dst, "", nil, nil); err == nil {
 		t.Fatal("expected error")
 	}
 }

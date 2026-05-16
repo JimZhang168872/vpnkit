@@ -14,14 +14,27 @@ import (
 // services tried when neither the user-preferred mirror nor direct github.com
 // works. Order matters — first entry tried first.
 //
-// These services come and go; the chain is intentionally short so we fail
-// fast if everything is down. SHA256 verification at the call site is the
-// real safety belt against compromise.
+// These services come and go; the chain is intentionally short and the
+// onAttempt callback at the call site reports each attempt's outcome in real
+// time so users can pick a working one themselves when the list rots.
+// SHA256 verification at the call site is the safety belt against compromise.
+//
+// Last verified (probe from inside China): see commit message of the change
+// that touched this list. If most entries here time out, look at the failure
+// log printed by `vpnkit update` to discover which is currently up and set
+// release_mirror manually.
 var BuiltinGitHubMirrors = []string{
+	"https://github.91chi.fun/", // 1.7s HEAD direct → 302 (verified 2026-05-16)
+	"https://ghproxy.com/",      // 5s HEAD → 301 (verified 2026-05-16)
 	"https://mirror.ghproxy.com/",
-	"https://ghproxy.com/",
-	"https://ghp.ci/",
+	"https://ghps.cc/",
+	"https://hub.gitmirror.com/",
 }
+
+// OnAttempt is called once per chain entry as it succeeds or fails. mirror is
+// "" for direct github; err is nil on success. Useful for streaming progress
+// to the user so a long fallback chain doesn't look like a hang.
+type OnAttempt func(mirror string, err error)
 
 // OpenWithFallback fetches githubURL through a chain of candidate endpoints
 // and returns the body of the first one that responds with a 2xx status.
@@ -31,36 +44,43 @@ var BuiltinGitHubMirrors = []string{
 //  2. direct githubURL — fastest path outside the GFW
 //  3. each entry of builtinMirrors — public accelerator fallback
 //
-// Returns the body, the mirror prefix that won ("" for direct), and any error
-// from the LAST attempt. Callers should persist the winning mirror so future
-// downloads start with the known-good endpoint.
+// onAttempt (optional) receives every attempt's outcome in real time.
 //
-// Per-attempt connect timeout caps how long we hang on any single dead mirror.
+// On total failure the returned error is `errors.Join`-aggregated so every
+// individual attempt's reason is visible — single-lastErr was a footgun that
+// hid 3 timeouts and surfaced only "ghp.ci: no such host" to users.
+//
+// Per-attempt timeout caps how long we hang on any single dead mirror.
 //
 // Encoded principle: GitHub artifact downloads must transparently fall through
-// a chain of known-good endpoints; cache the winner. Adding a new artifact
-// download means using this helper, not inventing a new naked http.Get.
+// a chain of known-good endpoints; report each attempt; cache the winner.
+// Adding a new artifact download means using this helper, not inventing a new
+// naked http.Get.
 func OpenWithFallback(
 	ctx context.Context,
 	githubURL string,
 	preferredMirror string,
 	builtinMirrors []string,
 	perAttemptTimeout time.Duration,
+	onAttempt OnAttempt,
 ) (io.ReadCloser, string, error) {
 	chain := buildChain(preferredMirror, builtinMirrors)
-	var lastErr error
+	var attemptErrs []error
 	for _, mirror := range chain {
 		url := applyMirrorPrefix(githubURL, mirror)
 		body, err := fetch(ctx, url, perAttemptTimeout)
+		if onAttempt != nil {
+			onAttempt(mirror, err)
+		}
 		if err == nil {
 			return body, mirror, nil
 		}
-		lastErr = fmt.Errorf("%s: %w", labelMirror(mirror), err)
+		attemptErrs = append(attemptErrs, fmt.Errorf("%s: %w", labelMirror(mirror), err))
 	}
-	if lastErr == nil {
-		lastErr = errors.New("OpenWithFallback: empty chain")
+	if len(attemptErrs) == 0 {
+		return nil, "", errors.New("OpenWithFallback: empty chain")
 	}
-	return nil, "", lastErr
+	return nil, "", errors.Join(attemptErrs...)
 }
 
 // buildChain merges preferred + direct + builtins, dedupes preserving order.
@@ -96,7 +116,10 @@ func fetch(ctx context.Context, url string, timeout time.Duration) (io.ReadClose
 		cancel()
 		return nil, err
 	}
-	client := NoProxyClient(0) // request-scoped ctx already bounds the attempt
+	// Use SmartClient so a running mihomo (env proxy alive) is the preferred
+	// path, while bootstrap with a dead proxy gracefully degrades to direct
+	// + mirror chain. See SmartClient docstring for the full rule.
+	client := SmartClient(0) // request-scoped ctx already bounds the attempt
 	resp, err := client.Do(req)
 	if err != nil {
 		cancel()

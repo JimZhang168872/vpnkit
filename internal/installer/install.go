@@ -2,16 +2,19 @@ package installer
 
 import (
 	"fmt"
+
+	"vpnkit/internal/netx"
 )
 
 // Options control an Install call.
 type Options struct {
-	APIBase     string // override GitHub API base (for tests / enterprise)
-	Token       string // GITHUB_TOKEN
-	Mirror      string // optional URL prefix applied to release download URLs
-	Dst         string // absolute destination path for mihomo binary
-	Version     string // empty = latest
-	ForceCompat *bool  // nil = autodetect; true/false = override
+	APIBase     string         // override GitHub API base (for tests / enterprise)
+	Token       string         // GITHUB_TOKEN
+	Mirror      string         // optional URL prefix applied to release download URLs
+	Dst         string         // absolute destination path for mihomo binary
+	Version     string         // empty = latest
+	ForceCompat *bool          // nil = autodetect; true/false = override
+	OnAttempt   netx.OnAttempt // per-mirror callback; nil = silent
 }
 
 // Result describes a successful install.
@@ -64,7 +67,7 @@ func Install(opts Options, progress ProgressFunc) (Result, error) {
 		compat = !compat
 	}
 
-	winningMirror, derr := Download(url, "", opts.Dst, opts.Mirror, progress)
+	winningMirror, derr := Download(url, "", opts.Dst, opts.Mirror, opts.OnAttempt, progress)
 	if derr != nil {
 		return Result{}, fmt.Errorf("install: download: %w", derr)
 	}

@@ -38,17 +38,18 @@ func CurrentArch() string {
 // fallback chain (preferredMirror → direct → public mirrors), optionally
 // verifies SHA256 of the raw tarball stream against `expectedSHA`
 // (hex; empty = skip), extracts the inner `vpnkit` file, and atomically
-// replaces `dstPath`. Returns the mirror that actually served the bytes
-// ("" = direct) so callers can persist it.
+// replaces `dstPath`. onAttempt (optional) receives each attempt's outcome.
+// Returns the mirror that actually served the bytes ("" = direct).
 //
 // On SHA mismatch the existing binary at dstPath is left untouched.
-func DownloadAndApplyVpnkit(githubURL, expectedSHA, dstPath, preferredMirror string) (string, error) {
+func DownloadAndApplyVpnkit(githubURL, expectedSHA, dstPath, preferredMirror string, onAttempt netx.OnAttempt) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	body, winningMirror, err := netx.OpenWithFallback(
 		ctx, githubURL, preferredMirror,
 		netx.BuiltinGitHubMirrors,
 		15*time.Second,
+		onAttempt,
 	)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", githubURL, err)

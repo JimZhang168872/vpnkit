@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"vpnkit/internal/installer"
+	"vpnkit/internal/netx"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
@@ -139,9 +140,10 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 		_ = svc.Stop(ctx)
 	}
 	res, err := installer.Install(installer.Options{
-		Dst:     p.MihomoBinary(),
-		Mirror:  st.Cfg.ReleaseMirror,
-		Version: version,
+		Dst:       p.MihomoBinary(),
+		Mirror:    st.Cfg.ReleaseMirror,
+		Version:   version,
+		OnAttempt: mirrorAttemptPrinter(out),
 	}, nil)
 	if err != nil {
 		return err
@@ -169,13 +171,43 @@ func upgradeVpnkit(out io.Writer, p paths.XDG, st *store.Store, version string) 
 	tarball := fmt.Sprintf("vpnkit_%s_linux_%s.tar.gz", strings.TrimPrefix(version, "v"), arch)
 	githubURL := fmt.Sprintf("https://github.com/JimZhang168872/vpnkit/releases/download/%s/%s", version, tarball)
 	fmt.Fprintf(out, "📥 downloading vpnkit %s (%s) …\n", version, tarball)
-	winningMirror, err := updater.DownloadAndApplyVpnkit(githubURL, "", dst, st.Cfg.ReleaseMirror)
+	winningMirror, err := updater.DownloadAndApplyVpnkit(githubURL, "", dst, st.Cfg.ReleaseMirror, mirrorAttemptPrinter(out))
 	if err != nil {
 		return err
 	}
 	cacheWinningMirror(out, st, winningMirror)
 	fmt.Fprintf(out, "✅ vpnkit %s → %s\n", version, dst)
 	return nil
+}
+
+// mirrorAttemptPrinter returns an OnAttempt callback that prints each chain
+// attempt's outcome to out as the download walks its fallback chain. So a
+// user staring at "📥 downloading mihomo …" sees in real time which mirror
+// is being tried, why each is failing, and which one finally worked —
+// instead of waiting silently for ~60 s and getting a single misleading
+// "ghp.ci: no such host" at the end.
+func mirrorAttemptPrinter(out io.Writer) netx.OnAttempt {
+	return func(mirror string, err error) {
+		label := mirror
+		if label == "" {
+			label = "github direct"
+		} else {
+			label = strings.TrimSuffix(strings.TrimPrefix(label, "https://"), "/")
+		}
+		if err == nil {
+			fmt.Fprintf(out, "   ✓ %s\n", label)
+			return
+		}
+		// Trim verbose net error wrapping for a readable single line.
+		msg := err.Error()
+		if i := strings.Index(msg, ": "); i >= 0 && i < 60 {
+			// drop one layer of wrapping if any
+		}
+		if len(msg) > 100 {
+			msg = msg[:100] + "…"
+		}
+		fmt.Fprintf(out, "   ✗ %s — %s\n", label, msg)
+	}
 }
 
 // cacheWinningMirror remembers a non-empty mirror that just served a download

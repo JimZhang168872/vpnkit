@@ -48,10 +48,12 @@ func NewReleaseClient(baseURL, token string) *ReleaseClient {
 	return &ReleaseClient{
 		BaseURL: baseURL,
 		Token:   token,
-		// Control-plane: never honor user env HTTP_PROXY — this client runs
-		// before mihomo is up; routing it through 127.0.0.1:7890 would
-		// deadlock first-launch bootstrap.
-		HTTP: netx.NoProxyClient(10 * time.Second),
+		// SmartClient: probe env proxy and honor it when alive. This makes
+		// `vpnkit update` work for users who have `proxy_on` set (mihomo
+		// can reach api.github.com via their proxy chain) while still
+		// degrading to NoProxyClient when the proxy isn't running yet
+		// (first-launch bootstrap — keeps v0.9.1 anti-deadlock).
+		HTTP: netx.SmartClient(10 * time.Second),
 	}
 }
 

@@ -14,6 +14,19 @@ import (
 	"testing"
 )
 
+// Clear any proxy env vars that may have leaked in from the parent shell
+// (a developer with `proxy_on` active). Without this, SmartClient inside
+// DownloadAndApplyVpnkit would route httptest URLs through 127.0.0.1:7890
+// and produce garbled "responses" or sha mismatches.
+func init() {
+	for _, k := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "all_proxy",
+	} {
+		_ = os.Unsetenv(k)
+	}
+}
+
 // makeTarGz wraps a single "vpnkit" file with `body` content into a tarball
 // matching the layout produced by goreleaser.
 func makeTarGz(t *testing.T, body []byte) []byte {
@@ -56,7 +69,7 @@ func TestApplyVpnkitReplacesBinary(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := DownloadAndApplyVpnkit(srv.URL, sumHex, dst, ""); err != nil {
+	if _, err := DownloadAndApplyVpnkit(srv.URL, sumHex, dst, "", nil); err != nil {
 		t.Fatalf("DownloadAndApplyVpnkit: %v", err)
 	}
 
@@ -84,7 +97,7 @@ func TestApplyVpnkitRejectsBadSHA(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := DownloadAndApplyVpnkit(srv.URL, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dst, "")
+	_, err := DownloadAndApplyVpnkit(srv.URL, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", dst, "", nil)
 	if err == nil {
 		t.Fatal("expected SHA mismatch error")
 	}
@@ -105,7 +118,7 @@ func TestApplyVpnkitWithoutSHACheck(t *testing.T) {
 		_, _ = w.Write(tarball)
 	}))
 	defer srv.Close()
-	if _, err := DownloadAndApplyVpnkit(srv.URL, "", dst, ""); err != nil {
+	if _, err := DownloadAndApplyVpnkit(srv.URL, "", dst, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(dst)

@@ -23,16 +23,21 @@ type ProgressFunc func(n, total int64)
 // stream against expectedSHA (hex; empty = skip check), decompresses, and
 // writes the resulting executable atomically to dst with mode 0o755.
 //
+// onAttempt (optional) receives each chain entry's outcome as it happens so
+// callers can print live progress to the user. Errors from each attempt are
+// also aggregated into the final returned error if everything fails.
+//
 // Returns the mirror that actually served the bytes (empty = direct github,
 // or one of netx.BuiltinGitHubMirrors). Callers should persist a non-empty
 // winner so the next download skips the dead-direct timeout.
-func Download(githubURL, expectedSHA, dst, preferredMirror string, progress ProgressFunc) (string, error) {
+func Download(githubURL, expectedSHA, dst, preferredMirror string, onAttempt netx.OnAttempt, progress ProgressFunc) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	body, winningMirror, err := netx.OpenWithFallback(
 		ctx, githubURL, preferredMirror,
 		netx.BuiltinGitHubMirrors,
 		15*time.Second, // per-attempt connect/read timeout
+		onAttempt,
 	)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", githubURL, err)

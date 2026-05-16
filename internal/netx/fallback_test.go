@@ -5,10 +5,25 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+var unsetenv = os.Unsetenv
+
+// All fallback tests must run with no env proxy so SmartClient's
+// "use env proxy if alive" branch doesn't redirect them through a
+// leftover from the parent shell.
+func init() {
+	for _, k := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+		"http_proxy", "https_proxy", "all_proxy", "no_proxy",
+	} {
+		_ = unsetenv(k)
+	}
+}
 
 func TestOpenWithFallbackPicksFirstWorkingMirror(t *testing.T) {
 	// Direct github will "time out" by being a server we close before request.
@@ -30,6 +45,7 @@ func TestOpenWithFallbackPicksFirstWorkingMirror(t *testing.T) {
 			live.URL + "/",
 		},
 		2*time.Second,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("OpenWithFallback: %v", err)
@@ -59,6 +75,7 @@ func TestOpenWithFallbackPreferredFirst(t *testing.T) {
 		preferred.URL+"/",
 		[]string{other.URL + "/"},
 		2*time.Second,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +91,7 @@ func TestOpenWithFallbackPreferredFirst(t *testing.T) {
 }
 
 func TestOpenWithFallbackAllFailReturnsLastErr(t *testing.T) {
+	var attempts []string
 	_, _, err := OpenWithFallback(context.Background(),
 		"http://nonexistent-a.invalid/x",
 		"",
@@ -82,9 +100,22 @@ func TestOpenWithFallbackAllFailReturnsLastErr(t *testing.T) {
 			"http://nonexistent-c.invalid/",
 		},
 		1*time.Second,
+		func(mirror string, e error) {
+			attempts = append(attempts, mirror)
+		},
 	)
 	if err == nil {
 		t.Fatal("expected error when all endpoints fail")
+	}
+	// onAttempt fires once per chain entry; "" (direct) + 2 builtins = 3.
+	if len(attempts) != 3 {
+		t.Errorf("onAttempt fired %d times, want 3: %v", len(attempts), attempts)
+	}
+	// Aggregated error must mention each failed endpoint, not just the last.
+	if !strings.Contains(err.Error(), "nonexistent-a") ||
+		!strings.Contains(err.Error(), "nonexistent-b") ||
+		!strings.Contains(err.Error(), "nonexistent-c") {
+		t.Errorf("aggregated error missing entries:\n%s", err)
 	}
 }
 
@@ -118,6 +149,7 @@ func TestOpenWithFallbackHTTP404TriesNext(t *testing.T) {
 		"",
 		[]string{ok.URL + "/"},
 		2*time.Second,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
