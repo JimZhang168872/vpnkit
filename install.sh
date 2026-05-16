@@ -44,6 +44,11 @@ fi
 [ -n "${VERSION:-}" ] || fail "cannot resolve latest version (set VERSION=v…)"
 
 # ───────── pre-flight: existing install detection ─────────
+#
+# We do NOT call `vpnkit uninstall` here because pre-v0.8.0 binaries do not
+# implement that subcommand (they fall through to the TUI which then dies on
+# stdin-not-a-tty under `curl | bash`). We perform the cleanup ourselves in
+# shell — it's straightforward and avoids the bootstrap-paradox.
 backup_file=""
 if [ -x "$DEST/vpnkit" ]; then
   current="$("$DEST/vpnkit" --version 2>/dev/null | head -1 | awk '{print $2}' || true)"
@@ -52,10 +57,38 @@ if [ -x "$DEST/vpnkit" ]; then
     log "   set INSTALL_FORCE=1 to reinstall anyway"
     exit 0
   fi
-  log "🧹 found existing vpnkit ${current:-?} — running uninstall first"
-  uninstall_out="$("$DEST/vpnkit" uninstall --yes --keep-profiles 2>&1 || true)"
-  printf '%s\n' "$uninstall_out"
-  backup_file="$(printf '%s' "$uninstall_out" | sed -n 's/^BACKUP=//p' | head -1)"
+  log "🧹 found existing vpnkit ${current:-?} — cleaning up before reinstall"
+
+  # 1. back up profiles by grepping the [[profiles]] block out of config.toml.
+  if [ -f "$VPNKIT_CFG" ] && grep -q '^\[\[profiles\]\]' "$VPNKIT_CFG"; then
+    backup_file="/tmp/vpnkit-profiles-$(date +%Y%m%d-%H%M%S).toml"
+    awk '/^\[\[profiles\]\]/{p=1} p' "$VPNKIT_CFG" > "$backup_file"
+    chmod 600 "$backup_file"
+    log "📦 backed up profiles → $backup_file"
+  fi
+
+  # 2. stop + disable systemd-user service if present (best-effort).
+  if [ -f "$CONFIG_HOME/systemd/user/mihomo.service" ]; then
+    systemctl --user stop mihomo 2>/dev/null || true
+    systemctl --user disable mihomo 2>/dev/null || true
+    rm -f "$CONFIG_HOME/systemd/user/mihomo.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+    log "🧹 removed systemd unit"
+  fi
+
+  # 3. wipe XDG dirs that vpnkit owns. (Foreign ~/.config/mihomo/ is guarded
+  # below — we only get here if it was vpnkit-managed.)
+  STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+  CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+  rm -rf \
+    "$CONFIG_HOME/mihomo" \
+    "$CONFIG_HOME/vpnkit" \
+    "$STATE_HOME/vpnkit" \
+    "$CACHE_HOME/vpnkit"
+
+  # 4. delete the old binaries.
+  rm -f "$DEST/vpnkit" "$DEST/mihomo"
+  log "🧹 removed old binaries + config dirs"
 fi
 
 # Refuse to overwrite a foreign ~/.config/mihomo/ unless explicitly allowed.
