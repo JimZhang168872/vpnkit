@@ -29,30 +29,56 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 
 ### 墙内安装
 
-如果你的机器直连不了 `github.com` / `api.github.com`，用任意一个公开的
-GitHub 加速服务把 install.sh 的下载**和**之后 mihomo 自己下 geo 数据**都**
-代理过去。公开镜像经常下线/限流，选一个当前能用的：
+如果 `github.com` 连不上或者很慢，全流程**总共有 3 次 GitHub 下载**，必须走
+同一个加速镜像才能跑通：
+
+1. `install.sh` 本身 — curl 拉的
+2. `vpnkit_<版本>_linux_<架构>.tar.gz` — install.sh 拉的
+3. mihomo 二进制 + `geoip.metadb` + `geosite.dat` — mihomo 自己 bootstrap 时拉的
+
+`install.sh` 接受 `INSTALL_MIRROR=<前缀>`：所有 1–2 步的 GitHub URL 都被加这个
+前缀；同时写进 `~/.config/vpnkit/config.toml` 的 `release_mirror`，让第 3 步
+也自动走同一镜像。一个环境变量解决全链路。
+
+#### 第 1 步 — 挑一个当前能用的镜像
+
+公开镜像经常下线/限流。先 ping 一下确认：
 
 ```bash
-# 例（请换成你当前能用的）：
 MIRROR="https://ghproxy.com/"
-VERSION=v0.8.0  # pin：部分镜像不代理 api.github.com
+
+curl -fsSL --max-time 5 -o /dev/null \
+  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
+  && echo "镜像可用" || echo "挂了，换一个"
+```
+
+挂了的话，把 `MIRROR` 换成下面之一再测：
+
+- `https://mirror.ghproxy.com/`
+- `https://ghp.ci/`
+- `https://gh.api.99988866.xyz/`
+- 搜「github 加速」找当前能用的
+
+#### 第 2 步 — 用能用的镜像装
+
+```bash
+MIRROR="https://ghproxy.com/"          # 第 1 步测过能用的那个
+VERSION="v0.8.1"                        # pin：大多镜像不代理 api.github.com
 
 curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
   | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
 ```
 
-`INSTALL_MIRROR` 会同步写入 `~/.config/vpnkit/config.toml` 的 `release_mirror`，
-后续 mihomo 下 `geoip.metadb` / `geosite.dat` 都走同一镜像，不用再单独配。
+`MIRROR` 出现**两次**是故意的：
 
-其他公开镜像备选：`https://mirror.ghproxy.com/`、`https://ghp.ci/`、
-`https://gh.api.99988866.xyz/`。挑一个先 ping 一下能不能用：
+- `curl` 的 URL 里 — 用来拉 `install.sh` 本身
+- `INSTALL_MIRROR=…` — 传给 `install.sh`，让它代理后续所有 GitHub 下载，并
+  写进 config 让 mihomo 之后也走同一镜像
 
-```bash
-curl -fsSL --max-time 5 -o /dev/null \
-  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
-  && echo OK || echo "这个镜像挂了，换一个"
-```
+`VERSION` 必须 pin，因为大多公开镜像不代理 `api.github.com`，install.sh 没法
+自动取最新版本。具体值看 [最新 release](https://github.com/JimZhang168872/vpnkit/releases)。
+
+这就完了。不用再配代理 env 变量、不用手动下 MMDB。
 
 ## 3 分钟上手
 

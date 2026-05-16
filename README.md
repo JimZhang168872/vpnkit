@@ -33,33 +33,61 @@ From source: `git clone … && cd vpnkit && make install` (needs Go 1.22+).
 
 ### Installing from inside the GFW
 
-If `github.com` and `api.github.com` are unreachable from your host, route
-everything (the install script's downloads **and** mihomo's later geo-data
-downloads) through a public GitHub-accelerator mirror. Pick one that currently
-works for you — public mirrors come and go:
+If `github.com` is slow or unreachable, point both the installer **and** the
+mihomo core it spawns later at a public GitHub-accelerator mirror. There are
+three GitHub downloads in the full lifecycle, all of which need to go through
+the same mirror to work:
+
+1. `install.sh` itself — pulled by `curl`
+2. `vpnkit_<ver>_linux_<arch>.tar.gz` — pulled by `install.sh`
+3. `mihomo` binary + `geoip.metadb` + `geosite.dat` — pulled by mihomo at
+   bootstrap and at runtime
+
+`install.sh` accepts `INSTALL_MIRROR=<prefix>`. The script wraps every GitHub
+URL with that prefix for steps 1–2, **and** writes the prefix into
+`~/.config/vpnkit/config.toml` (`release_mirror`) so step 3 picks it up
+automatically. One env var, full coverage.
+
+#### Step 1 — pick a mirror that works for you right now
+
+Public mirrors come and go. Test one before using it:
 
 ```bash
-# Example mirror (replace with whatever is currently working for you):
 MIRROR="https://ghproxy.com/"
-VERSION=v0.8.0  # pin: some mirrors don't proxy api.github.com
+
+curl -fsSL --max-time 5 -o /dev/null \
+  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
+  && echo "mirror OK" || echo "dead — try another"
+```
+
+If that one fails, swap `MIRROR` for one of these and retest:
+
+- `https://mirror.ghproxy.com/`
+- `https://ghp.ci/`
+- `https://gh.api.99988866.xyz/`
+- search the web for "github 加速" / "github mirror" for fresh ones
+
+#### Step 2 — run the install with the working mirror
+
+```bash
+MIRROR="https://ghproxy.com/"          # whatever passed Step 1
+VERSION="v0.8.1"                        # pin: most mirrors don't proxy api.github.com
 
 curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
   | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
 ```
 
-`INSTALL_MIRROR` is also persisted to `~/.config/vpnkit/config.toml` as
-`release_mirror`, so when mihomo later downloads its `geoip.metadb` /
-`geosite.dat` it goes through the same mirror — no further configuration
-needed.
+`MIRROR` appears in **two** places on purpose:
 
-Other public mirrors people have used: `https://mirror.ghproxy.com/`,
-`https://ghp.ci/`, `https://gh.api.99988866.xyz/`. Pick one with a check:
+- the `curl` URL — to fetch `install.sh` itself
+- `INSTALL_MIRROR=…` — passed into `install.sh`, which uses it for every other
+  GitHub download AND writes it to your config for mihomo to use later
 
-```bash
-curl -fsSL --max-time 5 -o /dev/null \
-  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
-  && echo OK || echo "mirror dead, try another"
-```
+`VERSION` is pinned because most mirrors don't proxy `api.github.com`, so the
+script can't auto-resolve "latest" without it. Match it to whatever the
+[latest release](https://github.com/JimZhang168872/vpnkit/releases) is.
+
+That's it. No additional config, no proxy env vars, no manual MMDB download.
 
 ## First run (3 minutes)
 
