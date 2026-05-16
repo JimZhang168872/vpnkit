@@ -138,13 +138,15 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 		fmt.Fprintln(out, "🛑 stopping mihomo for binary swap …")
 		_ = svc.Stop(ctx)
 	}
-	if _, err := installer.Install(installer.Options{
+	res, err := installer.Install(installer.Options{
 		Dst:     p.MihomoBinary(),
 		Mirror:  st.Cfg.ReleaseMirror,
 		Version: version,
-	}, nil); err != nil {
+	}, nil)
+	if err != nil {
 		return err
 	}
+	cacheWinningMirror(out, st, res.Mirror)
 	if wasRunning {
 		fmt.Fprintln(out, "▶️  restarting mihomo …")
 		if err := svc.Start(ctx); err != nil {
@@ -165,19 +167,31 @@ func upgradeVpnkit(out io.Writer, p paths.XDG, st *store.Store, version string) 
 	}
 	arch := updater.CurrentArch()
 	tarball := fmt.Sprintf("vpnkit_%s_linux_%s.tar.gz", strings.TrimPrefix(version, "v"), arch)
-	mirror := strings.TrimSuffix(st.Cfg.ReleaseMirror, "/")
-	prefix := ""
-	if mirror != "" {
-		prefix = mirror + "/"
-	}
-	url := fmt.Sprintf("%shttps://github.com/JimZhang168872/vpnkit/releases/download/%s/%s",
-		prefix, version, tarball)
+	githubURL := fmt.Sprintf("https://github.com/JimZhang168872/vpnkit/releases/download/%s/%s", version, tarball)
 	fmt.Fprintf(out, "📥 downloading vpnkit %s (%s) …\n", version, tarball)
-	if err := updater.DownloadAndApplyVpnkit(url, "", dst); err != nil {
+	winningMirror, err := updater.DownloadAndApplyVpnkit(githubURL, "", dst, st.Cfg.ReleaseMirror)
+	if err != nil {
 		return err
 	}
+	cacheWinningMirror(out, st, winningMirror)
 	fmt.Fprintf(out, "✅ vpnkit %s → %s\n", version, dst)
 	return nil
+}
+
+// cacheWinningMirror remembers a non-empty mirror that just served a download
+// when the user hadn't configured one. Saves the next launch's bootstrap from
+// waiting on the same dead direct connection. Never overwrites a user-set
+// value — they might be deliberately pinning a specific mirror.
+func cacheWinningMirror(out io.Writer, st *store.Store, mirror string) {
+	if mirror == "" || st.Cfg.ReleaseMirror != "" {
+		return
+	}
+	st.Cfg.ReleaseMirror = mirror
+	if err := st.Save(); err != nil {
+		fmt.Fprintf(out, "⚠️  cache mirror %s: %v\n", mirror, err)
+		return
+	}
+	fmt.Fprintf(out, "💾 cached release_mirror = %s (next download starts here)\n", mirror)
 }
 
 // readMihomoVersion runs `mihomo -v` and parses the first line. Returns ""

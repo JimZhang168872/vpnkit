@@ -18,9 +18,17 @@ type Options struct {
 type Result struct {
 	Version    string
 	Compatible bool
+	// Mirror is the prefix that actually served the binary, "" for direct.
+	// Callers may persist this back to store.Cfg.ReleaseMirror so the next
+	// download starts with the known-good endpoint.
+	Mirror string
 }
 
 // Install runs the full flow: resolve release → choose asset → download → verify → unpack → rename.
+//
+// opts.Mirror is the *preferred* mirror; if it doesn't work or is empty,
+// Download falls through to direct github + builtin public mirrors. The
+// mirror that actually served the bytes is returned in Result.Mirror.
 func Install(opts Options, progress ProgressFunc) (Result, error) {
 	if opts.Dst == "" {
 		return Result{}, fmt.Errorf("install: Dst is required")
@@ -55,12 +63,12 @@ func Install(opts Options, progress ProgressFunc) (Result, error) {
 		url = alt
 		compat = !compat
 	}
-	url = ApplyMirror(url, opts.Mirror)
 
-	if err := Download(url, "", opts.Dst, progress); err != nil {
-		return Result{}, fmt.Errorf("install: download: %w", err)
+	winningMirror, derr := Download(url, "", opts.Dst, opts.Mirror, progress)
+	if derr != nil {
+		return Result{}, fmt.Errorf("install: download: %w", derr)
 	}
-	return Result{Version: rel.Tag, Compatible: compat}, nil
+	return Result{Version: rel.Tag, Compatible: compat, Mirror: winningMirror}, nil
 }
 
 // currentArch wraps runtime.GOARCH so tests can override via build tags later if needed.

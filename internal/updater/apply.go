@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,76 +34,78 @@ func CurrentArch() string {
 	}
 }
 
-// DownloadAndApplyVpnkit fetches the .tar.gz at `url`, optionally verifies
-// SHA256 of the raw tarball stream against `expectedSHA` (hex; empty = skip),
-// extracts the inner `vpnkit` file, and atomically replaces `dstPath`.
+// DownloadAndApplyVpnkit fetches the .tar.gz at `githubURL` through the
+// fallback chain (preferredMirror → direct → public mirrors), optionally
+// verifies SHA256 of the raw tarball stream against `expectedSHA`
+// (hex; empty = skip), extracts the inner `vpnkit` file, and atomically
+// replaces `dstPath`. Returns the mirror that actually served the bytes
+// ("" = direct) so callers can persist it.
 //
 // On SHA mismatch the existing binary at dstPath is left untouched.
-func DownloadAndApplyVpnkit(url, expectedSHA, dstPath string) error {
+func DownloadAndApplyVpnkit(githubURL, expectedSHA, dstPath, preferredMirror string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, winningMirror, err := netx.OpenWithFallback(
+		ctx, githubURL, preferredMirror,
+		netx.BuiltinGitHubMirrors,
+		15*time.Second,
+	)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("download %s: %w", githubURL, err)
 	}
-	// Control-plane: bypass env proxy (we may be upgrading mihomo itself).
-	resp, err := netx.NoProxyClient(5 * time.Minute).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: %s", url, resp.Status)
-	}
+	defer body.Close()
 
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-		return err
+		return winningMirror, err
 	}
 	tmpTarball, err := os.CreateTemp(filepath.Dir(dstPath), "vpnkit-up-*.tar.gz")
 	if err != nil {
-		return err
+		return winningMirror, err
 	}
 	tmpTarballName := tmpTarball.Name()
 	defer os.Remove(tmpTarballName)
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmpTarball, hasher), resp.Body); err != nil {
+	if _, err := io.Copy(io.MultiWriter(tmpTarball, hasher), body); err != nil {
 		tmpTarball.Close()
-		return err
+		return winningMirror, err
 	}
 	if err := tmpTarball.Close(); err != nil {
-		return err
+		return winningMirror, err
 	}
 	if expectedSHA != "" {
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if got != expectedSHA {
-			return fmt.Errorf("sha256 mismatch: got %s, want %s", got, expectedSHA)
+			return winningMirror, fmt.Errorf("sha256 mismatch: got %s, want %s", got, expectedSHA)
 		}
 	}
 
 	// Extract the inner vpnkit binary to a sibling temp file.
 	tmpBinary, err := os.CreateTemp(filepath.Dir(dstPath), "vpnkit-bin-*.tmp")
 	if err != nil {
-		return err
+		return winningMirror, err
 	}
 	tmpBinaryName := tmpBinary.Name()
 	defer os.Remove(tmpBinaryName)
 
 	if err := extractVpnkit(tmpTarballName, tmpBinary); err != nil {
 		tmpBinary.Close()
-		return err
+		return winningMirror, err
 	}
 	if err := tmpBinary.Close(); err != nil {
-		return err
+		return winningMirror, err
 	}
 	if err := os.Chmod(tmpBinaryName, 0o755); err != nil {
-		return err
+		return winningMirror, err
 	}
 
 	// Atomic replace. On POSIX, rename over an executable that is currently
 	// running is permitted — the running process keeps the old inode open
 	// until exit; new invocations get the new binary.
-	return os.Rename(tmpBinaryName, dstPath)
+	if err := os.Rename(tmpBinaryName, dstPath); err != nil {
+		return winningMirror, err
+	}
+	return winningMirror, nil
 }
 
 // extractVpnkit walks the tarball and writes the file named "vpnkit" to w.
