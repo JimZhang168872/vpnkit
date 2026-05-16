@@ -59,12 +59,11 @@ func Run(version string) error {
 
 	profMgr := profiles.New(profiles.Config{
 		ConfigYAMLPath:   p.MihomoConfigFile(),
-		PatchPath:        filepath.Join(p.MihomoConfig, "patch.yaml"),
+		ExtensionsPath:   filepath.Join(p.VpnkitConfig, "extensions.toml"),
 		ControllerPort:   st.Cfg.ControllerPort,
 		ControllerSecret: st.Cfg.ControllerSecret,
 		MixedPort:        st.Cfg.MixedPort,
 		RuleTemplate:     st.Cfg.RuleTemplate,
-		ReleaseMirror:    st.Cfg.ReleaseMirror,
 		ProxyUser:        st.Cfg.ProxyUser,
 		ProxyPass:        st.Cfg.ProxyPass,
 	})

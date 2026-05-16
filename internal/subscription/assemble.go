@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-	"vpnkit/internal/patch"
+	"vpnkit/internal/extensions"
 	"vpnkit/internal/rules"
 	"vpnkit/internal/subscription/proto"
 )
@@ -19,14 +19,14 @@ type AssembleInput struct {
 	ControllerSecret string
 	LogLevel         string
 	RuleTemplate     string
-	PatchPath        string
-	ReleaseMirror    string
+	Extensions       extensions.Extensions
 	ProxyUser        string
 	ProxyPass        string
 }
 
 // Assemble produces the final config.yaml bytes by combining:
-// base skeleton + subscription proxies + groups (synthesized or from clash) + rules + patch overlay.
+// base skeleton + subscription proxies + groups (synthesized or from clash) +
+// rules + extensions overlay (chains + custom groups).
 func Assemble(in AssembleInput) ([]byte, error) {
 	if in.MixedPort == 0 {
 		in.MixedPort = 7890
@@ -78,12 +78,10 @@ func Assemble(in AssembleInput) ([]byte, error) {
 		doc[k] = v
 	}
 
-	doc["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
+	doc["geox-url"] = mihomoGeoxURL()
 
-	if in.PatchPath != "" {
-		if err := patch.Apply(in.PatchPath, doc); err != nil {
-			return nil, fmt.Errorf("patch: %w", err)
-		}
+	if err := extensions.Apply(doc, in.Extensions); err != nil {
+		return nil, fmt.Errorf("extensions: %w", err)
 	}
 
 	var buf bytes.Buffer
@@ -112,26 +110,12 @@ func groupsToAny(in []map[string]any) []any {
 	return out
 }
 
-// mihomoGeoxURL returns the geox-url map for mihomo. See the matching
-// helper in internal/config/skeleton.go for behavioral details — the two are
-// kept in sync so a fresh config (BuildSkeleton path) and a subscription-
-// regenerated config (this path) agree on where geo data comes from.
-// Empty `mirror` → defaults to jsdelivr CDN (reachable from inside the GFW
-// without a proxy); non-empty mirror → wrap each GitHub URL with the prefix.
-func mihomoGeoxURL(mirror string) map[string]string {
-	if mirror != "" {
-		if mirror[len(mirror)-1] != '/' {
-			mirror += "/"
-		}
-		base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
-		return map[string]string{
-			"geoip":   mirror + base + "/geoip.metadb",
-			"mmdb":    mirror + base + "/country.mmdb",
-			"geosite": mirror + base + "/geosite.dat",
-			"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
-		}
-	}
-	const base = "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release"
+// mihomoGeoxURL returns the geox-url map for mihomo, pointing at
+// MetaCubeX/meta-rules-dat GitHub Releases directly. No mirror layer —
+// users behind restrictive networks should configure HTTPS_PROXY before
+// running so SmartClient routes through their existing proxy.
+func mihomoGeoxURL() map[string]string {
+	const base = "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
 	return map[string]string{
 		"geoip":   base + "/geoip.metadb",
 		"mmdb":    base + "/country.mmdb",

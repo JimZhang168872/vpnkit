@@ -2,12 +2,15 @@ package profiles
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"vpnkit/internal/extensions"
 )
 
 func TestAddAndUpdate(t *testing.T) {
@@ -20,7 +23,7 @@ func TestAddAndUpdate(t *testing.T) {
 
 	m := New(Config{
 		ConfigYAMLPath:   configPath,
-		PatchPath:        filepath.Join(dir, "patch.yaml"),
+		ExtensionsPath:   filepath.Join(dir, "extensions.toml"),
 		ControllerPort:   9090,
 		ControllerSecret: "x",
 		RuleTemplate:     "minimal",
@@ -53,7 +56,7 @@ func TestUpdate_SingleHysteria2URI(t *testing.T) {
 
 	m := New(Config{
 		ConfigYAMLPath:   configPath,
-		PatchPath:        filepath.Join(dir, "patch.yaml"),
+		ExtensionsPath:   filepath.Join(dir, "extensions.toml"),
 		ControllerPort:   9090,
 		ControllerSecret: "x",
 		RuleTemplate:     "minimal",
@@ -91,7 +94,7 @@ func TestActivateSwitchesActive(t *testing.T) {
 	dir := t.TempDir()
 	m := New(Config{
 		ConfigYAMLPath:   filepath.Join(dir, "config.yaml"),
-		PatchPath:        filepath.Join(dir, "patch.yaml"),
+		ExtensionsPath:   filepath.Join(dir, "extensions.toml"),
 		ControllerPort:   9090,
 		ControllerSecret: "x",
 		RuleTemplate:     "minimal",
@@ -104,5 +107,45 @@ func TestActivateSwitchesActive(t *testing.T) {
 	}
 	if names := m.List(); names[0] != "a" || names[1] != "b" {
 		t.Errorf("list: %v", names)
+	}
+}
+
+func TestManagerUpdateWiresExtensions(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	extPath := filepath.Join(dir, "extensions.toml")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "ss://YWVzLTI1Ni1nY206cGFzcw==@1.2.3.4:8388#NodeA")
+	}))
+	defer srv.Close()
+
+	// Pre-write extensions.toml that chains NodeA → DIRECT.
+	if err := extensions.Save(extPath, extensions.Extensions{
+		Chains: []extensions.Chain{{Node: "NodeA", Via: "DIRECT"}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	m := New(Config{
+		ConfigYAMLPath:   cfgPath,
+		ExtensionsPath:   extPath,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		MixedPort:        7890,
+		RuleTemplate:     "minimal",
+	})
+	if err := m.Add(Profile{Name: "p", URL: srv.URL}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := m.Update(context.Background(), "p"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "dialer-proxy: DIRECT") {
+		t.Fatalf("expected dialer-proxy line in config.yaml, got:\n%s", data)
 	}
 }
