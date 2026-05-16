@@ -11,8 +11,14 @@ import (
 	"vpnkit/internal/paths"
 )
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-var version = "dev"
+// version, commit, date are overridden at build time via -ldflags
+//   -X main.version=... -X main.commit=... -X main.date=...
+// (set by GoReleaser; defaults below for source builds).
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
 	if len(os.Args) > 1 {
@@ -50,7 +56,11 @@ func main() {
 }
 
 func runVersion() {
-	fmt.Printf("vpnkit %s\n", version)
+	short := commit
+	if len(short) > 7 {
+		short = short[:7]
+	}
+	fmt.Printf("vpnkit %s  (commit %s, built %s)\n", version, short, date)
 	p := paths.Resolve()
 	if info, err := os.Stat(p.MihomoBinary()); err == nil {
 		fmt.Printf("mihomo binary: %s (%d bytes)\n", p.MihomoBinary(), info.Size())
