@@ -50,7 +50,17 @@ TUN mode, Windows / macOS, command palette, theme switcher, GUI.
 
 ### Install
 
-#### From source (only path today)
+#### Pre-built binaries (recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
+```
+
+The script auto-detects amd64 / arm64, verifies SHA256, and installs to
+`~/.local/bin/vpnkit` (override with `INSTALL_DIR=…`). Pin a version with
+`VERSION=v0.6.0` env var. See the [releases page](https://github.com/JimZhang168872/vpnkit/releases) for tags.
+
+#### From source
 
 Requires Go 1.22+ (the toolchain directive auto-fetches 1.23 if needed).
 
@@ -61,8 +71,6 @@ make install   # builds and installs to ~/.local/bin/vpnkit
 ```
 
 Add `~/.local/bin` to your `PATH` if it isn't already.
-
-Pre-built releases are planned but not yet published.
 
 ### First launch
 
@@ -223,7 +231,17 @@ TUN 模式、Windows/macOS、命令面板、主题切换、GUI。
 
 ### 安装
 
-#### 源码编译（目前唯一方式）
+#### 预编译二进制（推荐）
+
+```bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
+```
+
+脚本自动识别 amd64 / arm64、SHA256 校验、装到 `~/.local/bin/vpnkit`
+（用 `INSTALL_DIR=…` 改目标）。锁版本用 `VERSION=v0.6.0`。
+[Releases 页面](https://github.com/JimZhang168872/vpnkit/releases) 看所有 tag。
+
+#### 源码编译
 
 需要 Go 1.22+（toolchain 会按需自动下载 1.23）。
 
@@ -234,8 +252,6 @@ make install   # 编译并装到 ~/.local/bin/vpnkit
 ```
 
 把 `~/.local/bin` 加入 `PATH`（如果还没加过）。
-
-预编译 release 在计划中但还没发布。
 
 ### 首次启动
 
