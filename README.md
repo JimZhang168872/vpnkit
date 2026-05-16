@@ -25,166 +25,147 @@ inspection, and rule management from a terminal that fits an SSH session.
 curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
 ```
 
-Auto-detects amd64/arm64, verifies SHA256, installs to `~/.local/bin/vpnkit`.
-Pin a version with `VERSION=v0.8.0 ./install.sh`. Make sure `~/.local/bin` is
-on your `PATH`.
+Auto-detects amd64/arm64, verifies SHA256, installs to `~/.local/bin/vpnkit`,
+generates a default config skeleton, and (on subsequent runs) cleans up the
+old version before installing the new one. Pin a version with
+`VERSION=v0.9.0 ./install.sh`. Make sure `~/.local/bin` is on your `PATH`.
 
 From source: `git clone … && cd vpnkit && make install` (needs Go 1.22+).
 
-### Installing from inside the GFW
+### Behind the GFW
 
-If `github.com` is slow or unreachable, point both the installer **and** the
-mihomo core it spawns later at a public GitHub-accelerator mirror. There are
-three GitHub downloads in the full lifecycle, all of which need to go through
-the same mirror to work:
-
-1. `install.sh` itself — pulled by `curl`
-2. `vpnkit_<ver>_linux_<arch>.tar.gz` — pulled by `install.sh`
-3. `mihomo` binary + `geoip.metadb` + `geosite.dat` — pulled by mihomo at
-   bootstrap and at runtime
-
-`install.sh` accepts `INSTALL_MIRROR=<prefix>`. The script wraps every GitHub
-URL with that prefix for steps 1–2, **and** writes the prefix into
-`~/.config/vpnkit/config.toml` (`release_mirror`) so step 3 picks it up
-automatically. One env var, full coverage.
-
-#### Step 1 — pick a mirror that works for you right now
-
-Public mirrors come and go. Test one before using it:
+vpnkit defaults to `cdn.jsdelivr.net` for mihomo's geoip/geosite downloads,
+so the **first launch usually works inside mainland China without any
+extra setup**. If `github.com` is also too slow for the install itself, run
+through a public GitHub mirror — one env var covers the installer **and**
+mihomo's later downloads:
 
 ```bash
-MIRROR="https://ghproxy.com/"
-
-curl -fsSL --max-time 5 -o /dev/null \
-  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
-  && echo "mirror OK" || echo "dead — try another"
-```
-
-If that one fails, swap `MIRROR` for one of these and retest:
-
-- `https://mirror.ghproxy.com/`
-- `https://ghp.ci/`
-- `https://gh.api.99988866.xyz/`
-- search the web for "github 加速" / "github mirror" for fresh ones
-
-#### Step 2 — run the install with the working mirror
-
-```bash
-MIRROR="https://ghproxy.com/"          # whatever passed Step 1
-VERSION="v0.8.1"                        # pin: most mirrors don't proxy api.github.com
+MIRROR="https://ghproxy.com/"           # pick one that's currently up
+VERSION="v0.9.0"                         # most mirrors don't proxy api.github.com, so pin
 
 curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
   | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
 ```
 
-`MIRROR` appears in **two** places on purpose:
+Test a mirror before using it:
 
-- the `curl` URL — to fetch `install.sh` itself
-- `INSTALL_MIRROR=…` — passed into `install.sh`, which uses it for every other
-  GitHub download AND writes it to your config for mihomo to use later
+```bash
+curl -fsSL --max-time 5 -o /dev/null \
+  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
+  && echo OK || echo "mirror dead, try another"
+```
 
-`VERSION` is pinned because most mirrors don't proxy `api.github.com`, so the
-script can't auto-resolve "latest" without it. Match it to whatever the
-[latest release](https://github.com/JimZhang168872/vpnkit/releases) is.
+Alternates: `https://mirror.ghproxy.com/`, `https://ghp.ci/`,
+`https://gh.api.99988866.xyz/`. `INSTALL_MIRROR` is persisted into
+`~/.config/vpnkit/config.toml` (`release_mirror`), so every later GitHub
+download — mihomo upgrades, geo data refreshes — goes through the same mirror.
 
-That's it. No additional config, no proxy env vars, no manual MMDB download.
-
-## First run (3 minutes)
+## First run
 
 ```bash
 vpnkit
 ```
 
-On first launch vpnkit downloads mihomo, generates `~/.config/mihomo/config.yaml`,
-installs `~/.config/systemd/user/mihomo.service`, starts it, and opens the TUI.
+First launch downloads mihomo, writes `~/.config/mihomo/config.yaml`, installs
+`~/.config/systemd/user/mihomo.service`, starts it, and opens the TUI.
 
 Add a subscription:
 
-1. Press `3` (Profiles) → `a` to open the form
+1. `3` (Profiles) → `a` opens the form
 2. Name + paste subscription URL → `Enter`
-3. Press `u` to fetch + parse + write config + reload mihomo
+3. `u` → fetch + parse + write config + reload mihomo
 
 Pick a node:
 
-1. Press `2` (Proxies) → highlight `🚀 Proxy` → `t` to delay-test
-2. Highlight the fastest → `Enter` to switch
+1. `2` (Proxies) → highlight `🚀 Proxy` → `t` delay-tests the whole group
+2. `Enter` to expand → `↓` to a specific node → `Enter` switches to it
 
-Use the proxy from your shell:
+Subscription URLs accepted: Clash YAML links, base64-encoded text lists, or a
+single protocol URI (`vmess://`, `hysteria2://`, `trojan://`, `vless://`,
+`ss://`, `tuic://`).
+
+### Use the proxy from your shell
 
 ```bash
-eval "$(vpnkit env --shell zsh)"   # or bash / fish
-curl https://www.google.com         # now routed through mihomo
-eval "$(vpnkit env --unset)"        # turn off
+eval "$(vpnkit env --shell zsh)"        # or bash / fish
+curl https://www.google.com              # routed through mihomo
+eval "$(vpnkit env --unset)"             # turn off
 ```
 
-The output sets both lower- and upper-case variables (`http_proxy`,
-`HTTP_PROXY`, …) so Go programs and uppercase-only readers also pick it up.
-`vpnkit env` also writes a `~/.netrc` entry (mode 0600). Use `--no-netrc` to skip.
+`vpnkit env` sets both lower- and upper-case variants (`http_proxy`,
+`HTTP_PROXY`, …) so Go programs and uppercase-only readers also see it. It
+also writes a `~/.netrc` entry at mode 0600 for tools that prefer netrc
+(`--no-netrc` to skip).
 
-For a more permanent setup, install shell functions once into your rc file:
+For a permanent setup, drop named functions into your rc file once:
 
 ```bash
 vpnkit env --shell zsh --functions >> ~/.zshrc
 exec zsh
-# from any new shell:
+# any shell after that:
 proxy_on    # 🟢 proxy on
 proxy_off   # 🔴 proxy off
 ```
 
+## Update
+
+vpnkit checks for new releases 2 s after launch and shows a dim `⚡` badge
+in the status bar when one is available. To install:
+
+```bash
+vpnkit update                            # check + plan + interactive confirm
+vpnkit update --yes                      # skip the prompt
+vpnkit update --check                    # only print the plan, do nothing
+vpnkit update --vpnkit-only              # leave mihomo alone
+vpnkit update --mihomo-only              # leave vpnkit alone
+```
+
+`vpnkit update` upgrades vpnkit and mihomo through `release_mirror`, swaps
+the binaries atomically (POSIX rename over a running executable is safe),
+and `syscall.Exec`'s the new vpnkit so the TUI relaunches with the new
+version. Mihomo restarts during the swap, so the proxy is down for ~1 s.
+
 ## Multi-user / multi-instance safety
 
 vpnkit picks a free port automatically. If `7890`/`9090` are already taken
-(another user, another proxy), it scans upward and saves the chosen ports to
-`~/.config/vpnkit/config.toml`.
+(another user, another tool), it scans upward and persists the chosen ports
+to `~/.config/vpnkit/config.toml`.
 
 Mihomo is configured with `allow-lan: false` + `bind-address: 127.0.0.1` +
-`authentication: [user:pass]`. The user/pass is auto-generated on first launch
-and stored in `~/.config/vpnkit/config.toml` (mode 0600). Without those
-credentials, other local users cannot use your proxy.
+`authentication: [user:pass]`. The user/pass is generated on first launch
+and stored at mode 0600 in `~/.config/vpnkit/config.toml`. Without those
+credentials, **other local users cannot use your proxy** even though it
+listens on the shared loopback.
 
 ## CLI
 
-```bash
-vpnkit status                       # mihomo state, mode, ports, groups, profile
-vpnkit ip                           # exit IP via mihomo proxy
-vpnkit mode [rule|global|direct]    # show or set mode
-vpnkit groups                       # list user-selectable proxy groups
-vpnkit nodes '🚀 Proxy'              # list members + cached delay
-vpnkit use '🚀 Proxy' 'HK-01'        # switch to a specific node
-vpnkit env [--shell zsh] [--unset] [--no-netrc]
-```
+| Command | What it does |
+|---|---|
+| `vpnkit` | open the TUI |
+| `vpnkit status` | mihomo state, mode, ports, groups, active profile |
+| `vpnkit ip` | exit IP via the proxy (uses ipinfo.io) |
+| `vpnkit mode [rule\|global\|direct]` | show or change rule mode |
+| `vpnkit groups` | list user-selectable proxy groups |
+| `vpnkit nodes '<group>'` | list members + cached delay |
+| `vpnkit use '<group>' '<node>'` | switch a group's selection |
+| `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
+| `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
+| `vpnkit init [--restore <path>] [--release-mirror <url>]` | regenerate config skeleton |
+| `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
 
-All accept `--json` for scripting. Exit codes: `0` ok, `1` user error, `2`
-runtime error.
-
-## Behind the GFW
-
-mihomo's first start downloads geo data from GitHub. If that's blocked, either
-set a release mirror in `~/.config/vpnkit/config.toml`:
-
-```toml
-release_mirror = "https://ghproxy.com/"
-```
-
-…or point mihomo through an existing HTTP proxy via a systemd drop-in at
-`~/.config/systemd/user/mihomo.service.d/proxy.conf`:
-
-```ini
-[Service]
-Environment="HTTP_PROXY=http://127.0.0.1:7897"
-Environment="HTTPS_PROXY=http://127.0.0.1:7897"
-```
-
-Then `systemctl --user daemon-reload && systemctl --user restart mihomo`.
+All read commands accept `--json` for scripting. Exit codes: `0` ok,
+`1` user error, `2` runtime error.
 
 ## TUI cheatsheet
 
 - `1`–`6` jump to tab · `Tab`/`Shift+Tab` cycle · `q` quit (mihomo keeps running)
-- `↑` `↓` `j` `k` navigate within a tab · `Enter` activate/expand
-- Profiles: `a` add · `u` update · `d` delete
-- Proxies: `t` delay-test
-- Connections: `x` close · `/` filter
-- Settings: `↑`/`↓` cycle subpages (Mihomo Core, Service, External Controller, Default Rules, Patch Editor, Logs, Cache, About)
+- `↑` `↓` `j` `k` navigate · `Enter` activate/expand
+- **Profiles**: `a` add · `u` update · `d` delete · `Enter` set active
+- **Proxies**: `Enter` on group expand/collapse · `Enter` on node switch · `t` delay-test
+- **Connections**: `x` close selected · `/` filter
+- **Rules**: `/` filter · `u` refresh providers
+- **Settings**: `↑`/`↓` cycle subpages (Mihomo Core, Service, External Controller, Default Rules, Patch Editor, Logs, Cache, About)
 
 ## Layout
 
@@ -192,10 +173,11 @@ Then `systemctl --user daemon-reload && systemctl --user restart mihomo`.
 |---|---|
 | `~/.local/bin/vpnkit` | this binary |
 | `~/.local/bin/mihomo` | managed mihomo core |
-| `~/.config/vpnkit/config.toml` | profiles, ports, proxy creds, controller secret |
-| `~/.config/mihomo/config.yaml` | generated mihomo config (regenerated on subscription update) |
-| `~/.config/mihomo/patch.yaml` | user overlay, deep-merged into generated config |
-| `~/.config/systemd/user/mihomo.service` | systemd unit |
+| `~/.config/vpnkit/config.toml` | profiles, ports, proxy creds, controller secret, release_mirror |
+| `~/.config/mihomo/config.yaml` | generated mihomo config (regenerated on each subscription update) |
+| `~/.config/mihomo/patch.yaml` | user overlay, deep-merged into the generated config |
+| `~/.config/systemd/user/mihomo.service` | systemd-user unit |
+| `~/.netrc` | proxy basic-auth entry (written by `vpnkit env`, mode 0600) |
 | `~/.local/state/vpnkit/` | logs, PID file (PID mode) |
 | `~/.cache/vpnkit/` | mihomo archives |
 
