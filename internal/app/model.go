@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
 	"vpnkit/internal/profiles"
@@ -50,11 +52,15 @@ type Model struct {
 	addForm     tabprofiles.Form
 
 	apiClient *api.Client
-	flash     string // single-line transient
+	// applyCfg nudges mihomo to pick up config.yaml from disk. Falls back to a
+	// full service restart on reload failure (e.g. secret drift after toml
+	// regeneration). May be nil in tests.
+	applyCfg func(context.Context) error
+	flash    string // single-line transient
 }
 
 // NewModel constructs the initial model. client and mgr may be nil during tests.
-func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsettings.Deps) Model {
+func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
 	stubs := [NumTabs]stub.Model{}
 	for i := TabProxies; i < NumTabs; i++ {
 		if i == TabProfiles || i == TabProxies || i == TabConnections || i == TabRules || i == TabSettings {
@@ -78,6 +84,7 @@ func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsetting
 		settingsTab:    tabsettings.New(settingsDeps),
 		stubs:          stubs,
 		apiClient:      client,
+		applyCfg:       applyCfg,
 	}
 }
 

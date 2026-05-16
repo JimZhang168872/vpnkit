@@ -88,7 +88,14 @@ func Run() error {
 		Service:   svc,
 		APIClient: client,
 	}
-	model := NewModel(client, profMgr, settingsDeps)
+	// Closure that profile-update + startup-reload paths use to push config
+	// changes into the live mihomo. Tries hot reload first, restarts the
+	// service on any error (e.g. controller-secret drift between store.toml
+	// and mihomo's in-memory boot state — silently fatal in v0.7.1).
+	applyCfg := func(ctx context.Context) error {
+		return applyConfig(ctx, client, svc)
+	}
+	model := NewModel(client, profMgr, settingsDeps, applyCfg)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {
@@ -97,12 +104,9 @@ func Run() error {
 			Store:   st,
 			Service: svc,
 		})()
-		// If we patched config.yaml above AND mihomo is already running
-		// (e.g. systemd auto-started it on login from a stale config), nudge
-		// it to re-read so the new auth/ports take effect without a restart.
 		if configChanged {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_ = client.ReloadConfig(ctx, "")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = applyCfg(ctx)
 			cancel()
 		}
 		prog.Send(msg)

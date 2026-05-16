@@ -138,15 +138,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if sel.Name != "" && m.profilesMgr != nil {
 					mgr := m.profilesMgr
 					pt := &m.profilesTab
-					client := m.apiClient
+					applyCfg := m.applyCfg
 					cmd = func() tea.Msg {
 						n, err := mgr.Update(context.Background(), sel.Name)
 						if err != nil {
 							return ProfileError{Name: sel.Name, Err: err}
 						}
 						pt.SetProfiles(mgr.All(), mgr.Active())
-						if client != nil {
-							_ = client.ReloadConfig(context.Background(), "")
+						if applyCfg != nil {
+							// Surface reload errors as ProfileError instead of
+							// silently swallowing them (the old `_ = Reload` bug
+							// left mihomo running stale config after secret drift).
+							if err := applyCfg(context.Background()); err != nil {
+								return ProfileError{Name: sel.Name, Err: err}
+							}
 						}
 						return ProfileUpdated{Name: sel.Name, NodeCount: n}
 					}
