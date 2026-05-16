@@ -42,7 +42,7 @@ GitHub auto-generates release notes from commits between the previous and curren
 |---|---|---|
 | `.goreleaser.yaml` | NEW | declarative build / archive / release config |
 | `.github/workflows/release.yml` | NEW | tag-trigger workflow that runs goreleaser |
-| `docs/install.sh` | NEW | `curl | bash` installer; arch-detects, SHA-verifies, extracts to `~/.local/bin` |
+| `install.sh` | NEW | `curl | bash` installer (repo root); arch-detects, SHA-verifies, extracts to `~/.local/bin` |
 | `cmd/vpnkit/main.go` | MODIFY | extend `version` package var with `commit` + `date`; richer `--version` output |
 | `README.md` | MODIFY | Install section — add "Pre-built binaries" subsection |
 | `docs/USAGE.md` | MODIFY | §1.2 Build → add `install.sh` one-liner alternative |
@@ -92,7 +92,7 @@ release:
 ```
 
 Notes:
-- `prerelease: auto` — tags containing `-rc`, `-beta`, `-phase`, `-ctl`, `-fix`, etc. are marked as prereleases automatically. Plain `v0.5.1` is full release.
+- `prerelease: auto` — tags containing `-rc`, `-beta`, `-pre`, etc. are marked as prereleases automatically. Plain `v0.6.0` (pure semver) is a full release. **Going forward, the project switches to pure-semver tags for finalised releases**; the existing prerelease-style tags from earlier phases (`v0.4.1-phase4-fixes`, `v0.5.0-ctl`, …) stay as-is for history.
 - `mode: replace` — re-running goreleaser against the same tag (e.g. amending and re-pushing) overwrites prior assets.
 - `version: 2` — required by GoReleaser v2+; the project doesn't carry GoReleaser v1 baggage.
 
@@ -183,15 +183,15 @@ This is the only behavioural change in vpnkit itself; everything else is build/C
 
 ---
 
-## 7. `docs/install.sh`
+## 7. `install.sh` (repo root)
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 # vpnkit installer
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/docs/install.sh | bash
-#   VERSION=v0.5.1 INSTALL_DIR=$HOME/bin bash <(curl -sSL .../install.sh)
+#   curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
+#   VERSION=v0.6.0 INSTALL_DIR=$HOME/bin bash <(curl -sSL .../install.sh)
 #
 # Env:
 #   VERSION       pin a tag (default: latest release on GitHub)
@@ -255,7 +255,7 @@ Failure modes:
 #### Pre-built binaries (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/docs/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
 ```
 
 Or grab a tarball directly from the [releases page](https://github.com/JimZhang168872/vpnkit/releases) and extract `vpnkit` to a directory on your `PATH`.
@@ -271,7 +271,7 @@ Or grab a tarball directly from the [releases page](https://github.com/JimZhang1
 The fastest way:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/docs/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
 ```
 
 Or build from source:
@@ -294,25 +294,38 @@ ls dist/
 # SHA256SUMS
 ```
 
-**Live run:**
+**Live run — first release is a pre-release for validation:**
+
+Going forward, finalised releases use pure-semver tags (`v0.6.0`, `v0.6.1`, `v1.0.0`) and pre-releases use a `-rc<N>` suffix (`v0.6.0-rc1`). `prerelease: auto` in `.goreleaser.yaml` flags the latter as GitHub pre-releases automatically.
+
+For the first release we tag a release candidate so we can verify the pipeline before tagging the canonical `v0.6.0`:
 
 ```bash
-git tag v0.6.0-binaries -m "First pre-built release"
-git push origin v0.6.0-binaries
+git tag v0.6.0-rc1 -m "First pre-built release (pipeline verification)"
+git push origin v0.6.0-rc1
 # Watch https://github.com/JimZhang168872/vpnkit/actions
 ```
 
 After a successful run, verify:
 
-1. `https://github.com/JimZhang168872/vpnkit/releases/tag/v0.6.0-binaries` exists with 3 assets (2 tar.gz + 1 SHA256SUMS).
+1. `https://github.com/JimZhang168872/vpnkit/releases/tag/v0.6.0-rc1` exists with 3 assets (2 tar.gz + 1 SHA256SUMS) and is **flagged as Pre-release**.
 2. Auto-generated release notes show commits since the prior tag.
-3. The install script works end-to-end:
+3. The install script works end-to-end (need `VERSION=` because the latest endpoint skips pre-releases):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/docs/install.sh | bash
+VERSION=v0.6.0-rc1 bash <(curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh)
 ~/.local/bin/vpnkit --version
-# vpnkit v0.6.0-binaries  (commit <sha>, built <date>)
+# vpnkit v0.6.0-rc1  (commit <sha>, built <date>)
 ```
+
+If everything is green, retag as the canonical `v0.6.0` (still goes through the same workflow; that release is a non-prerelease):
+
+```bash
+git tag v0.6.0 -m "First pre-built release"
+git push origin v0.6.0
+```
+
+If anything's off in the rc, fix and force-re-push the same rc tag (GoReleaser's `mode: replace` overwrites assets).
 
 If anything's off, fix and force-re-push (GoReleaser's `mode: replace` overwrites assets).
 
