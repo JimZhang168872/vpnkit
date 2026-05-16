@@ -44,6 +44,14 @@ echo 'export PATH="$HOME/.local/go/bin:$PATH"' >> ~/.bashrc   # or ~/.zshrc
 
 #### 1.2 Build and install vpnkit
 
+The fastest way (no Go toolchain needed):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
+```
+
+Or build from source:
+
 ```bash
 git clone https://github.com/JimZhang168872/vpnkit.git
 cd vpnkit
@@ -505,6 +513,14 @@ echo 'export PATH="$HOME/.local/go/bin:$PATH"' >> ~/.bashrc   # 或 ~/.zshrc
 ```
 
 #### 1.2 编译并安装 vpnkit
+
+最快的方式（不需要 Go 环境）：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh | bash
+```
+
+或者源码编译：
 
 ```bash
 git clone https://github.com/JimZhang168872/vpnkit.git
