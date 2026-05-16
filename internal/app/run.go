@@ -112,7 +112,7 @@ func Run(version string) error {
 		}
 		prog.Send(msg)
 	}()
-	go pollUpdate(prog, version, p.MihomoBinary(), st.Cfg.ReleaseMirror)
+	go pollUpdate(prog, version, p.MihomoBinary())
 	go streamTraffic(prog, client)
 	go pollVersion(prog, client)
 	go pollProxies(prog, client)
@@ -265,7 +265,6 @@ func ensureConfigSecurity(st *store.Store, configFile string) (bool, error) {
 		ControllerSecret: st.Cfg.ControllerSecret,
 		ProxyUser:        st.Cfg.ProxyUser,
 		ProxyPass:        st.Cfg.ProxyPass,
-		ReleaseMirror:    st.Cfg.ReleaseMirror,
 	})
 }
 

@@ -46,31 +46,7 @@ func TestBuildSkeletonUnknownTemplate(t *testing.T) {
 	}
 }
 
-func TestBuildSkeletonAppliesReleaseMirror(t *testing.T) {
-	yaml, err := BuildSkeleton(SkeletonInput{
-		MixedPort:        7890,
-		ControllerPort:   9090,
-		ControllerSecret: "x",
-		RuleTemplate:     "minimal",
-		ReleaseMirror:    "https://ghproxy.com/",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(yaml)
-	if !strings.Contains(s, "geox-url") {
-		t.Errorf("expected geox-url block:\n%s", s)
-	}
-	if !strings.Contains(s, "https://ghproxy.com/https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb") {
-		t.Errorf("geoip URL not mirror-prefixed:\n%s", s)
-	}
-}
-
-func TestBuildSkeletonDefaultsGeoxUrlToJsdelivr(t *testing.T) {
-	// With no ReleaseMirror, the geo files should still be reachable from
-	// inside the GFW. We default geox-url to jsdelivr, which mirrors the
-	// MetaCubeX/meta-rules-dat repo and is generally accessible in mainland
-	// China without a proxy.
+func TestBuildSkeletonGeoxUrlPointsAtGitHubDirectly(t *testing.T) {
 	yaml, err := BuildSkeleton(SkeletonInput{
 		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "x", RuleTemplate: "minimal",
 	})
@@ -79,15 +55,13 @@ func TestBuildSkeletonDefaultsGeoxUrlToJsdelivr(t *testing.T) {
 	}
 	s := string(yaml)
 	if !strings.Contains(s, "geox-url") {
-		t.Errorf("geox-url should always be present (jsdelivr default):\n%s", s)
+		t.Errorf("geox-url should always be present:\n%s", s)
 	}
-	if !strings.Contains(s, "cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb") {
-		t.Errorf("expected jsdelivr-pinned geoip URL:\n%s", s)
+	if !strings.Contains(s, "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb") {
+		t.Errorf("expected direct GitHub geoip URL:\n%s", s)
 	}
-	// And it should NOT contain a raw github.com URL for geo data, which is
-	// the one we're trying to escape.
-	if strings.Contains(s, "github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb") {
-		t.Errorf("default geox-url should not point at github.com:\n%s", s)
+	if strings.Contains(s, "jsdelivr") || strings.Contains(s, "ghproxy") {
+		t.Errorf("geox-url should not reference any mirror:\n%s", s)
 	}
 }
 

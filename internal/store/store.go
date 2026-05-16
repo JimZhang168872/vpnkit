@@ -29,7 +29,6 @@ type Config struct {
 	MixedPort        int       `toml:"mixed_port"`
 	ProxyUser        string    `toml:"proxy_user"`
 	ProxyPass        string    `toml:"proxy_pass"`
-	ReleaseMirror    string    `toml:"release_mirror"`
 	ActiveProfile    string    `toml:"active_profile,omitempty"`
 	RuleTemplate     string    `toml:"rule_template"`
 	ServiceMode      string    `toml:"service_mode,omitempty"`

@@ -177,7 +177,7 @@ rules:
 	}
 	out, _ := os.ReadFile(path)
 	s := string(out)
-	if !strings.Contains(s, "geox-url") || !strings.Contains(s, "cdn.jsdelivr.net/gh/MetaCubeX") {
+	if !strings.Contains(s, "geox-url") || !strings.Contains(s, "github.com/MetaCubeX/meta-rules-dat/releases/download/latest") {
 		t.Errorf("geox-url not injected:\n%s", s)
 	}
 	if !strings.Contains(s, "HK") {

@@ -15,7 +15,6 @@ type SkeletonInput struct {
 	ControllerSecret string
 	LogLevel         string
 	RuleTemplate     string
-	ReleaseMirror    string
 	// ProxyUser/ProxyPass, when both set, enable mihomo's top-level
 	// `authentication` list, requiring HTTP/SOCKS proxy basic auth on mixed-port.
 	ProxyUser string
@@ -66,7 +65,7 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 		base[k] = v
 	}
 
-	base["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
+	base["geox-url"] = mihomoGeoxURL()
 
 	if in.ProxyUser != "" && in.ProxyPass != "" {
 		base["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
@@ -86,27 +85,12 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 }
 
 // mihomoGeoxURL returns the geox-url map mihomo uses to download geoip /
-// geosite data at boot. When `mirror` is non-empty, GitHub URLs are prefixed
-// with it (the INSTALL_MIRROR / release_mirror path). When empty, the URLs
-// default to the jsdelivr CDN serving the MetaCubeX/meta-rules-dat repo's
-// `@release` branch — the geo files are committed to git, so jsdelivr can
-// cache them, and jsdelivr is reachable from inside the GFW without a proxy.
-// This matters because mihomo refuses to start on first launch if a GEOIP /
-// GEOSITE rule references a missing MMDB and the geox download times out.
-func mihomoGeoxURL(mirror string) map[string]string {
-	if mirror != "" {
-		if mirror[len(mirror)-1] != '/' {
-			mirror += "/"
-		}
-		base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
-		return map[string]string{
-			"geoip":   mirror + base + "/geoip.metadb",
-			"mmdb":    mirror + base + "/country.mmdb",
-			"geosite": mirror + base + "/geosite.dat",
-			"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
-		}
-	}
-	const base = "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release"
+// geosite data at boot. Points at MetaCubeX/meta-rules-dat GitHub Releases
+// directly. There is no mirror layer — users behind restrictive networks
+// should configure HTTPS_PROXY so SmartClient (and mihomo itself) routes
+// through their existing proxy.
+func mihomoGeoxURL() map[string]string {
+	const base = "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
 	return map[string]string{
 		"geoip":   base + "/geoip.metadb",
 		"mmdb":    base + "/country.mmdb",

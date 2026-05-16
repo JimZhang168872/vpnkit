@@ -189,10 +189,9 @@ func dispatchNodes(args []string) {
 func dispatchInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	restore := fs.String("restore", "", "path to a profiles backup TOML to merge")
-	mirror := fs.String("release-mirror", "", "URL prefix for mihomo + geox downloads (GFW workaround)")
 	_ = fs.Bool("non-interactive", false, "(no-op; init is always non-interactive)")
 	_ = fs.Parse(args)
-	if err := runInit(os.Stdout, runInitOpts{RestorePath: *restore, ReleaseMirror: *mirror}); err != nil {
+	if err := runInit(os.Stdout, runInitOpts{RestorePath: *restore}); err != nil {
 		dieRuntime("vpnkit init: %v", err)
 	}
 }
