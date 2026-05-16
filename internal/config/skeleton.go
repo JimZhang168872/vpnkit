@@ -66,9 +66,7 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 		base[k] = v
 	}
 
-	if in.ReleaseMirror != "" {
-		base["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
-	}
+	base["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
 
 	if in.ProxyUser != "" && in.ProxyPass != "" {
 		base["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
@@ -87,19 +85,32 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 	return []byte(result), nil
 }
 
-// mihomoGeoxURL returns the geox-url map with each GitHub URL routed through mirror.
+// mihomoGeoxURL returns the geox-url map mihomo uses to download geoip /
+// geosite data at boot. When `mirror` is non-empty, GitHub URLs are prefixed
+// with it (the INSTALL_MIRROR / release_mirror path). When empty, the URLs
+// default to the jsdelivr CDN serving the MetaCubeX/meta-rules-dat repo's
+// `@release` branch — the geo files are committed to git, so jsdelivr can
+// cache them, and jsdelivr is reachable from inside the GFW without a proxy.
+// This matters because mihomo refuses to start on first launch if a GEOIP /
+// GEOSITE rule references a missing MMDB and the geox download times out.
 func mihomoGeoxURL(mirror string) map[string]string {
-	if mirror == "" {
-		return nil
+	if mirror != "" {
+		if mirror[len(mirror)-1] != '/' {
+			mirror += "/"
+		}
+		base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+		return map[string]string{
+			"geoip":   mirror + base + "/geoip.metadb",
+			"mmdb":    mirror + base + "/country.mmdb",
+			"geosite": mirror + base + "/geosite.dat",
+			"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+		}
 	}
-	if mirror[len(mirror)-1] != '/' {
-		mirror += "/"
-	}
-	base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+	const base = "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release"
 	return map[string]string{
-		"geoip":   mirror + base + "/geoip.metadb",
-		"mmdb":    mirror + base + "/country.mmdb",
-		"geosite": mirror + base + "/geosite.dat",
-		"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+		"geoip":   base + "/geoip.metadb",
+		"mmdb":    base + "/country.mmdb",
+		"geosite": base + "/geosite.dat",
+		"asn":     base + "/GeoLite2-ASN.mmdb",
 	}
 }

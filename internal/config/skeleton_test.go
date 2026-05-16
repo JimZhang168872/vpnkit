@@ -66,12 +66,28 @@ func TestBuildSkeletonAppliesReleaseMirror(t *testing.T) {
 	}
 }
 
-func TestBuildSkeletonNoMirror(t *testing.T) {
-	yaml, _ := BuildSkeleton(SkeletonInput{
+func TestBuildSkeletonDefaultsGeoxUrlToJsdelivr(t *testing.T) {
+	// With no ReleaseMirror, the geo files should still be reachable from
+	// inside the GFW. We default geox-url to jsdelivr, which mirrors the
+	// MetaCubeX/meta-rules-dat repo and is generally accessible in mainland
+	// China without a proxy.
+	yaml, err := BuildSkeleton(SkeletonInput{
 		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "x", RuleTemplate: "minimal",
 	})
-	if strings.Contains(string(yaml), "geox-url") {
-		t.Errorf("geox-url should be absent when mirror is unset:\n%s", string(yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(yaml)
+	if !strings.Contains(s, "geox-url") {
+		t.Errorf("geox-url should always be present (jsdelivr default):\n%s", s)
+	}
+	if !strings.Contains(s, "cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb") {
+		t.Errorf("expected jsdelivr-pinned geoip URL:\n%s", s)
+	}
+	// And it should NOT contain a raw github.com URL for geo data, which is
+	// the one we're trying to escape.
+	if strings.Contains(s, "github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb") {
+		t.Errorf("default geox-url should not point at github.com:\n%s", s)
 	}
 }
 

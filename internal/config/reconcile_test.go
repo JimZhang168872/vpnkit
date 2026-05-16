@@ -146,6 +146,77 @@ func TestEnsureSecurityFieldsMissingFileIsError(t *testing.T) {
 	}
 }
 
+func TestEnsureSecurityFieldsInjectsGeoxUrlWhenMissing(t *testing.T) {
+	// Pre-v0.8.3 config.yaml: no geox-url at all → mihomo would try to download
+	// MMDB from github.com on boot and hang inside the GFW. We backfill the
+	// jsdelivr default so existing users self-heal on next launch.
+	pre := `mixed-port: 7890
+external-controller: 127.0.0.1:9090
+secret: s
+allow-lan: false
+bind-address: 127.0.0.1
+proxies:
+  - {name: HK, type: ss, server: 1.1.1.1, port: 1, cipher: aes-128-gcm, password: p}
+rules:
+  - GEOIP,CN,DIRECT
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(pre), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureSecurityFields(path, SecurityFields{
+		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "s",
+		ProxyUser: "u", ProxyPass: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("expected changed=true (geox-url was missing)")
+	}
+	out, _ := os.ReadFile(path)
+	s := string(out)
+	if !strings.Contains(s, "geox-url") || !strings.Contains(s, "cdn.jsdelivr.net/gh/MetaCubeX") {
+		t.Errorf("geox-url not injected:\n%s", s)
+	}
+	if !strings.Contains(s, "HK") {
+		t.Errorf("existing proxies lost:\n%s", s)
+	}
+}
+
+func TestEnsureSecurityFieldsPreservesExistingGeoxUrl(t *testing.T) {
+	// User customized geox-url via patch.yaml or by hand — don't clobber it.
+	pre := `mixed-port: 7890
+external-controller: 127.0.0.1:9090
+secret: s
+allow-lan: false
+bind-address: 127.0.0.1
+geox-url:
+  geoip: https://custom.example.com/geoip.metadb
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(pre), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := EnsureSecurityFields(path, SecurityFields{
+		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "s",
+		ProxyUser: "u", ProxyPass: "p",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		// auth is being inserted (no ProxyUser/Pass in pre), so changed will be true.
+		// We still need to verify the geox-url survived.
+	}
+	out, _ := os.ReadFile(path)
+	if !strings.Contains(string(out), "custom.example.com/geoip.metadb") {
+		t.Errorf("user-customized geox-url got clobbered:\n%s", string(out))
+	}
+}
+
 func TestEnsureSecurityFieldsKeepsFileMode0600(t *testing.T) {
 	pre := "mixed-port: 7890\nexternal-controller: 127.0.0.1:9090\nsecret: s\n"
 	dir := t.TempDir()

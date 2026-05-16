@@ -263,6 +263,7 @@ func ensureConfigSecurity(st *store.Store, configFile string) (bool, error) {
 		ControllerSecret: st.Cfg.ControllerSecret,
 		ProxyUser:        st.Cfg.ProxyUser,
 		ProxyPass:        st.Cfg.ProxyPass,
+		ReleaseMirror:    st.Cfg.ReleaseMirror,
 	})
 }
 

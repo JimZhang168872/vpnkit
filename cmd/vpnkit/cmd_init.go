@@ -100,6 +100,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 			ControllerSecret: st.Cfg.ControllerSecret,
 			ProxyUser:        st.Cfg.ProxyUser,
 			ProxyPass:        st.Cfg.ProxyPass,
+			ReleaseMirror:    st.Cfg.ReleaseMirror,
 		})
 		if err != nil {
 			fmt.Fprintf(out, "⚠️  could not reconcile %s: %v\n", p.MihomoConfigFile(), err)

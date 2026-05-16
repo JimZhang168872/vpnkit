@@ -78,9 +78,7 @@ func Assemble(in AssembleInput) ([]byte, error) {
 		doc[k] = v
 	}
 
-	if in.ReleaseMirror != "" {
-		doc["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
-	}
+	doc["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
 
 	if in.PatchPath != "" {
 		if err := patch.Apply(in.PatchPath, doc); err != nil {
@@ -114,20 +112,31 @@ func groupsToAny(in []map[string]any) []any {
 	return out
 }
 
-// mihomoGeoxURL returns the geox-url map with each GitHub URL routed through mirror.
+// mihomoGeoxURL returns the geox-url map for mihomo. See the matching
+// helper in internal/config/skeleton.go for behavioral details — the two are
+// kept in sync so a fresh config (BuildSkeleton path) and a subscription-
+// regenerated config (this path) agree on where geo data comes from.
+// Empty `mirror` → defaults to jsdelivr CDN (reachable from inside the GFW
+// without a proxy); non-empty mirror → wrap each GitHub URL with the prefix.
 func mihomoGeoxURL(mirror string) map[string]string {
-	if mirror == "" {
-		return nil
+	if mirror != "" {
+		if mirror[len(mirror)-1] != '/' {
+			mirror += "/"
+		}
+		base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+		return map[string]string{
+			"geoip":   mirror + base + "/geoip.metadb",
+			"mmdb":    mirror + base + "/country.mmdb",
+			"geosite": mirror + base + "/geosite.dat",
+			"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+		}
 	}
-	if mirror[len(mirror)-1] != '/' {
-		mirror += "/"
-	}
-	base := "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest"
+	const base = "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release"
 	return map[string]string{
-		"geoip":   mirror + base + "/geoip.metadb",
-		"mmdb":    mirror + base + "/country.mmdb",
-		"geosite": mirror + base + "/geosite.dat",
-		"asn":     mirror + base + "/GeoLite2-ASN.mmdb",
+		"geoip":   base + "/geoip.metadb",
+		"mmdb":    base + "/country.mmdb",
+		"geosite": base + "/geosite.dat",
+		"asn":     base + "/GeoLite2-ASN.mmdb",
 	}
 }
 

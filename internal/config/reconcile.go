@@ -20,6 +20,9 @@ type SecurityFields struct {
 	ControllerSecret string
 	ProxyUser        string
 	ProxyPass        string
+	// ReleaseMirror, when non-empty, prefixes every github.com URL in the
+	// generated geox-url block. Empty → defaults to jsdelivr CDN.
+	ReleaseMirror string
 }
 
 // EnsureSecurityFields rewrites the security-related keys in `path`'s YAML to
@@ -65,6 +68,21 @@ func EnsureSecurityFields(path string, sf SecurityFields) (bool, error) {
 			changed = true
 		}
 	}
+
+	// Backfill geox-url only when missing — users may have customized it via
+	// patch.yaml and we should preserve their choice. Without geox-url mihomo
+	// would default to downloading from github.com, which times out inside
+	// the GFW on first boot and prevents the controller from ever listening.
+	if _, has := doc["geox-url"]; !has {
+		geox := mihomoGeoxURL(sf.ReleaseMirror)
+		any_ := map[string]any{}
+		for k, v := range geox {
+			any_[k] = v
+		}
+		doc["geox-url"] = any_
+		changed = true
+	}
+
 	if !changed {
 		return false, nil
 	}
