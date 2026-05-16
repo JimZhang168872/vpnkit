@@ -1,10 +1,8 @@
 // Package updater implements vpnkit's self-update flow: query GitHub for the
-// latest vpnkit + mihomo releases, download them through the configured
-// release mirror, atomically replace the on-disk binaries, and (when invoked
-// from a running TUI) re-exec the current process to pick up the new binary.
-//
-// All network calls are short-timeout and respect store.Cfg.ReleaseMirror so
-// behind-GFW users get the same coverage as `INSTALL_MIRROR` in install.sh.
+// latest vpnkit + mihomo releases, download them directly via SmartClient
+// (which honors a live env proxy / falls back to direct), atomically replace
+// the on-disk binaries, and (when invoked from a running TUI) re-exec the
+// current process to pick up the new binary.
 package updater
 
 import (
@@ -23,8 +21,7 @@ type Opts struct {
 	// MihomoCurrent is the version string from `mihomo -v` (or "" if mihomo
 	// is not yet installed).
 	MihomoCurrent string
-	// APIBase overrides https://api.github.com (used by tests + when a
-	// mirror routes api.github.com through itself).
+	// APIBase overrides https://api.github.com (used by tests).
 	APIBase string
 	// Repo / MihomoRepo override the default owner/repo paths. Tests use
 	// these; production callers leave them empty for defaults.
