@@ -21,6 +21,8 @@ type AssembleInput struct {
 	RuleTemplate     string
 	PatchPath        string
 	ReleaseMirror    string
+	ProxyUser        string
+	ProxyPass        string
 }
 
 // Assemble produces the final config.yaml bytes by combining:
@@ -47,10 +49,14 @@ func Assemble(in AssembleInput) ([]byte, error) {
 	doc := map[string]any{
 		"mixed-port":          in.MixedPort,
 		"allow-lan":           false,
+		"bind-address":        "127.0.0.1",
 		"mode":                "rule",
 		"log-level":           in.LogLevel,
 		"external-controller": fmt.Sprintf("127.0.0.1:%d", in.ControllerPort),
 		"secret":              in.ControllerSecret,
+	}
+	if in.ProxyUser != "" && in.ProxyPass != "" {
+		doc["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
 	}
 
 	rawProxies := make([]any, 0, len(in.Result.Proxies))

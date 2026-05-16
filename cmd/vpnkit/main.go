@@ -4,12 +4,17 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"vpnkit/internal/app"
 	"vpnkit/internal/env"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/store"
 )
+
+// storeLoad is a thin pointer so unit tests could override later.
+var storeLoad = store.Load
 
 // version, commit, date are overridden at build time via -ldflags
 //   -X main.version=... -X main.commit=... -X main.date=...
@@ -74,6 +79,7 @@ func runEnv(args []string) {
 	shell := fs.String("shell", os.Getenv("SHELL"), "shell flavor: bash, zsh, or fish")
 	noProxy := fs.String("no-proxy", "localhost,127.0.0.1,::1", "comma-separated no_proxy")
 	unset := fs.Bool("unset", false, "emit unset/erase commands instead of export/set")
+	noNetrc := fs.Bool("no-netrc", false, "skip writing ~/.netrc")
 	_ = fs.Parse(args)
 
 	flavor := "bash"
@@ -86,9 +92,30 @@ func runEnv(args []string) {
 		flavor = "fish"
 	}
 
-	port := 7890 // Phase 1: mixed-port hardcoded in skeleton; Phase 2 will plumb through store.
-	out := env.Render(env.Options{Shell: flavor, Port: port, NoProxy: *noProxy, Unset: *unset})
+	p := paths.Resolve()
+	st, err := storeLoad(p.VpnkitConfigFile())
+	port, user, pass := 7890, "", ""
+	if err == nil {
+		port = st.Cfg.MixedPort
+		if port == 0 {
+			port = 7890
+		}
+		user = st.Cfg.ProxyUser
+		pass = st.Cfg.ProxyPass
+	}
+
+	out := env.Render(env.Options{
+		Shell: flavor, Port: port, User: user, Pass: pass,
+		NoProxy: *noProxy, Unset: *unset,
+	})
 	fmt.Print(out)
+
+	if !*unset && !*noNetrc && user != "" && pass != "" {
+		if home, herr := os.UserHomeDir(); herr == nil {
+			netrcPath := filepath.Join(home, ".netrc")
+			_ = env.WriteNetrc(netrcPath, "127.0.0.1", user, pass)
+		}
+	}
 }
 
 func dispatchStatus(args []string) {
@@ -104,11 +131,11 @@ func dispatchStatus(args []string) {
 
 func dispatchIP(args []string) {
 	jsonOut, _ := parseFlags(args)
-	c, _, err := loadClient()
+	c, st, err := loadClient()
 	if err != nil {
 		dieRuntime("vpnkit ip: %v", err)
 	}
-	if err := runIP(os.Stdout, c, "", jsonOut); err != nil {
+	if err := runIP(os.Stdout, c, st, "", jsonOut); err != nil {
 		dieRuntime("vpnkit ip: %v", err)
 	}
 }

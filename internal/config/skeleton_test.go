@@ -75,6 +75,33 @@ func TestBuildSkeletonNoMirror(t *testing.T) {
 	}
 }
 
+func TestBuildSkeletonEmitsAuthentication(t *testing.T) {
+	yaml, err := BuildSkeleton(SkeletonInput{
+		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "x",
+		RuleTemplate: "minimal",
+		ProxyUser:    "alice",
+		ProxyPass:    "s3cret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, string(yaml), "authentication:")
+	mustContain(t, string(yaml), "alice:s3cret")
+}
+
+func TestBuildSkeletonOmitsAuthenticationWhenMissingCreds(t *testing.T) {
+	yaml, err := BuildSkeleton(SkeletonInput{
+		MixedPort: 7890, ControllerPort: 9090, ControllerSecret: "x",
+		RuleTemplate: "minimal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(yaml), "authentication:") {
+		t.Errorf("authentication: should be absent when creds unset:\n%s", string(yaml))
+	}
+}
+
 func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {

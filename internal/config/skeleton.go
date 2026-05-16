@@ -16,6 +16,10 @@ type SkeletonInput struct {
 	LogLevel         string
 	RuleTemplate     string
 	ReleaseMirror    string
+	// ProxyUser/ProxyPass, when both set, enable mihomo's top-level
+	// `authentication` list, requiring HTTP/SOCKS proxy basic auth on mixed-port.
+	ProxyUser string
+	ProxyPass string
 }
 
 // BuildSkeleton assembles a complete (proxy-less) config.yaml suitable as a starting
@@ -40,6 +44,7 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 	base := map[string]any{
 		"mixed-port":          in.MixedPort,
 		"allow-lan":           false,
+		"bind-address":        "127.0.0.1",
 		"mode":                "rule",
 		"log-level":           in.LogLevel,
 		"external-controller": fmt.Sprintf("127.0.0.1:%d", in.ControllerPort),
@@ -63,6 +68,10 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 
 	if in.ReleaseMirror != "" {
 		base["geox-url"] = mihomoGeoxURL(in.ReleaseMirror)
+	}
+
+	if in.ProxyUser != "" && in.ProxyPass != "" {
+		base["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
 	}
 
 	out, err := yaml.Marshal(base)

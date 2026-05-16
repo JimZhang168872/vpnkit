@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"vpnkit/internal/api"
 	"vpnkit/internal/msg"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/portutil"
 	"vpnkit/internal/profiles"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
@@ -40,6 +42,11 @@ func Run() error {
 		LogFilePath: p.MihomoLog(),
 		UnitPath:    p.SystemdUnit(),
 	})
+	// Reconcile ports against the local OS before profMgr captures them. Skip
+	// when our mihomo is already running (its bound ports are presumably the saved ones).
+	if err := reconcilePorts(svc, st, p.MihomoConfigFile()); err != nil {
+		return fmt.Errorf("reconcile ports: %w", err)
+	}
 	client := api.New(fmt.Sprintf("http://127.0.0.1:%d", st.Cfg.ControllerPort), st.Cfg.ControllerSecret)
 
 	profMgr := profiles.New(profiles.Config{
@@ -47,8 +54,11 @@ func Run() error {
 		PatchPath:        filepath.Join(p.MihomoConfig, "patch.yaml"),
 		ControllerPort:   st.Cfg.ControllerPort,
 		ControllerSecret: st.Cfg.ControllerSecret,
+		MixedPort:        st.Cfg.MixedPort,
 		RuleTemplate:     st.Cfg.RuleTemplate,
 		ReleaseMirror:    st.Cfg.ReleaseMirror,
+		ProxyUser:        st.Cfg.ProxyUser,
+		ProxyPass:        st.Cfg.ProxyPass,
 	})
 	profMgr.Load(toProfilesProfiles(st.Cfg.Profiles), st.Cfg.ActiveProfile)
 	profMgr.SetOnChange(func() {
@@ -219,6 +229,47 @@ func streamLogs(prog *tea.Program, svc service.Manager) {
 		cancel()
 		time.Sleep(2 * time.Second)
 	}
+}
+
+// reconcilePorts picks free TCP ports for mixed-port and external-controller.
+// If the saved ports are busy and mihomo is not running, scans upward and
+// persists. Deletes any pre-existing config.yaml that referenced the stale
+// ports so bootstrap re-emits a matching one.
+func reconcilePorts(svc service.Manager, st *store.Store, configFile string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if status, err := svc.Status(ctx); err == nil && status.Running {
+		return nil
+	}
+	mp, err := portutil.FindFree(st.Cfg.MixedPort, 100)
+	if err != nil {
+		return fmt.Errorf("mixed-port: %w", err)
+	}
+	cp, err := portutil.FindFree(st.Cfg.ControllerPort, 100)
+	if err != nil {
+		return fmt.Errorf("controller-port: %w", err)
+	}
+	// Configs whose mixed and controller starts fall within 100 of each other
+	// could have both scans converge on the same port. Push the controller
+	// past the chosen mixed-port if so.
+	if mp == cp {
+		alt, err := portutil.FindFree(cp+1, 100)
+		if err != nil {
+			return fmt.Errorf("controller-port collision: %w", err)
+		}
+		cp = alt
+	}
+	if mp == st.Cfg.MixedPort && cp == st.Cfg.ControllerPort {
+		return nil
+	}
+	st.Cfg.MixedPort = mp
+	st.Cfg.ControllerPort = cp
+	if err := st.Save(); err != nil {
+		return err
+	}
+	// Force bootstrap to regenerate the mihomo config so it reflects new ports.
+	_ = os.Remove(configFile)
+	return nil
 }
 
 // toProfilesProfiles converts store.Profile slice to profiles.Profile slice.

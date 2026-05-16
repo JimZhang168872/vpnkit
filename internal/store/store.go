@@ -26,6 +26,9 @@ type Profile struct {
 type Config struct {
 	ControllerSecret string    `toml:"controller_secret"`
 	ControllerPort   int       `toml:"controller_port"`
+	MixedPort        int       `toml:"mixed_port"`
+	ProxyUser        string    `toml:"proxy_user"`
+	ProxyPass        string    `toml:"proxy_pass"`
 	ReleaseMirror    string    `toml:"release_mirror"`
 	ActiveProfile    string    `toml:"active_profile,omitempty"`
 	RuleTemplate     string    `toml:"rule_template"`
@@ -58,18 +61,42 @@ func Load(path string) (*Store, error) {
 	if err := toml.Unmarshal(data, &s.Cfg); err != nil {
 		return nil, err
 	}
-	// Apply defaults for any zero-value fields the caller relies on.
+	// Apply defaults for any zero-value fields the caller relies on. Persist
+	// the result so generated creds survive across launches (otherwise users
+	// upgrading from a pre-auth version would see fresh creds every run).
+	changed := false
 	if s.Cfg.ControllerPort == 0 {
 		s.Cfg.ControllerPort = 9090
+		changed = true
+	}
+	if s.Cfg.MixedPort == 0 {
+		s.Cfg.MixedPort = 7890
+		changed = true
 	}
 	if s.Cfg.RuleTemplate == "" {
 		s.Cfg.RuleTemplate = "loyalsoldier"
+		changed = true
 	}
 	if s.Cfg.UITheme == "" {
 		s.Cfg.UITheme = "default"
+		changed = true
 	}
 	if s.Cfg.ControllerSecret == "" {
 		s.Cfg.ControllerSecret = randHex(16)
+		changed = true
+	}
+	if s.Cfg.ProxyUser == "" {
+		s.Cfg.ProxyUser = "vpnkit-" + randHex(4)
+		changed = true
+	}
+	if s.Cfg.ProxyPass == "" {
+		s.Cfg.ProxyPass = randHex(16)
+		changed = true
+	}
+	if changed {
+		if err := s.Save(); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
@@ -85,26 +112,34 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
+	tmpName := tmp.Name()
+	// Belt-and-suspenders: tighten perms (os.CreateTemp is 0600 by default but
+	// some umask paths historically left this looser). Rename preserves perms.
+	_ = tmp.Chmod(0o600)
+	// Cleanup on any path that doesn't successfully rename. After Rename the
+	// source no longer exists, so the deferred Remove becomes a no-op.
+	defer os.Remove(tmpName)
 	if err := toml.NewEncoder(tmp).Encode(s.Cfg); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		os.Remove(tmp.Name())
 		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), s.path)
+	return os.Rename(tmpName, s.path)
 }
 
 func defaults() Config {
 	return Config{
 		ControllerSecret: randHex(16),
 		ControllerPort:   9090,
+		MixedPort:        7890,
+		ProxyUser:        "vpnkit-" + randHex(4),
+		ProxyPass:        randHex(16),
 		RuleTemplate:     "loyalsoldier",
 		UITheme:          "default",
 	}

@@ -30,6 +30,8 @@ type Config struct {
 	MixedPort        int
 	RuleTemplate     string
 	ReleaseMirror    string
+	ProxyUser        string
+	ProxyPass        string
 }
 
 // Manager holds the active profile list and writes config files.
@@ -170,6 +172,8 @@ func (m *Manager) Update(ctx context.Context, name string) (int, error) {
 		RuleTemplate:     cfg.RuleTemplate,
 		PatchPath:        cfg.PatchPath,
 		ReleaseMirror:    cfg.ReleaseMirror,
+		ProxyUser:        cfg.ProxyUser,
+		ProxyPass:        cfg.ProxyPass,
 	})
 	if err != nil {
 		return 0, err

@@ -62,6 +62,24 @@ func TestAssembleAppliesReleaseMirror(t *testing.T) {
 	}
 }
 
+func TestAssembleEmitsAuthentication(t *testing.T) {
+	out, err := Assemble(AssembleInput{
+		Result:           Result{Source: "uri", Proxies: nil},
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		RuleTemplate:     "minimal",
+		ProxyUser:        "alice",
+		ProxyPass:        "p4ss",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "authentication:") || !strings.Contains(string(out), "alice:p4ss") {
+		t.Errorf("missing authentication block:\n%s", out)
+	}
+}
+
 func TestAssembleKeepsExistingGroupsFromClash(t *testing.T) {
 	r := Result{
 		Source: "clash",

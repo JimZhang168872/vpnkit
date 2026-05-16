@@ -23,6 +23,35 @@ func TestLoadCreatesDefaultsWhenMissing(t *testing.T) {
 	if len(s.Cfg.ControllerSecret) < 16 {
 		t.Errorf("secret too short: %q", s.Cfg.ControllerSecret)
 	}
+	if s.Cfg.MixedPort != 7890 {
+		t.Errorf("default mixed_port: %d", s.Cfg.MixedPort)
+	}
+	if len(s.Cfg.ProxyUser) < 8 {
+		t.Errorf("proxy_user too short / not generated: %q", s.Cfg.ProxyUser)
+	}
+	if len(s.Cfg.ProxyPass) < 16 {
+		t.Errorf("proxy_pass too short / not generated: %q", s.Cfg.ProxyPass)
+	}
+}
+
+func TestProxyCredsPersist(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	u, p := s.Cfg.ProxyUser, s.Cfg.ProxyPass
+	if u == "" || p == "" {
+		t.Fatal("creds not generated")
+	}
+	s2, err := Load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if s2.Cfg.ProxyUser != u || s2.Cfg.ProxyPass != p {
+		t.Errorf("creds regenerated on reload: got %q/%q want %q/%q",
+			s2.Cfg.ProxyUser, s2.Cfg.ProxyPass, u, p)
+	}
 }
 
 func TestSaveAndReload(t *testing.T) {

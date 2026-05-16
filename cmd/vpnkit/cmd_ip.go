@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"vpnkit/internal/api"
+	"vpnkit/internal/store"
 )
 
 const defaultIPInfoURL = "https://ipinfo.io/json"
 
 // runIP fetches ipinfoURL through mihomo's mixed-port proxy.
 // If ipinfoURL is empty, defaultIPInfoURL is used.
-func runIP(out io.Writer, c *api.Client, ipinfoURL string, jsonOut bool) error {
+func runIP(out io.Writer, c *api.Client, st *store.Store, ipinfoURL string, jsonOut bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	if ipinfoURL == "" {
@@ -31,7 +32,11 @@ func runIP(out io.Writer, c *api.Client, ipinfoURL string, jsonOut bool) error {
 	if cfg.MixedPort == 0 {
 		return fmt.Errorf("mihomo mixed-port not configured")
 	}
-	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.MixedPort))
+	authority := fmt.Sprintf("127.0.0.1:%d", cfg.MixedPort)
+	if st != nil && st.Cfg.ProxyUser != "" && st.Cfg.ProxyPass != "" {
+		authority = url.UserPassword(st.Cfg.ProxyUser, st.Cfg.ProxyPass).String() + "@" + authority
+	}
+	proxyURL, _ := url.Parse("http://" + authority)
 	client := &http.Client{
 		Timeout:   8 * time.Second,
 		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},

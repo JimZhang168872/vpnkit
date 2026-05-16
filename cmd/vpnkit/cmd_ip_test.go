@@ -43,7 +43,7 @@ func TestIPHuman(t *testing.T) {
 
 	c := api.New(mihomoSrv.URL, "")
 	var buf bytes.Buffer
-	if err := runIP(&buf, c, ipsrv.URL+"/json", false); err != nil {
+	if err := runIP(&buf, c, nil, ipsrv.URL+"/json", false); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -57,7 +57,7 @@ func TestIPHuman(t *testing.T) {
 func TestIPMihomoUnreachable(t *testing.T) {
 	c := api.New("http://127.0.0.1:1", "")
 	var buf bytes.Buffer
-	err := runIP(&buf, c, "https://ipinfo.io/json", false)
+	err := runIP(&buf, c, nil, "https://ipinfo.io/json", false)
 	if err == nil {
 		t.Error("expected error")
 	}

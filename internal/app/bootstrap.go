@@ -48,14 +48,17 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 				return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("install: %w", err)}
 			}
 		}
-		// 3. Generate config.yaml if missing.
+		// 3. Generate config.yaml if missing. Port reconciliation happens earlier
+		// (synchronously, in app.Run) so profMgr sees the final ports.
 		if _, err := os.Stat(d.Paths.MihomoConfigFile()); errors.Is(err, fs.ErrNotExist) {
 			data, err := config.BuildSkeleton(config.SkeletonInput{
-				MixedPort:        7890,
+				MixedPort:        d.Store.Cfg.MixedPort,
 				ControllerPort:   d.Store.Cfg.ControllerPort,
 				ControllerSecret: d.Store.Cfg.ControllerSecret,
 				RuleTemplate:     d.Store.Cfg.RuleTemplate,
 				ReleaseMirror:    d.Store.Cfg.ReleaseMirror,
+				ProxyUser:        d.Store.Cfg.ProxyUser,
+				ProxyPass:        d.Store.Cfg.ProxyPass,
 			})
 			if err != nil {
 				return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("config: %w", err)}
