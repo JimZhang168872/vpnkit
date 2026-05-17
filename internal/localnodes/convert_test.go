@@ -17,3 +17,27 @@ func TestToProxyMapHysteria2(t *testing.T) {
 		t.Errorf("fields not flattened: %v", m)
 	}
 }
+
+func TestToProxyMapEmitsDialerProxy(t *testing.T) {
+	n := Node{
+		Name:   "HK-A",
+		Group:  "home",
+		Via:    "doge:JP-1",
+		Proto:  "hysteria2",
+		Server: "1.2.3.4",
+		Port:   443,
+		Fields: map[string]any{"password": "x"},
+	}
+	m := ToProxyMap(n)
+	if m["dialer-proxy"] != "doge:JP-1" {
+		t.Errorf("dialer-proxy: got %v", m["dialer-proxy"])
+	}
+}
+
+func TestToProxyMapOmitsDialerProxyWhenEmpty(t *testing.T) {
+	n := Node{Name: "HK-A", Proto: "ss", Server: "1.2.3.4", Port: 8388}
+	m := ToProxyMap(n)
+	if _, ok := m["dialer-proxy"]; ok {
+		t.Errorf("dialer-proxy should not be set when Via is empty: %v", m)
+	}
+}

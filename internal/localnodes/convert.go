@@ -6,14 +6,20 @@ package localnodes
 // on top. If a parser populates Fields with one of those four reserved
 // keys, the Fields value WILL OVERRIDE the struct value — keep that
 // invariant by never putting reserved keys into Fields.
+//
+// When Node.Via is non-empty, a "dialer-proxy" entry is added so mihomo
+// dials this node THROUGH the named proxy/group (multi-hop chain).
 func ToProxyMap(n Node) map[string]any {
-	m := make(map[string]any, 4+len(n.Fields))
+	m := make(map[string]any, 5+len(n.Fields))
 	m["name"] = n.Name
 	m["type"] = n.Proto
 	m["server"] = n.Server
 	m["port"] = n.Port
 	for k, v := range n.Fields {
 		m[k] = v
+	}
+	if n.Via != "" {
+		m["dialer-proxy"] = n.Via
 	}
 	return m
 }
