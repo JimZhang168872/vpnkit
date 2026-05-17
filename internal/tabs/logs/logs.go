@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 const ringSize = 1000
@@ -37,7 +38,9 @@ func (m Model) Lines() []string { return m.lines }
 // TogglePause flips the pause flag.
 func (m *Model) TogglePause() { m.paused = !m.paused }
 
-// View renders the tail (most recent height-4 lines).
+// View renders the tail (most recent height-4 lines), each line truncated
+// to the inner width so long log lines don't soft-wrap and blow up the row
+// count (which would push the parent's sidebars off-screen).
 func (m Model) View(width, height int) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Logs")
 	pauseMark := ""
@@ -53,9 +56,14 @@ func (m Model) View(width, height int) string {
 	if len(m.lines) > tailSize {
 		start = len(m.lines) - tailSize
 	}
+	innerWidth := width - 6 // -4 padding -2 prefix slack
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
 	for _, l := range m.lines[start:] {
-		rows = append(rows, "  "+l)
+		rows = append(rows, "  "+viewport.TruncateDisplay(l, innerWidth))
 	}
 	rows = append(rows, "", "[p] pause/resume")
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
