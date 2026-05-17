@@ -592,7 +592,7 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 					return m, nil
 				}
 				switch km.String() {
-				case "p":
+				case "ctrl+p":
 					idx := 0
 					for i, p := range supportedProtos {
 						if p == m.form.proto {
@@ -603,7 +603,7 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 					next := supportedProtos[(idx+1)%len(supportedProtos)]
 					m.form = newLocalNodeFieldForm(next, m.form.defaultGroup)
 					return m, nil
-				case "u":
+				case "ctrl+u":
 					f := newLocalNodeURIForm()
 					f.defaultGroup = m.form.defaultGroup
 					m.form = f

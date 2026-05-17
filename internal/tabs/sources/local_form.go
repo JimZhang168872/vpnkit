@@ -209,7 +209,7 @@ func renderLocalNodeFieldForm(f *localNodeForm) string {
 		rows = append(rows, mark+d.label+" "+f.inputs[i].View())
 	}
 	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(
-		"[Tab/↑↓] navigate  [Enter] save  [Esc] cancel  [p] change proto  [u] URI mode"))
+		"[Tab/↑↓] navigate  [Enter] save  [Esc] cancel  [Ctrl+P] change proto  [Ctrl+U] URI mode"))
 	return strings.Join(rows, "\n")
 }
 
