@@ -28,7 +28,7 @@ func TestSubMenuNavigation(t *testing.T) {
 }
 
 func TestPageEnumNames(t *testing.T) {
-	expected := []SubPage{SubCore, SubService, SubController, SubRules, SubExtensions, SubLogs, SubCache, SubAbout}
+	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubExtensions, SubLogs, SubCache, SubAbout}
 	if len(SubPageNames) != len(expected) {
 		t.Fatalf("len(SubPageNames)=%d, want %d", len(SubPageNames), len(expected))
 	}
@@ -53,7 +53,8 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 		},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	for i := 0; i < 4; i++ {
+	// SubExtensions is now at index 5 (Core=0,Service=1,Controller=2,Routing=3,Rules=4,Extensions=5).
+	for i := 0; i < 5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
 	m.SetFocus(FocusContent)
@@ -88,8 +89,8 @@ func TestFocusToggleInExtensions(t *testing.T) {
 		Chains: []extensions.Chain{{Node: "A", Via: "B"}, {Node: "C", Via: "D"}},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	// Switch to Extensions.
-	for i := 0; i < 4; i++ {
+	// Switch to Extensions (now at index 5).
+	for i := 0; i < 5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
 	if m.SelectedPage() != SubExtensions {
@@ -130,7 +131,8 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 		Chains: []extensions.Chain{{Node: "A", Via: "B"}},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	for i := 0; i < 4; i++ {
+	// Navigate to Extensions (now at index 5).
+	for i := 0; i < 5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
 	m.SetFocus(FocusContent)
@@ -151,7 +153,8 @@ func TestSubPageOwnsContent(t *testing.T) {
 	if m.SubPageOwnsContent() {
 		t.Errorf("default sub-page (Core) should NOT own content")
 	}
-	for i := 0; i < 4; i++ {
+	// Extensions is now at index 5.
+	for i := 0; i < 5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
 	if !m.SubPageOwnsContent() {

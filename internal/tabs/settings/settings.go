@@ -22,6 +22,7 @@ const (
 	SubCore SubPage = iota
 	SubService
 	SubController
+	SubRouting
 	SubRules
 	SubExtensions
 	SubLogs
@@ -49,6 +50,7 @@ var SubPageNames = [NumSubPages]string{
 	"Mihomo Core",
 	"Service",
 	"External Controller",
+	"Routing",
 	"Default Rules",
 	"Extensions",
 	"Logs",
@@ -91,6 +93,7 @@ type Model struct {
 	core       coreModel
 	extensions extensionsModel
 	logs       logs.Model
+	routing    routingModel
 }
 
 // Focus exposes the active focus state (for tests / rendering).
@@ -133,6 +136,7 @@ func New(deps Deps) Model {
 		core:       newCore(deps.Paths, deps.Store),
 		extensions: ex,
 		logs:       logs.New(),
+		routing:    newRouting(deps.Store, deps.ApplyFunc),
 	}
 }
 
@@ -217,6 +221,8 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.extensions, cmd = m.extensions.Update(message)
 	case SubLogs:
 		m.logs, cmd = m.logs.Update(message)
+	case SubRouting:
+		m.routing, cmd = m.routing.Update(message)
 	}
 	return m, cmd
 }
@@ -256,6 +262,8 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubLogs:
 		body = m.logs.ViewFocused(bodyWidth, height, false)
+	case SubRouting:
+		body = m.routing.View(bodyWidth, height)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }
