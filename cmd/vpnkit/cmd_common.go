@@ -95,14 +95,16 @@ func writeJSON(out io.Writer, v any) error {
 	return err
 }
 
-// dieUserErr writes to stderr and exits 1.
-func dieUserErr(format string, args ...any) {
+// dieUserErr writes to stderr and exits 1 (user/input error).
+// Overrideable in tests to avoid os.Exit.
+var dieUserErr = func(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
 }
 
-// dieRuntime writes to stderr and exits 2.
-func dieRuntime(format string, args ...any) {
+// dieRuntime writes to stderr and exits 2 (runtime/internal error).
+// Overrideable in tests to avoid os.Exit.
+var dieRuntime = func(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(2)
 }
