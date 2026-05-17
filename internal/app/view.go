@@ -8,23 +8,25 @@ func (m Model) View() string {
 		return "loading…"
 	}
 	bodyHeight := m.height - 1 // reserve a line for status bar
-	sidebar := renderSidebar(m.activeTab, bodyHeight, m.appFocus == FocusMainSidebar)
+	mainFocused := m.appFocus == FocusMainSidebar
+	sidebar := renderSidebar(m.activeTab, bodyHeight, mainFocused)
 	bodyWidth := m.width - sidebarWidth
+	bodyFocused := !mainFocused // i.e., appFocus == TabBody
 
 	var body string
 	switch m.activeTab {
 	case TabDashboard:
-		body = m.dashboard.View(bodyWidth, bodyHeight)
+		body = m.dashboard.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabProxies:
-		body = m.proxiesTab.View(bodyWidth, bodyHeight)
+		body = m.proxiesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabProfiles:
-		body = m.profilesTab.View(bodyWidth, bodyHeight)
+		body = m.profilesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabConnections:
-		body = m.connectionsTab.View(bodyWidth, bodyHeight)
+		body = m.connectionsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabRules:
-		body = m.rulesTab.View(bodyWidth, bodyHeight)
+		body = m.rulesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabSettings:
-		body = m.settingsTab.View(bodyWidth, bodyHeight)
+		body = m.settingsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	default:
 		body = m.stubs[m.activeTab].View(bodyWidth, bodyHeight)
 	}

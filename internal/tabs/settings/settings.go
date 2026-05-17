@@ -11,6 +11,7 @@ import (
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 	"vpnkit/internal/tabs/logs"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // SubPage identifies a sub-page.
@@ -94,6 +95,13 @@ func (m *Model) SetFocus(f SettingsFocus) { m.focus = f }
 // is the only one). App-level →/← uses this to decide whether to advance
 // inner focus or to bounce focus all the way to MainSidebar.
 func (m Model) SubPageOwnsContent() bool { return subPageOwnsArrows(m.current) }
+
+// InputOpen reports whether a sub-page is currently in a state where every
+// key should be delivered to it (e.g. Extensions add/edit form). Used by
+// the app's global focus shifter to step aside.
+func (m Model) InputOpen() bool {
+	return m.current == SubExtensions && m.extensions.formOpen()
+}
 
 // New constructs the Settings tab Model with all sub-pages instantiated.
 func New(deps Deps) Model {
@@ -202,11 +210,23 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View defaults to TabBody-focused for direct callers (tests). app/view.go
+// passes the app-level focus via ViewFocused.
 func (m Model) View(width, height int) string {
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused renders Settings with the given app-level "is this tab body
+// focused?" flag. The inner Settings focus state (Sidebar / Content) is
+// combined with it so an unfocused tab never shows a bright cursor —
+// neither sub-sidebar nor content can "own" input when the user has
+// shifted focus to the MainSidebar.
+func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 	subWidth := 22
 	bodyWidth := width - subWidth - 1
-	side := renderSubSidebar(m.current, height, m.focus == FocusSidebar)
-	contentFocused := m.focus == FocusContent
+	sidebarFocused := tabBodyFocused && m.focus == FocusSidebar
+	contentFocused := tabBodyFocused && m.focus == FocusContent
+	side := renderSubSidebar(m.current, height, sidebarFocused)
 	var body string
 	switch m.current {
 	case SubAbout:
@@ -224,17 +244,16 @@ func (m Model) View(width, height int) string {
 	case SubExtensions:
 		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubLogs:
-		body = m.logs.View(bodyWidth, height)
+		body = m.logs.ViewFocused(bodyWidth, height, false)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }
 
 func renderSubSidebar(active SubPage, height int, focused bool) string {
-	// Color cue (Bug M): when this sidebar has the input focus the active
-	// row is bright 212; when the user has shifted focus to the content
-	// panel the active row dims to 240 so they can see "I'm still on this
-	// sub-page, but ↑/↓ won't move me here anymore."
-	header := lipgloss.NewStyle().Bold(true).Render("Settings")
+	// Focus dot lives at top-left of EVERY panel — consistent UX across
+	// MainSidebar / Settings sub-sidebar / Settings content / each tab body.
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Render("Settings")
 	rows := []string{header, ""}
 	activeColor := lipgloss.Color("240") // dim when not focused
 	if focused {
@@ -250,13 +269,7 @@ func renderSubSidebar(active SubPage, height int, focused bool) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	footer := "[↑↓ / ← →]"
-	if focused {
-		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("● ") + footer
-	} else {
-		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○ ") + footer
-	}
-	rows = append(rows, "", footer)
+	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] page"))
 	return lipgloss.NewStyle().Width(22).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))

@@ -276,17 +276,12 @@ func (m extensionsModel) ViewFocused(width, height int, focused bool) string {
 		innerWidth = 20
 	}
 	body, indicator := m.renderList(maxList, innerWidth, focused)
-	hint := "[← →] panels  [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply  [c]hains [g]roups"
+	hint := "[↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply  [c]hains [g]roups"
 	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
 		viewport.TruncateDisplay(hint, innerWidth),
 	)
-	// Header gets a focus dot (● bright when this panel owns input, ○ dim
-	// otherwise) so the user can see at a glance which panel ↑/↓ will hit.
-	dot := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○ ")
-	if focused {
-		dot = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("● ")
-	}
-	out := dot + header + "\n\n" + tabs
+	// Focus dot uses the shared helper so all panels look identical.
+	out := viewport.FocusDot(focused) + header + "\n\n" + tabs
 	if indicator != "" {
 		out += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
 	}

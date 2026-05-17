@@ -38,11 +38,15 @@ func (m Model) Lines() []string { return m.lines }
 // TogglePause flips the pause flag.
 func (m *Model) TogglePause() { m.paused = !m.paused }
 
-// View renders the tail (most recent height-4 lines), each line truncated
-// to the inner width so long log lines don't soft-wrap and blow up the row
-// count (which would push the parent's sidebars off-screen).
+// View renders the tail; defaults to focused for direct callers (tests).
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Logs")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot prefix.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Logs")
 	pauseMark := ""
 	if m.paused {
 		pauseMark = " [PAUSED]"

@@ -57,6 +57,19 @@ func TruncateDisplay(s string, maxWidth int) string {
 // can swap it out later (e.g. for runewidth) without touching call sites.
 func displayWidth(s string) int { return lipgloss.Width(s) }
 
+// FocusDot returns the focus-indicator marker for a panel header. Bright
+// pink ● when the panel has the input focus, dim gray ○ otherwise. Always
+// includes a trailing space so callers can use it as a prefix.
+//
+// Every panel in the TUI uses this same helper so dot color, glyph, and
+// position are consistent across the app (Bug N follow-up).
+func FocusDot(focused bool) string {
+	if focused {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("● ")
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○ ")
+}
+
 // Window returns [start, end) indices into a hypothetical row slice of
 // length `total`, sized to fit at most `maxRows` rows while keeping
 // `cursor` visible. Cursor is clamped to [0, total); maxRows ≤ 0 yields

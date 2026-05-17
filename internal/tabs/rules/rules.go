@@ -150,7 +150,13 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 func (m *Model) SetFilter(s string) { m.filter = s }
 
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
 	rows := []string{header, ""}
 
 	innerWidthProv := width - 6

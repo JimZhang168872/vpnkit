@@ -139,9 +139,15 @@ func (m Model) visible() []msg.ConnectionItem {
 	return out
 }
 
-// View renders the table.
+// View renders the table; defaults to focused for direct callers (tests).
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Connections")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Connections")
 	stats := fmt.Sprintf("  ↑ %s    ↓ %s    %d active", human(m.totalUp), human(m.totalDn), len(m.items))
 	visible := m.visible()
 	// Reserve: header(1) + stats(1) + blank + colhead(1) + blank + footer(1) + padding(2) ≈ 7.

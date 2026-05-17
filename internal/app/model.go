@@ -105,15 +105,11 @@ func (m Model) inputOpen() bool {
 	if m.rulesTab.IsFiltering() {
 		return true
 	}
-	// Extensions inline form (add/edit chain or group) — settings sub-page
-	// owns its own input handling but we can detect it via SubPage state.
-	if m.activeTab == TabSettings && m.settingsTab.SelectedPage() == tabsettings.SubExtensions {
-		// extensions sub-page exposes its form state implicitly through
-		// the model; nothing public to query. Conservative: when on
-		// Extensions content focus, treat as input-open so left/right
-		// don't fight the form. The form itself consumes ←/→ via the
-		// active textinput, but it also handles Esc/Enter — we just let
-		// it run normally. So return false here.
+	// Extensions inline form (add/edit chain/group) absorbs every key
+	// including ←/→ for cursor positioning inside the textinput; the
+	// app-level focus shifter must NOT eat them.
+	if m.activeTab == TabSettings && m.settingsTab.InputOpen() {
+		return true
 	}
 	return false
 }

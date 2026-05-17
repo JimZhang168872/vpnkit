@@ -94,9 +94,15 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the tab.
+// View renders the tab; defaults to focused for direct callers (tests).
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("📋 Profiles")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("📋 Profiles")
 	var rows []string
 	if len(m.list) == 0 {
 		rows = append(rows, header, "", "  No subscriptions yet — press 'a' to add",
