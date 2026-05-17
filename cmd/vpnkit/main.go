@@ -76,6 +76,9 @@ func main() {
 		case "local-nodes":
 			dispatchLocalNodes(os.Args[2:])
 			return
+		case "local-rules":
+			dispatchLocalRules(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {
