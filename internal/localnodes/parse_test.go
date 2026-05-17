@@ -1,6 +1,9 @@
 package localnodes
 
-import "testing"
+import (
+	"encoding/base64"
+	"testing"
+)
 
 func TestParseURIShadowsocks(t *testing.T) {
 	// Format: ss://BASE64(method:password)@host:port#name
@@ -24,5 +27,30 @@ func TestParseURIShadowsocks(t *testing.T) {
 	}
 	if n.Fields["password"] != "secret" {
 		t.Errorf("password: %v", n.Fields["password"])
+	}
+}
+
+func TestParseURIVmess(t *testing.T) {
+	// vmess://BASE64({"v":"2","ps":"node-name","add":"1.2.3.4","port":"8443","id":"uuid-here","aid":"0","net":"ws","type":"none","host":"","path":"/path","tls":"tls"})
+	payload := `{"v":"2","ps":"JP-Tokyo","add":"1.2.3.4","port":"8443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"ws","type":"none","host":"example.com","path":"/path","tls":"tls"}`
+	uri := "vmess://" + base64.StdEncoding.EncodeToString([]byte(payload))
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "vmess" || n.Server != "1.2.3.4" || n.Port != 8443 {
+		t.Errorf("basic fields: %+v", n)
+	}
+	if n.Name != "JP-Tokyo" {
+		t.Errorf("name from ps: %q", n.Name)
+	}
+	if n.Fields["uuid"] != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("uuid: %v", n.Fields["uuid"])
+	}
+	if n.Fields["network"] != "ws" {
+		t.Errorf("network: %v", n.Fields["network"])
+	}
+	if ws, _ := n.Fields["ws-opts"].(map[string]any); ws["path"] != "/path" {
+		t.Errorf("ws-opts.path: %v", ws)
 	}
 }

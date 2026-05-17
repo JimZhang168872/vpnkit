@@ -2,6 +2,7 @@ package localnodes
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -82,8 +83,92 @@ func parseSS(u *url.URL, raw string) (Node, error) {
 	}, nil
 }
 
+func parseVmess(_ *url.URL, raw string) (Node, error) {
+	// vmess://BASE64(json) — the JSON is the canonical clash node minus the
+	// type/name keys; convert to mihomo-style fields here.
+	const prefix = "vmess://"
+	if !strings.HasPrefix(raw, prefix) {
+		return Node{}, errors.New("parse(vmess): missing prefix")
+	}
+	b64 := strings.TrimPrefix(raw, prefix)
+	if i := strings.IndexAny(b64, "#?"); i >= 0 {
+		b64 = b64[:i]
+	}
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(b64)
+		if err != nil {
+			return Node{}, fmt.Errorf("parse(vmess): bad base64: %w", err)
+		}
+	}
+	var raw_ struct {
+		PS   string `json:"ps"`
+		Add  string `json:"add"`
+		Port any    `json:"port"`
+		ID   string `json:"id"`
+		Aid  any    `json:"aid"`
+		Net  string `json:"net"`
+		Type string `json:"type"`
+		Host string `json:"host"`
+		Path string `json:"path"`
+		TLS  string `json:"tls"`
+		SNI  string `json:"sni"`
+	}
+	if err := json.Unmarshal(decoded, &raw_); err != nil {
+		return Node{}, fmt.Errorf("parse(vmess): bad json: %w", err)
+	}
+	port, err := anyToInt(raw_.Port)
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(vmess): bad port: %w", err)
+	}
+	aid, _ := anyToInt(raw_.Aid)
+	fields := map[string]any{
+		"uuid":    raw_.ID,
+		"alterId": aid,
+		"cipher":  "auto",
+		"network": raw_.Net,
+	}
+	if raw_.TLS == "tls" {
+		fields["tls"] = true
+		if raw_.SNI != "" {
+			fields["servername"] = raw_.SNI
+		} else if raw_.Host != "" {
+			fields["servername"] = raw_.Host
+		}
+	}
+	if raw_.Net == "ws" {
+		wsOpts := map[string]any{}
+		if raw_.Path != "" {
+			wsOpts["path"] = raw_.Path
+		}
+		if raw_.Host != "" {
+			wsOpts["headers"] = map[string]any{"Host": raw_.Host}
+		}
+		fields["ws-opts"] = wsOpts
+	}
+	return Node{
+		Name:   raw_.PS,
+		Proto:  "vmess",
+		Server: raw_.Add,
+		Port:   port,
+		Fields: fields,
+	}, nil
+}
+
+func anyToInt(v any) (int, error) {
+	switch x := v.(type) {
+	case float64:
+		return int(x), nil
+	case int:
+		return x, nil
+	case string:
+		return strconv.Atoi(x)
+	default:
+		return 0, fmt.Errorf("anyToInt: unsupported %T", v)
+	}
+}
+
 // stub the other parsers so the package compiles before we implement them.
-func parseVmess(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("vmess: not implemented yet") }
 func parseVless(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("vless: not implemented yet") }
 func parseTrojan(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("trojan: not implemented yet") }
 func parseHy2(u *url.URL, raw string) (Node, error)    { return Node{}, errors.New("hy2: not implemented yet") }
