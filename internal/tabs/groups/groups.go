@@ -35,9 +35,10 @@ type SubNode struct {
 
 // Deps holds the data providers for the Groups tab.
 type Deps struct {
-	GetSubs       func() []store.Subscription
-	GetSubNodes   func(name string) []SubNode
-	GetLocalNodes func() []SubNode
+	GetSubs        func() []store.Subscription
+	GetSubNodes    func(name string) []SubNode
+	GetLocalGroups func() []store.LocalNodeGroup
+	GetLocalNodes  func(group string) []SubNode
 }
 
 // Model is the Groups tab.
@@ -76,11 +77,12 @@ func (m *Model) Refresh() {
 			m.groups = append(m.groups, groupEntry{name: s.Name, kind: "subscription", nodes: nodes})
 		}
 	}
-	var localNodes []SubNode
-	if m.deps.GetLocalNodes != nil {
-		localNodes = m.deps.GetLocalNodes()
+	if m.deps.GetLocalGroups != nil && m.deps.GetLocalNodes != nil {
+		for _, lg := range m.deps.GetLocalGroups() {
+			nodes := m.deps.GetLocalNodes(lg.Name)
+			m.groups = append(m.groups, groupEntry{name: lg.Name, kind: "local", nodes: nodes})
+		}
 	}
-	m.groups = append(m.groups, groupEntry{name: "local", kind: "local", nodes: localNodes})
 
 	if m.cursor >= len(m.groups) && len(m.groups) > 0 {
 		m.cursor = len(m.groups) - 1
