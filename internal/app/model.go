@@ -6,14 +6,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
-	"vpnkit/internal/profiles"
+	"vpnkit/internal/store"
 	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/stub"
 	tabconnections "vpnkit/internal/tabs/connections"
-	tabprofiles    "vpnkit/internal/tabs/profiles"
-	tabproxies     "vpnkit/internal/tabs/proxies"
+	tabgroups      "vpnkit/internal/tabs/groups"
+	tablogs        "vpnkit/internal/tabs/logs"
 	tabrules       "vpnkit/internal/tabs/rules"
 	tabsettings    "vpnkit/internal/tabs/settings"
+	tabsources     "vpnkit/internal/tabs/sources"
 )
 
 // Tab is the index of the currently-active tab.
@@ -21,19 +22,19 @@ type Tab int
 
 const (
 	TabDashboard Tab = iota
-	TabProxies
-	TabProfiles
-	TabConnections
+	TabGroups
+	TabSources
 	TabRules
+	TabConnections
+	TabLogs
 	TabSettings
 	NumTabs
 )
 
 // AppFocus tracks whether the input focus is on the main sidebar (top tab
 // list) or on the active tab's body. Default is FocusTabBody so existing
-// muscle memory (↑/↓ scrolls Profiles/Rules cursor) keeps working — the
-// user opts into top-tab navigation by pressing ← to "escape" to the
-// sidebar.
+// muscle memory (↑/↓ scrolls rules cursor) keeps working — the user opts
+// into top-tab navigation by pressing ← to "escape" to the sidebar.
 type AppFocus int
 
 const (
@@ -42,7 +43,7 @@ const (
 )
 
 var TabNames = [NumTabs]string{
-	"🏠 Dashboard", "🚀 Proxies", "📋 Profiles", "🔗 Connections", "📜 Rules", "⚙️  Settings",
+	"🏠 Dashboard", "🌐 Groups", "📚 Sources", "📜 Rules", "🔗 Connections", "📓 Logs", "⚙️  Settings",
 }
 
 // Model is the top-level bubbletea model.
@@ -53,16 +54,13 @@ type Model struct {
 	height    int
 
 	dashboard      dashboard.Model
-	profilesTab    tabprofiles.Model
-	proxiesTab     tabproxies.Model
+	groupsTab      tabgroups.Model
+	sourcesTab     tabsources.Model
 	connectionsTab tabconnections.Model
 	rulesTab       tabrules.Model
+	logsTab        tablogs.Model
 	settingsTab    tabsettings.Model
-	stubs          [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
-
-	profilesMgr *profiles.Manager
-	showAddForm bool
-	addForm     tabprofiles.Form
+	stubs          [NumTabs]stub.Model
 
 	apiClient *api.Client
 	// applyCfg nudges mihomo to pick up config.yaml from disk. Falls back to a
@@ -70,8 +68,7 @@ type Model struct {
 	// regeneration). May be nil in tests.
 	applyCfg func(context.Context) error
 	flash    string // single-line transient
-	// updateBadge is set when pollUpdate finds a new release. Format is the
-	// short string we drop into the status bar; e.g. "⚡ v0.9.0".
+	// updateBadge is set when pollUpdate finds a new release.
 	updateBadge string
 	// appFocus is the global focus level (Bug N). MainSidebar → ↑/↓ cycles
 	// top tabs; TabBody → ↑/↓ delegates to active tab's nav.
@@ -93,35 +90,34 @@ type proxyNamesState struct {
 func (m *Model) AppFocus() AppFocus { return m.appFocus }
 
 // inputOpen reports whether some textinput-style overlay is consuming
-// keypresses (Profiles add-form, or a filter input). When true the global
-// focus shifter must NOT eat keys.
+// keypresses. When true the global focus shifter must NOT eat keys.
 func (m Model) inputOpen() bool {
-	if m.showAddForm {
-		return true
-	}
 	if m.connectionsTab.IsFiltering() {
 		return true
 	}
 	if m.rulesTab.IsFiltering() {
 		return true
 	}
-	// Extensions inline form (add/edit chain/group) absorbs every key
-	// including ←/→ for cursor positioning inside the textinput; the
-	// app-level focus shifter must NOT eat them.
 	if m.activeTab == TabSettings && m.settingsTab.InputOpen() {
+		return true
+	}
+	if m.activeTab == TabSources && m.sourcesTab.InputOpen() {
 		return true
 	}
 	return false
 }
 
 // shiftFocusLeft moves focus one step toward the main sidebar.
-//   Settings content → Settings sidebar
-//   Settings sidebar (or any other TabBody) → MainSidebar
-//   MainSidebar → no-op
 func (m Model) shiftFocusLeft() Model {
 	if m.activeTab == TabSettings && m.appFocus == FocusTabBody {
 		if m.settingsTab.Focus() == tabsettings.FocusContent {
 			m.settingsTab.SetFocus(tabsettings.FocusSidebar)
+			return m
+		}
+	}
+	if m.activeTab == TabSources && m.appFocus == FocusTabBody {
+		if m.sourcesTab.Focus() == tabsources.FocusContent {
+			m.sourcesTab.SetFocus(tabsources.FocusSidebar)
 			return m
 		}
 	}
@@ -130,9 +126,6 @@ func (m Model) shiftFocusLeft() Model {
 }
 
 // shiftFocusRight moves focus one step away from the main sidebar.
-//   MainSidebar → TabBody
-//   Settings sidebar (on a sub-page that owns content) → Settings content
-//   Otherwise → no-op
 func (m Model) shiftFocusRight() Model {
 	if m.appFocus == FocusMainSidebar {
 		m.appFocus = FocusTabBody
@@ -142,6 +135,10 @@ func (m Model) shiftFocusRight() Model {
 		m.settingsTab.Focus() == tabsettings.FocusSidebar &&
 		m.settingsTab.SubPageOwnsContent() {
 		m.settingsTab.SetFocus(tabsettings.FocusContent)
+	}
+	if m.activeTab == TabSources && m.sourcesTab.Focus() == tabsources.FocusSidebar {
+		// Sources sub-pages always have a navigable content panel (list).
+		m.sourcesTab.SetFocus(tabsources.FocusContent)
 	}
 	return m
 }
@@ -184,34 +181,68 @@ func (m *Model) recordProxyNames(snap ProxiesSnapshot) {
 	}
 }
 
-// NewModel constructs the initial model. client and mgr may be nil during tests.
-func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
+// NewModel constructs the initial model. client may be nil during tests.
+func NewModel(client *api.Client, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
 	stubs := [NumTabs]stub.Model{}
-	for i := TabProxies; i < NumTabs; i++ {
-		if i == TabProfiles || i == TabProxies || i == TabConnections || i == TabRules || i == TabSettings {
-			continue
-		}
+	// Only tabs without a real implementation get a stub — all current tabs
+	// have implementations so this loop is effectively a no-op.
+	for i := Tab(0); i < NumTabs; i++ {
 		stubs[i] = stub.New(TabNames[i])
-	}
-	pt := tabprofiles.New(mgr)
-	if mgr != nil {
-		pt.SetProfiles(mgr.All(), mgr.Active())
 	}
 	return Model{
 		keys:           DefaultKeys(),
 		activeTab:      TabDashboard,
 		dashboard:      dashboard.New(),
-		profilesTab:    pt,
-		profilesMgr:    mgr,
-		proxiesTab:     tabproxies.New(),
+		groupsTab:      tabgroups.New(tabgroups.Deps{}), // deps wired in run.go via SetDeps
+		sourcesTab:     tabsources.New(tabsources.Deps{}),
 		connectionsTab: tabconnections.New(),
 		rulesTab:       tabrules.New(),
+		logsTab:        tablogs.New(),
 		settingsTab:    tabsettings.New(settingsDeps),
 		stubs:          stubs,
 		apiClient:      client,
 		applyCfg:       applyCfg,
 		proxyNames:     &proxyNamesState{},
 	}
+}
+
+// WirePipeline injects the Pipeline into the groups and sources tabs.
+// Must be called in run.go after NewModel and before prog.Run.
+func (m *Model) WirePipeline(pl *Pipeline) {
+	// Groups tab deps — convert app.SubNode to groups.SubNode in closures.
+	m.groupsTab = tabgroups.New(tabgroups.Deps{
+		GetSubs: func() []store.Subscription {
+			return pl.SubscriptionNames()
+		},
+		GetSubNodes: func(name string) []tabgroups.SubNode {
+			raw := pl.SubscriptionNodes(name)
+			if raw == nil {
+				return nil
+			}
+			out := make([]tabgroups.SubNode, len(raw))
+			for i, n := range raw {
+				out[i] = tabgroups.SubNode{Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port}
+			}
+			return out
+		},
+		GetLocalNodes: func() []tabgroups.SubNode {
+			nodes := pl.LocalNodes().All()
+			out := make([]tabgroups.SubNode, len(nodes))
+			for i, n := range nodes {
+				out[i] = tabgroups.SubNode{Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port}
+			}
+			return out
+		},
+	})
+	// Sources tab — reuse the PipelineFace interface directly; Pipeline satisfies it.
+	m.sourcesTab = tabsources.New(tabsources.Deps{Pipeline: pl})
+	// Rules tab — wire pipeline for Local Rules sub-page.
+	m.rulesTab.SetPipeline(pl)
+	// Pull initial data from store/pipeline into the just-constructed tab models.
+	// Without these, Groups shows "(none)" and Sources shows "(no subscriptions)"
+	// even when the store already has entries (e.g. from CLI subs add before launch).
+	m.groupsTab.Refresh()
+	m.sourcesTab.Refresh()
 }
 
 // Init returns startup commands.

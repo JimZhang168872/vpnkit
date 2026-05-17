@@ -70,6 +70,18 @@ func main() {
 		case "ext":
 			dispatchExt(os.Args[2:])
 			return
+		case "subs":
+			dispatchSubs(os.Args[2:])
+			return
+		case "local-nodes":
+			dispatchLocalNodes(os.Args[2:])
+			return
+		case "local-rules":
+			dispatchLocalRules(os.Args[2:])
+			return
+		case "target":
+			dispatchTarget(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {
@@ -197,10 +209,10 @@ func dispatchNodes(args []string) {
 
 func dispatchInit(args []string) {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	restore := fs.String("restore", "", "path to a profiles backup TOML to merge")
+	force := fs.Bool("force", false, "back up any existing store before regenerating (use to recover from v1 → v2)")
 	_ = fs.Bool("non-interactive", false, "(no-op; init is always non-interactive)")
 	_ = fs.Parse(args)
-	if err := runInit(os.Stdout, runInitOpts{RestorePath: *restore}); err != nil {
+	if err := runInit(os.Stdout, runInitOpts{Force: *force}); err != nil {
 		dieRuntime("vpnkit init: %v", err)
 	}
 }

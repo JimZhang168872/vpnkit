@@ -27,6 +27,9 @@ type updateOptions struct {
 	NoExec     bool // don't syscall.Exec after vpnkit upgrade (tests)
 }
 
+// updateAPIBase is overrideable in tests to point at a mock GitHub API server.
+var updateAPIBase = ""
+
 // runUpdate is the body of `vpnkit update`. Exit codes are encoded as
 // errors that dispatcher maps to sys.Exit.
 //
@@ -43,6 +46,7 @@ func runUpdate(out io.Writer, opts updateOptions, st *store.Store, currentVpnkit
 	info, err := updater.Check(updater.Opts{
 		VpnkitCurrent: currentVpnkitVer,
 		MihomoCurrent: mihomoCur,
+		APIBase:        updateAPIBase,
 	})
 	if err != nil {
 		return fmt.Errorf("check: %w", err)
@@ -142,6 +146,7 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 	_, err := installer.Install(installer.Options{
 		Dst:     p.MihomoBinary(),
 		Version: version,
+		APIBase: updateAPIBase,
 	}, nil)
 	if err != nil {
 		return err

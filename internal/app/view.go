@@ -17,14 +17,16 @@ func (m Model) View() string {
 	switch m.activeTab {
 	case TabDashboard:
 		body = m.dashboard.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
-	case TabProxies:
-		body = m.proxiesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
-	case TabProfiles:
-		body = m.profilesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
-	case TabConnections:
-		body = m.connectionsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
+	case TabGroups:
+		body = m.groupsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
+	case TabSources:
+		body = m.sourcesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabRules:
 		body = m.rulesTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
+	case TabConnections:
+		body = m.connectionsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
+	case TabLogs:
+		body = m.logsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	case TabSettings:
 		body = m.settingsTab.ViewFocused(bodyWidth, bodyHeight, bodyFocused)
 	default:
@@ -32,12 +34,5 @@ func (m Model) View() string {
 	}
 
 	rows := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
-
-	if m.showAddForm {
-		formView := m.addForm.View()
-		body = lipgloss.Place(bodyWidth, bodyHeight, lipgloss.Center, lipgloss.Center, formView)
-		rows = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body)
-	}
-
 	return rows + "\n" + m.renderStatusBar(m.width)
 }

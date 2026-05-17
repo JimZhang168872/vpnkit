@@ -2,6 +2,7 @@
 package settings
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,7 +11,6 @@ import (
 	"vpnkit/internal/paths"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
-	"vpnkit/internal/tabs/logs"
 	"vpnkit/internal/tabs/viewport"
 )
 
@@ -21,9 +21,9 @@ const (
 	SubCore SubPage = iota
 	SubService
 	SubController
+	SubRouting
 	SubRules
 	SubExtensions
-	SubLogs
 	SubCache
 	SubAbout
 	NumSubPages
@@ -48,11 +48,20 @@ var SubPageNames = [NumSubPages]string{
 	"Mihomo Core",
 	"Service",
 	"External Controller",
-	"Default Rules",
+	"Routing",
+	"Rule Template",
 	"Extensions",
-	"Logs",
 	"Cache",
 	"About",
+}
+
+// PipelineFace is the subset of *app.Pipeline that the settings tab needs.
+// Declared here (not in app/) to break the package import cycle: settings
+// cannot import app because app imports settings.
+type PipelineFace interface {
+	RefreshSubscription(ctx context.Context, name string) (int, error)
+	Assemble() error
+	SaveLocal() error
 }
 
 // Deps are wires for sub-pages.
@@ -62,6 +71,7 @@ type Deps struct {
 	Service        service.Manager
 	APIClient      *api.Client
 	ExtensionsPath string         // ~/.config/vpnkit/extensions.toml (empty in tests = uses Paths)
+	Pipeline       PipelineFace   // v1 multi-source pipeline; nil until wired in run.go
 	ProxyNames     ProxyNamesFunc // returns proxy+group names from latest snapshot
 	ApplyFunc      func() error   // reassemble + reload mihomo; nil in tests
 }
@@ -79,7 +89,7 @@ type Model struct {
 	service    serviceModel
 	core       coreModel
 	extensions extensionsModel
-	logs       logs.Model
+	routing    routingModel
 }
 
 // Focus exposes the active focus state (for tests / rendering).
@@ -121,7 +131,7 @@ func New(deps Deps) Model {
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
 		extensions: ex,
-		logs:       logs.New(),
+		routing:    newRouting(deps.Store, deps.ApplyFunc),
 	}
 }
 
@@ -133,40 +143,22 @@ func (m Model) SelectedPage() SubPage { return m.current }
 // level to switch between sub-pages. Add new sub-pages with internal nav
 // here.
 func subPageOwnsArrows(p SubPage) bool {
-	return p == SubExtensions
+	return p == SubExtensions || p == SubRouting || p == SubRules
 }
-
-// LogsModel exposes the embedded Logs model so the parent app can route LogLine into it.
-func (m *Model) LogsModel() *logs.Model { return &m.logs }
 
 func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
-		// Focus-based navigation model (Bug M):
-		//   ←  : if Extensions+FocusContent → focus sidebar; else prev sub-page
-		//   →  : if Extensions+FocusSidebar → focus content; else next sub-page
-		//   ↑↓ : on FocusContent → delegate to sub-page; else switch sub-page
-		//   PgUp/PgDn: ALWAYS switch sub-page (force exit from content)
+		// Focus-based navigation model:
+		//   ←/→ : owned by app-level handler — shifts focus
+		//         (MainSidebar ↔ Settings sidebar ↔ Settings content) in one
+		//         consistent pattern across the whole app.
+		//   ↑↓  : on FocusContent + sub-page-owns-arrows → delegate to sub-page;
+		//         else switch sub-page (and reset focus to sidebar).
 		// Any sub-page change resets focus to sidebar so the user doesn't
-		// land on a non-Extensions page with stale FocusContent.
+		// land on a non-arrow-owning page with stale FocusContent.
 		switch km.Type {
-		// ←/→ are owned by the app-level handler now (Bug N): they shift
-		// focus between MainSidebar / Settings sidebar / Settings content
-		// in one consistent model across the whole app. Settings.Update
-		// no longer consumes them — the app intercepts before delegating.
-		case tea.KeyPgDown:
-			if m.current < NumSubPages-1 {
-				m.current++
-			}
-			m.focus = FocusSidebar
-			return m, nil
-		case tea.KeyPgUp:
-			if m.current > 0 {
-				m.current--
-			}
-			m.focus = FocusSidebar
-			return m, nil
 		case tea.KeyDown:
 			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
 				// fall through to sub-page delegation below
@@ -204,8 +196,8 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.core, cmd = m.core.Update(message)
 	case SubExtensions:
 		m.extensions, cmd = m.extensions.Update(message)
-	case SubLogs:
-		m.logs, cmd = m.logs.Update(message)
+	case SubRouting:
+		m.routing, cmd = m.routing.Update(message)
 	}
 	return m, cmd
 }
@@ -234,7 +226,7 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 	case SubCache:
 		body = m.cache.View(bodyWidth, height)
 	case SubRules:
-		body = m.rules.View(bodyWidth, height)
+		body = m.rules.ViewFocused(bodyWidth, height, contentFocused)
 	case SubController:
 		body = m.controller.View(bodyWidth, height)
 	case SubService:
@@ -243,8 +235,8 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 		body = m.core.View(bodyWidth, height)
 	case SubExtensions:
 		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
-	case SubLogs:
-		body = m.logs.ViewFocused(bodyWidth, height, false)
+	case SubRouting:
+		body = m.routing.ViewFocused(bodyWidth, height, contentFocused)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }

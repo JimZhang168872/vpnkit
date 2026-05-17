@@ -16,10 +16,10 @@ func TestSubMenuNavigation(t *testing.T) {
 	if m.SelectedPage() != SubService {
 		t.Errorf("expected SubService after one ↓ on SubCore, got %v", m.SelectedPage())
 	}
-	// PgDown also switches.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// ↓ also switches.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.SelectedPage() != SubController {
-		t.Errorf("expected SubController after one PgDown, got %v", m.SelectedPage())
+		t.Errorf("expected SubController after one ↓, got %v", m.SelectedPage())
 	}
 	view := m.View(120, 24)
 	if !strings.Contains(view, "Service") || !strings.Contains(view, "Mihomo Core") {
@@ -28,7 +28,7 @@ func TestSubMenuNavigation(t *testing.T) {
 }
 
 func TestPageEnumNames(t *testing.T) {
-	expected := []SubPage{SubCore, SubService, SubController, SubRules, SubExtensions, SubLogs, SubCache, SubAbout}
+	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubExtensions, SubCache, SubAbout}
 	if len(SubPageNames) != len(expected) {
 		t.Fatalf("len(SubPageNames)=%d, want %d", len(SubPageNames), len(expected))
 	}
@@ -53,8 +53,9 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 		},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	for i := 0; i < 4; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// SubExtensions is now at index 5 (Core=0,Service=1,Controller=2,Routing=3,Rules=4,Extensions=5).
+	for i := 0; i < 5; i++ {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m.SetFocus(FocusContent)
 	// ↓ should now move chains-list cursor (not switch sub-page).
@@ -70,10 +71,18 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 	if m.extensions.row != 0 {
 		t.Errorf("Extensions row after ↑: want 0, got %d", m.extensions.row)
 	}
-	// PgUp force-switches sub-page even when content is focused.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	// ↑ with row==0 + FocusContent: still delegated to sub-page (which no-ops
+	// at the top); does NOT switch sub-page. To switch, user goes back to
+	// Sidebar first via app-level ←.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.SelectedPage() != SubExtensions {
+		t.Errorf("↑ at row 0 + FocusContent should stay on Extensions, got %v", m.SelectedPage())
+	}
+	// After SetFocus(FocusSidebar), ↑ switches to the previous sub-page.
+	m.SetFocus(FocusSidebar)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if m.SelectedPage() != SubRules {
-		t.Errorf("PgUp on Extensions should switch to SubRules, got %v", m.SelectedPage())
+		t.Errorf("↑ on Extensions+FocusSidebar should switch to SubRules, got %v", m.SelectedPage())
 	}
 }
 
@@ -88,9 +97,9 @@ func TestFocusToggleInExtensions(t *testing.T) {
 		Chains: []extensions.Chain{{Node: "A", Via: "B"}, {Node: "C", Via: "D"}},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	// Switch to Extensions.
-	for i := 0; i < 4; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// Switch to Extensions (now at index 5).
+	for i := 0; i < 5; i++ {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if m.SelectedPage() != SubExtensions {
 		t.Fatalf("setup: expected SubExtensions, got %v", m.SelectedPage())
@@ -115,8 +124,8 @@ func TestFocusToggleInExtensions(t *testing.T) {
 	m.SetFocus(FocusSidebar)
 	// ↓ on Extensions+FocusSidebar switches sub-page (sidebar nav).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubLogs {
-		t.Errorf("↓ on Extensions+FocusSidebar should switch sub-page to SubLogs, got %v", m.SelectedPage())
+	if m.SelectedPage() != SubCache {
+		t.Errorf("↓ on Extensions+FocusSidebar should switch sub-page to SubCache, got %v", m.SelectedPage())
 	}
 }
 
@@ -130,17 +139,18 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 		Chains: []extensions.Chain{{Node: "A", Via: "B"}},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	for i := 0; i < 4; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// Navigate to Extensions (now at index 5).
+	for i := 0; i < 5; i++ {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	m.SetFocus(FocusContent)
-	// PgDown forces sub-page change → focus should reset to Sidebar.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.SelectedPage() != SubLogs {
-		t.Errorf("expected SubLogs, got %v", m.SelectedPage())
+	// SetFocus(Sidebar) so ↓ switches sub-page (rather than delegating).
+	m.SetFocus(FocusSidebar)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.SelectedPage() != SubCache {
+		t.Errorf("expected SubCache, got %v", m.SelectedPage())
 	}
 	if m.Focus() != FocusSidebar {
-		t.Errorf("focus should reset to Sidebar on sub-page change, got %v", m.Focus())
+		t.Errorf("focus should remain Sidebar on sub-page change, got %v", m.Focus())
 	}
 }
 
@@ -151,28 +161,29 @@ func TestSubPageOwnsContent(t *testing.T) {
 	if m.SubPageOwnsContent() {
 		t.Errorf("default sub-page (Core) should NOT own content")
 	}
-	for i := 0; i < 4; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// Extensions is now at index 5.
+	for i := 0; i < 5; i++ {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if !m.SubPageOwnsContent() {
 		t.Errorf("Extensions sub-page should own content")
 	}
 }
 
-// TestPgUpDownInWrapAroundEnd asserts PgDown stops at last page and PgUp at first.
-func TestPgUpDownInWrapAroundEnd(t *testing.T) {
+// TestArrowsClampAtEnds asserts ↓ stops at last page and ↑ at first.
+func TestArrowsClampAtEnds(t *testing.T) {
 	m := New(Deps{})
-	// PgDown until end.
+	// ↓ until end.
 	for i := 0; i < int(NumSubPages)+5; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if m.SelectedPage() != SubAbout {
-		t.Errorf("PgDown spam should clamp to SubAbout, got %v", m.SelectedPage())
+		t.Errorf("↓ spam should clamp to SubAbout, got %v", m.SelectedPage())
 	}
 	for i := 0; i < int(NumSubPages)+5; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	}
 	if m.SelectedPage() != SubCore {
-		t.Errorf("PgUp spam should clamp to SubCore, got %v", m.SelectedPage())
+		t.Errorf("↑ spam should clamp to SubCore, got %v", m.SelectedPage())
 	}
 }
