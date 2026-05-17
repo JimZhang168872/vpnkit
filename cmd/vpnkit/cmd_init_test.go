@@ -125,12 +125,10 @@ func TestInitRestoresProfiles(t *testing.T) {
 }
 
 func TestInitForceBacksUpV1Store(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
-	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, ".local", "state"))
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, ".cache"))
-	storePath := filepath.Join(tmp, ".config", "vpnkit", "config.toml")
+	p, restore := initEnv(t)
+	defer restore()
+
+	storePath := p.VpnkitConfigFile()
 	if err := os.MkdirAll(filepath.Dir(storePath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +141,10 @@ func TestInitForceBacksUpV1Store(t *testing.T) {
 		t.Fatalf("init --force: %v", err)
 	}
 
-	matches, _ := filepath.Glob(storePath + ".bak.*")
+	matches, err := filepath.Glob(storePath + ".bak.*")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
 	if len(matches) != 1 {
 		t.Errorf("expected one .bak.* file, got %v", matches)
 	}

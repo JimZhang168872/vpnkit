@@ -12,6 +12,10 @@ import (
 	"vpnkit/internal/store"
 )
 
+// defaultRuleTemplate is what new v2 stores get when no rule template is set.
+// Matches the curated template list in internal/rules/templates/.
+const defaultRuleTemplate = "loyalsoldier"
+
 // runInitOpts groups the optional inputs to runInit.
 type runInitOpts struct {
 	RestorePath string // optional backup TOML to merge profiles from
@@ -34,7 +38,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 		if _, err := os.Stat(p.VpnkitConfigFile()); err == nil {
 			bak := fmt.Sprintf("%s.bak.%d", p.VpnkitConfigFile(), time.Now().Unix())
 			if err := os.Rename(p.VpnkitConfigFile(), bak); err != nil {
-				return fmt.Errorf("backup v1 store: %w", err)
+				return fmt.Errorf("back up existing store: %w", err)
 			}
 			fmt.Fprintf(out, "🗄️  backed up old store to %s\n", bak)
 		}
@@ -80,7 +84,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 	if !fileExists(p.MihomoConfigFile()) {
 		ruleTemplate := st.Cfg.LegacyRuleTemplate
 		if ruleTemplate == "" {
-			ruleTemplate = "loyalsoldier" // default for v2 stores that no longer persist this choice
+			ruleTemplate = defaultRuleTemplate // default for v2 stores that no longer persist this choice
 		}
 		data, err := config.BuildSkeleton(config.SkeletonInput{
 			MixedPort:        st.Cfg.MixedPort,

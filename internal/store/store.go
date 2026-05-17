@@ -69,9 +69,18 @@ type Config struct {
 	LocalNodes    []LocalNode    `toml:"local_nodes"`
 	LocalRules    []LocalRule    `toml:"local_rules"`
 
+	// Legacy fields below are detection-only for LegacyActiveProfile and
+	// LegacyProfiles (read in Load to detect v1 stores; not consumed by any
+	// post-Phase-1 logic). LegacyRuleTemplate is the exception: it is still
+	// actively written and read through Phase 5 — see comment below.
 	LegacyActiveProfile string    `toml:"active_profile,omitempty"`
 	LegacyProfiles      []Profile `toml:"profiles,omitempty"`
-	LegacyRuleTemplate  string    `toml:"rule_template,omitempty"`
+	// LegacyRuleTemplate kept as a *live* field through Phase 5 of the v1
+	// migration: internal/tabs/settings/rules.go writes the user's chosen
+	// template here, and internal/app/{run,bootstrap}.go + cmd/vpnkit/cmd_init.go
+	// read it. Phase 6 will move this to a v2 home (likely on Subscription or a
+	// new global setting); when deleting this field, redirect those callers.
+	LegacyRuleTemplate string `toml:"rule_template,omitempty"`
 }
 
 // Store wraps a Config and its on-disk location.
