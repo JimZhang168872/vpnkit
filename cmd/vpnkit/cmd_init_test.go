@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"vpnkit/internal/paths"
+	"vpnkit/internal/store"
 )
 
 // initEnv wires a tmp HOME so paths.Resolve returns sandboxed dirs and
@@ -120,5 +121,37 @@ func TestInitRestoresProfiles(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "restored") {
 		t.Errorf("output should mention restoration:\n%s", out.String())
+	}
+}
+
+func TestInitForceBacksUpV1Store(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, ".local", "state"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, ".cache"))
+	storePath := filepath.Join(tmp, ".config", "vpnkit", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(storePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storePath, []byte(`active_profile = "doge"`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := runInit(&out, runInitOpts{Force: true}); err != nil {
+		t.Fatalf("init --force: %v", err)
+	}
+
+	matches, _ := filepath.Glob(storePath + ".bak.*")
+	if len(matches) != 1 {
+		t.Errorf("expected one .bak.* file, got %v", matches)
+	}
+	st, err := store.Load(storePath)
+	if err != nil {
+		t.Fatalf("load post-init: %v", err)
+	}
+	if st.Cfg.SchemaVersion != 2 {
+		t.Errorf("post-init schema: %d", st.Cfg.SchemaVersion)
 	}
 }

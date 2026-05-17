@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"vpnkit/internal/config"
@@ -14,6 +15,7 @@ import (
 // runInitOpts groups the optional inputs to runInit.
 type runInitOpts struct {
 	RestorePath string // optional backup TOML to merge profiles from
+	Force       bool   // back up any existing store before regenerating (v1 → v2 recovery)
 }
 
 // runInit creates ~/.config/vpnkit/config.toml and ~/.config/mihomo/config.yaml
@@ -26,6 +28,17 @@ func runInit(out io.Writer, opts runInitOpts) error {
 	}
 
 	fmt.Fprintln(out, "🛠️  vpnkit init")
+
+	// Step 0: if --force, back up any existing store before re-creating it.
+	if opts.Force {
+		if _, err := os.Stat(p.VpnkitConfigFile()); err == nil {
+			bak := fmt.Sprintf("%s.bak.%d", p.VpnkitConfigFile(), time.Now().Unix())
+			if err := os.Rename(p.VpnkitConfigFile(), bak); err != nil {
+				return fmt.Errorf("backup v1 store: %w", err)
+			}
+			fmt.Fprintf(out, "🗄️  backed up old store to %s\n", bak)
+		}
+	}
 
 	// Step 1: load (creates with defaults if missing).
 	tomlExisted := fileExists(p.VpnkitConfigFile())
@@ -65,11 +78,15 @@ func runInit(out io.Writer, opts runInitOpts) error {
 
 	// Step 3: generate mihomo config.yaml skeleton if missing.
 	if !fileExists(p.MihomoConfigFile()) {
+		ruleTemplate := st.Cfg.LegacyRuleTemplate
+		if ruleTemplate == "" {
+			ruleTemplate = "loyalsoldier" // default for v2 stores that no longer persist this choice
+		}
 		data, err := config.BuildSkeleton(config.SkeletonInput{
 			MixedPort:        st.Cfg.MixedPort,
 			ControllerPort:   st.Cfg.ControllerPort,
 			ControllerSecret: st.Cfg.ControllerSecret,
-			RuleTemplate:     st.Cfg.LegacyRuleTemplate,
+			RuleTemplate:     ruleTemplate,
 			ProxyUser:        st.Cfg.ProxyUser,
 			ProxyPass:        st.Cfg.ProxyPass,
 		})
