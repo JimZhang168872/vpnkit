@@ -28,29 +28,10 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 
 源码编译：`git clone … && cd vpnkit && make install`（需要 Go 1.22+）。
 
-### 墙内安装
-
-vpnkit 默认让 mihomo 从 `cdn.jsdelivr.net` 拉 geoip/geosite 数据，**国内首次启动通常无需额外配置**。如果 `github.com` 直连也太慢，用公开 GitHub 镜像加速 — 一个环境变量同时覆盖安装脚本**和**后续 mihomo 自己下数据：
-
-```bash
-MIRROR="https://ghproxy.com/"           # 选一个当前能用的
-VERSION="v0.9.0"                         # pin：大多镜像不代理 api.github.com
-
-curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
-  | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
-```
-
-挑镜像前先 ping 一下：
-
-```bash
-curl -fsSL --max-time 5 -o /dev/null \
-  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
-  && echo OK || echo "挂了，换一个"
-```
-
-备选：`https://mirror.ghproxy.com/`、`https://ghp.ci/`、`https://gh.api.99988866.xyz/`。
-`INSTALL_MIRROR` 会持久化到 `~/.config/vpnkit/config.toml` 的 `release_mirror`，
-之后所有 GitHub 下载——mihomo 升级、geo 数据更新——都走同一镜像。
+> **网络要求：** vpnkit 直连 `github.com`，**不再带镜像 fallback**。墙内
+> 装请先在 shell 里 `export HTTPS_PROXY=...` 设好已有代理，再跑 install
+> 脚本 / `vpnkit update`。SmartClient 每次请求都会探测 env 代理是否活，
+> 活就走它，没活就直连。
 
 ## 3 分钟上手
 
@@ -110,8 +91,46 @@ vpnkit update --vpnkit-only              # 只升 vpnkit
 vpnkit update --mihomo-only              # 只升 mihomo
 ```
 
-升级走 `release_mirror`，原子替换 binary（POSIX 允许覆盖运行中的可执行文件），
-然后 `syscall.Exec` 重跑当前 TUI。mihomo 在替换期间会重启，代理短暂中断 ~1 s。
+升级直连 GitHub Releases 下载（有 `HTTPS_PROXY` 就走它），原子替换 binary
+（POSIX 允许覆盖运行中的可执行文件），然后 `syscall.Exec` 重跑当前 TUI。
+mihomo 在替换期间会重启，代理短暂中断 ~1 s。
+
+## Extensions：链式代理 + 自定义代理组
+
+把一个订阅节点串到另一个上游节点（多跳出站，mihomo `dialer-proxy` 字段），
+或者新增自己的 proxy-group。配置存在 `~/.config/vpnkit/extensions.toml`，
+**订阅更新不会丢**。
+
+### CLI
+
+```bash
+vpnkit chain ls
+vpnkit chain set "US-1" "JP-Relay"        # US-1 出站先经过 JP-Relay
+vpnkit chain unset "US-1"
+
+vpnkit group ls
+vpnkit group add "Stream" --type select --proxies "US-1,JP-1,DIRECT"
+vpnkit group add "Auto-US" --type url-test \
+    --proxies "US-1,US-2" \
+    --url https://www.gstatic.com/generate_204 \
+    --interval 300 --tolerance 50
+vpnkit group rm "Stream"
+
+vpnkit ext apply                          # 重新 assemble 当前订阅 + reload mihomo
+```
+
+### TUI
+
+Settings → Extensions。`c` 切到 Chains，`g` 切到 Groups。`a/e/d`
+对高亮行进行 增/改/删，`r` 触发 reassemble + reload。新建表单里有 live
+`/proxies` 快照的自动补全提示。
+
+### 从 `patch.yaml` 迁移
+
+vpnkit 不再读 `~/.config/mihomo/patch.yaml`，Settings → Patch Editor
+已被 Settings → Extensions 替代。链式代理 / proxy-group 用新结构化格式更
+直观；如果你之前在 patch.yaml 里改了别的 mihomo 字段，订阅每次更新后手动
+合并到 `~/.config/mihomo/config.yaml` 即可。
 
 ## 多用户 / 多实例
 
@@ -139,8 +158,11 @@ mihomo 的代理端口加了三道锁：
 | `vpnkit use '<组>' '<节点>'` | 切换某组的选中节点 |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | 输出 shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | 升级 vpnkit + mihomo |
-| `vpnkit init [--restore <path>] [--release-mirror <url>]` | 重建配置骨架 |
+| `vpnkit init [--restore <path>]` | 重建配置骨架 |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | 停服务，删 vpnkit 全部文件 |
+| `vpnkit chain ls/set/unset` | 管理 dialer-proxy 链 |
+| `vpnkit group ls/add/rm` | 管理自定义代理组 |
+| `vpnkit ext apply` | 用当前 extensions 重 assemble + reload mihomo |
 
 只读命令接受 `--json`。退出码：`0` 成功、`1` 用户错、`2` 运行时错。
 
@@ -152,7 +174,8 @@ mihomo 的代理端口加了三道锁：
 - **Proxies**：`Enter` 在组上展开/收起 · `Enter` 在节点上切换 · `t` 延迟测试
 - **Connections**：`x` 关连接 · `/` 过滤
 - **Rules**：`/` 过滤 · `u` 刷新 rule-providers
-- **Settings**：`↑`/`↓` 子页循环（Mihomo Core、Service、External Controller、Default Rules、Patch Editor、Logs、Cache、About）
+- **Settings**：`↑`/`↓` 子页循环（Mihomo Core、Service、External Controller、Default Rules、Extensions、Logs、Cache、About）
+- **Settings → Extensions**：`c` chains / `g` groups · `a` 添加 · `e` 编辑 · `d` 删 · `r` 应用（reassemble + reload）
 
 ## 目录布局
 
@@ -160,9 +183,9 @@ mihomo 的代理端口加了三道锁：
 |---|---|
 | `~/.local/bin/vpnkit` | 本程序 |
 | `~/.local/bin/mihomo` | 受管 mihomo |
-| `~/.config/vpnkit/config.toml` | 订阅、端口、代理凭据、controller secret、release_mirror |
+| `~/.config/vpnkit/config.toml` | 订阅、端口、代理凭据、controller secret |
+| `~/.config/vpnkit/extensions.toml` | 链式代理 + 自定义代理组覆盖层 |
 | `~/.config/mihomo/config.yaml` | 生成的 mihomo 配置（订阅更新时重写） |
-| `~/.config/mihomo/patch.yaml` | 用户覆盖层，每次 deep-merge 到生成的 config |
 | `~/.config/systemd/user/mihomo.service` | systemd-user 单元 |
 | `~/.netrc` | proxy basic-auth 条目（`vpnkit env` 写入，权限 0600） |
 | `~/.local/state/vpnkit/` | 日志、PID 文件（PID 模式） |

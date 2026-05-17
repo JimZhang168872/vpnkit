@@ -41,7 +41,6 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 			}
 			_, err := d.InstallFunc(installer.Options{
 				Dst:     d.Paths.MihomoBinary(),
-				Mirror:  d.Store.Cfg.ReleaseMirror,
 				APIBase: "",
 			}, nil)
 			if err != nil {
@@ -56,7 +55,6 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 				ControllerPort:   d.Store.Cfg.ControllerPort,
 				ControllerSecret: d.Store.Cfg.ControllerSecret,
 				RuleTemplate:     d.Store.Cfg.RuleTemplate,
-				ReleaseMirror:    d.Store.Cfg.ReleaseMirror,
 				ProxyUser:        d.Store.Cfg.ProxyUser,
 				ProxyPass:        d.Store.Cfg.ProxyPass,
 			})

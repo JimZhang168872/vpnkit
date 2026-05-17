@@ -13,14 +13,12 @@ import (
 
 // runInitOpts groups the optional inputs to runInit.
 type runInitOpts struct {
-	RestorePath   string // optional backup TOML to merge profiles from
-	ReleaseMirror string // optional URL prefix for mihomo binary + geox-url downloads
+	RestorePath string // optional backup TOML to merge profiles from
 }
 
 // runInit creates ~/.config/vpnkit/config.toml and ~/.config/mihomo/config.yaml
-// when missing, optionally restores a profiles section from a backup TOML, and
-// writes ReleaseMirror into the store if provided (so mihomo bootstrap and
-// runtime geo downloads both go through that mirror). Idempotent.
+// when missing and optionally restores a profiles section from a backup TOML.
+// Idempotent.
 func runInit(out io.Writer, opts runInitOpts) error {
 	p := paths.Resolve()
 	if err := p.Ensure(); err != nil {
@@ -41,17 +39,9 @@ func runInit(out io.Writer, opts runInitOpts) error {
 		fmt.Fprintf(out, "✅ %s (created)\n", p.VpnkitConfigFile())
 	}
 
-	// Step 1b: persist a release mirror if the caller passed one. Idempotent
-	// (no-op when the value already matches). Writing here means the
-	// subsequent skeleton + EnsureSecurityFields paths see it as part of store.
-	storeDirty := false
-	if opts.ReleaseMirror != "" && st.Cfg.ReleaseMirror != opts.ReleaseMirror {
-		st.Cfg.ReleaseMirror = opts.ReleaseMirror
-		storeDirty = true
-	}
-
 	// Step 2: restore profiles if a backup was passed AND store has none yet.
 	// We do not overwrite a user's existing profiles to avoid double-counting.
+	storeDirty := false
 	if opts.RestorePath != "" && len(st.Cfg.Profiles) == 0 {
 		var backup struct {
 			Profiles []store.Profile `toml:"profiles"`
@@ -80,7 +70,6 @@ func runInit(out io.Writer, opts runInitOpts) error {
 			ControllerPort:   st.Cfg.ControllerPort,
 			ControllerSecret: st.Cfg.ControllerSecret,
 			RuleTemplate:     st.Cfg.RuleTemplate,
-			ReleaseMirror:    st.Cfg.ReleaseMirror,
 			ProxyUser:        st.Cfg.ProxyUser,
 			ProxyPass:        st.Cfg.ProxyPass,
 		})
@@ -92,15 +81,12 @@ func runInit(out io.Writer, opts runInitOpts) error {
 		}
 		fmt.Fprintf(out, "✅ %s (created)\n", p.MihomoConfigFile())
 	} else {
-		// Already exists — sync the security-owned fields in case toml was just
-		// regenerated (same logic as app.Run startup path).
 		changed, err := config.EnsureSecurityFields(p.MihomoConfigFile(), config.SecurityFields{
 			MixedPort:        st.Cfg.MixedPort,
 			ControllerPort:   st.Cfg.ControllerPort,
 			ControllerSecret: st.Cfg.ControllerSecret,
 			ProxyUser:        st.Cfg.ProxyUser,
 			ProxyPass:        st.Cfg.ProxyPass,
-			ReleaseMirror:    st.Cfg.ReleaseMirror,
 		})
 		if err != nil {
 			fmt.Fprintf(out, "⚠️  could not reconcile %s: %v\n", p.MihomoConfigFile(), err)

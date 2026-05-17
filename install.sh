@@ -12,26 +12,15 @@ set -euo pipefail
 #   INSTALL_DIR         binary target (default: $HOME/.local/bin)
 #   INSTALL_FORCE       1 = reinstall even when same version is already present
 #   INSTALL_TAKEOVER    1 = overwrite ~/.config/mihomo/ if it was made by another clash tool
-#   INSTALL_MIRROR      URL prefix used to wrap every github.com / api.github.com download
-#                       (for users behind the GFW). e.g.:
-#                         INSTALL_MIRROR=https://ghproxy.com/  curl … | bash
-#                       This value is also persisted to ~/.config/vpnkit/config.toml
-#                       so subsequent mihomo binary + geo data downloads go through it.
+#
+# Network: this installer reaches github.com directly. If you're behind a
+# restrictive network, configure HTTPS_PROXY in your shell before running
+# (or use another box to download the tarball and run the binary's
+# `vpnkit init` locally).
 
 log()  { printf '%s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*" >&2; }
 fail() { printf '❌ %s\n' "$*" >&2; exit 1; }
-
-# mirror_wrap prefixes a URL with $INSTALL_MIRROR (trailing slash respected).
-# If INSTALL_MIRROR is unset/empty, returns the URL unchanged.
-mirror_wrap() {
-  local url="$1"
-  if [ -n "${INSTALL_MIRROR:-}" ]; then
-    printf '%s%s\n' "${INSTALL_MIRROR%/}/" "$url"
-  else
-    printf '%s\n' "$url"
-  fi
-}
 
 command -v curl       >/dev/null || fail "curl is required"
 command -v sha256sum  >/dev/null || fail "sha256sum is required (coreutils)"
@@ -54,13 +43,11 @@ esac
 # ───────── version resolve ─────────
 if [ -z "${VERSION:-}" ]; then
   log "🔎 resolving latest release …"
-  api_url="$(mirror_wrap "https://api.github.com/repos/$REPO/releases/latest")"
-  VERSION=$(curl -fsSL "$api_url" \
+  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
     | grep -oP '"tag_name":\s*"\K[^"]+' || true)
 fi
 if [ -z "${VERSION:-}" ]; then
   warn "could not resolve latest version automatically"
-  warn "  some mirrors block api.github.com — try: VERSION=v0.8.0 …"
   fail "set VERSION=v… and re-run"
 fi
 
@@ -80,7 +67,6 @@ if [ -x "$DEST/vpnkit" ]; then
   fi
   log "🧹 found existing vpnkit ${current:-?} — cleaning up before reinstall"
 
-  # 1. back up profiles by grepping the [[profiles]] block out of config.toml.
   if [ -f "$VPNKIT_CFG" ] && grep -q '^\[\[profiles\]\]' "$VPNKIT_CFG"; then
     backup_file="/tmp/vpnkit-profiles-$(date +%Y%m%d-%H%M%S).toml"
     awk '/^\[\[profiles\]\]/{p=1} p' "$VPNKIT_CFG" > "$backup_file"
@@ -88,7 +74,6 @@ if [ -x "$DEST/vpnkit" ]; then
     log "📦 backed up profiles → $backup_file"
   fi
 
-  # 2. stop + disable systemd-user service if present (best-effort).
   if [ -f "$CONFIG_HOME/systemd/user/mihomo.service" ]; then
     systemctl --user stop mihomo 2>/dev/null || true
     systemctl --user disable mihomo 2>/dev/null || true
@@ -97,8 +82,6 @@ if [ -x "$DEST/vpnkit" ]; then
     log "🧹 removed systemd unit"
   fi
 
-  # 3. wipe XDG dirs that vpnkit owns. (Foreign ~/.config/mihomo/ is guarded
-  # below — we only get here if it was vpnkit-managed.)
   STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
   CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
   rm -rf \
@@ -107,7 +90,6 @@ if [ -x "$DEST/vpnkit" ]; then
     "$STATE_HOME/vpnkit" \
     "$CACHE_HOME/vpnkit"
 
-  # 4. delete the old binaries.
   rm -f "$DEST/vpnkit" "$DEST/mihomo"
   log "🧹 removed old binaries + config dirs"
 fi
@@ -124,13 +106,14 @@ fi
 # ───────── download ─────────
 VER_NUM="${VERSION#v}"
 TARBALL="vpnkit_${VER_NUM}_linux_${arch}.tar.gz"
-BASE="$(mirror_wrap "https://github.com/$REPO/releases/download/$VERSION")"
+BASE="https://github.com/$REPO/releases/download/$VERSION"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-log "⬇️  downloading $TARBALL${INSTALL_MIRROR:+ via ${INSTALL_MIRROR}}…"
-curl -fsSL -o "$tmp/$TARBALL" "$BASE/$TARBALL" || fail "download failed"
+log "⬇️  downloading $TARBALL …"
+curl -fsSL -o "$tmp/$TARBALL" "$BASE/$TARBALL" \
+  || fail "download failed (configure HTTPS_PROXY if you're behind a restricted network)"
 curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || fail "checksum download failed"
 
 if ( cd "$tmp" && grep " $TARBALL\$" SHA256SUMS | sha256sum -c - >/dev/null ); then
@@ -148,7 +131,6 @@ log "📦 installed $VERSION → $DEST/vpnkit"
 log "🛠️  initializing config …"
 init_args=()
 [ -n "$backup_file" ] && [ -f "$backup_file" ] && init_args+=(--restore "$backup_file")
-[ -n "${INSTALL_MIRROR:-}" ] && init_args+=(--release-mirror "$INSTALL_MIRROR")
 "$DEST/vpnkit" init "${init_args[@]}" || warn "init returned non-zero"
 
 # ───────── done ─────────

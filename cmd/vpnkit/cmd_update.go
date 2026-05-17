@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"vpnkit/internal/installer"
-	"vpnkit/internal/netx"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
@@ -21,17 +20,18 @@ import (
 
 // updateOptions configures runUpdate.
 type updateOptions struct {
-	Check       bool // print plan + exit 0
-	VpnkitOnly  bool
-	MihomoOnly  bool
-	Yes         bool // skip interactive confirm
-	NoExec      bool // don't syscall.Exec after vpnkit upgrade (tests)
+	Check      bool // print plan + exit 0
+	VpnkitOnly bool
+	MihomoOnly bool
+	Yes        bool // skip interactive confirm
+	NoExec     bool // don't syscall.Exec after vpnkit upgrade (tests)
 }
 
 // runUpdate is the body of `vpnkit update`. Exit codes are encoded as
 // errors that dispatcher maps to sys.Exit.
-//   nil  → success (or already up to date)
-//   err  → caller dies with code 2 (runtime)
+//
+//	nil  → success (or already up to date)
+//	err  → caller dies with code 2 (runtime)
 func runUpdate(out io.Writer, opts updateOptions, st *store.Store, currentVpnkitVer string) error {
 	p := paths.Resolve()
 
@@ -43,7 +43,6 @@ func runUpdate(out io.Writer, opts updateOptions, st *store.Store, currentVpnkit
 	info, err := updater.Check(updater.Opts{
 		VpnkitCurrent: currentVpnkitVer,
 		MihomoCurrent: mihomoCur,
-		APIBase:       prefixedAPIBase(st.Cfg.ReleaseMirror),
 	})
 	if err != nil {
 		return fmt.Errorf("check: %w", err)
@@ -85,7 +84,7 @@ func runUpdate(out io.Writer, opts updateOptions, st *store.Store, currentVpnkit
 		}
 	}
 	if info.VpnkitNeedsUpdate {
-		if err := upgradeVpnkit(out, p, st, info.VpnkitLatest); err != nil {
+		if err := upgradeVpnkit(out, p, info.VpnkitLatest); err != nil {
 			return fmt.Errorf("vpnkit upgrade: %w", err)
 		}
 		fmt.Fprintln(out, "🎉 vpnkit upgraded — re-exec'ing …")
@@ -139,16 +138,13 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 		fmt.Fprintln(out, "🛑 stopping mihomo for binary swap …")
 		_ = svc.Stop(ctx)
 	}
-	res, err := installer.Install(installer.Options{
-		Dst:       p.MihomoBinary(),
-		Mirror:    st.Cfg.ReleaseMirror,
-		Version:   version,
-		OnAttempt: mirrorAttemptPrinter(out),
+	_, err := installer.Install(installer.Options{
+		Dst:     p.MihomoBinary(),
+		Version: version,
 	}, nil)
 	if err != nil {
 		return err
 	}
-	cacheWinningMirror(out, st, res.Mirror)
 	if wasRunning {
 		fmt.Fprintln(out, "▶️  restarting mihomo …")
 		if err := svc.Start(ctx); err != nil {
@@ -159,7 +155,7 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 	return nil
 }
 
-func upgradeVpnkit(out io.Writer, p paths.XDG, st *store.Store, version string) error {
+func upgradeVpnkit(out io.Writer, p paths.XDG, version string) error {
 	dst, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate vpnkit binary: %w", err)
@@ -171,59 +167,11 @@ func upgradeVpnkit(out io.Writer, p paths.XDG, st *store.Store, version string) 
 	tarball := fmt.Sprintf("vpnkit_%s_linux_%s.tar.gz", strings.TrimPrefix(version, "v"), arch)
 	githubURL := fmt.Sprintf("https://github.com/JimZhang168872/vpnkit/releases/download/%s/%s", version, tarball)
 	fmt.Fprintf(out, "📥 downloading vpnkit %s (%s) …\n", version, tarball)
-	winningMirror, err := updater.DownloadAndApplyVpnkit(githubURL, "", dst, st.Cfg.ReleaseMirror, mirrorAttemptPrinter(out))
-	if err != nil {
+	if err := updater.DownloadAndApplyVpnkit(githubURL, "", dst); err != nil {
 		return err
 	}
-	cacheWinningMirror(out, st, winningMirror)
 	fmt.Fprintf(out, "✅ vpnkit %s → %s\n", version, dst)
 	return nil
-}
-
-// mirrorAttemptPrinter returns an OnAttempt callback that prints each chain
-// attempt's outcome to out as the download walks its fallback chain. So a
-// user staring at "📥 downloading mihomo …" sees in real time which mirror
-// is being tried, why each is failing, and which one finally worked —
-// instead of waiting silently for ~60 s and getting a single misleading
-// "ghp.ci: no such host" at the end.
-func mirrorAttemptPrinter(out io.Writer) netx.OnAttempt {
-	return func(mirror string, err error) {
-		label := mirror
-		if label == "" {
-			label = "github direct"
-		} else {
-			label = strings.TrimSuffix(strings.TrimPrefix(label, "https://"), "/")
-		}
-		if err == nil {
-			fmt.Fprintf(out, "   ✓ %s\n", label)
-			return
-		}
-		// Trim verbose net error wrapping for a readable single line.
-		msg := err.Error()
-		if i := strings.Index(msg, ": "); i >= 0 && i < 60 {
-			// drop one layer of wrapping if any
-		}
-		if len(msg) > 100 {
-			msg = msg[:100] + "…"
-		}
-		fmt.Fprintf(out, "   ✗ %s — %s\n", label, msg)
-	}
-}
-
-// cacheWinningMirror remembers a non-empty mirror that just served a download
-// when the user hadn't configured one. Saves the next launch's bootstrap from
-// waiting on the same dead direct connection. Never overwrites a user-set
-// value — they might be deliberately pinning a specific mirror.
-func cacheWinningMirror(out io.Writer, st *store.Store, mirror string) {
-	if mirror == "" || st.Cfg.ReleaseMirror != "" {
-		return
-	}
-	st.Cfg.ReleaseMirror = mirror
-	if err := st.Save(); err != nil {
-		fmt.Fprintf(out, "⚠️  cache mirror %s: %v\n", mirror, err)
-		return
-	}
-	fmt.Fprintf(out, "💾 cached release_mirror = %s (next download starts here)\n", mirror)
 }
 
 // readMihomoVersion runs `mihomo -v` and parses the first line. Returns ""
@@ -238,13 +186,11 @@ func readMihomoVersion(binary string) string {
 	if err != nil {
 		return ""
 	}
-	// Use the exported helper; it strips to the first version-looking token.
 	return parseMihomoLine(string(out))
 }
 
-// parseMihomoLine is a tiny wrapper around updater.parseMihomoVersion that
-// lives here because the updater pkg keeps that helper unexported. We
-// inline the logic to avoid widening the updater public surface.
+// parseMihomoLine inlines the version-token parser; updater.parseMihomoVersion
+// is unexported.
 func parseMihomoLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
@@ -255,14 +201,4 @@ func parseMihomoLine(s string) string {
 		}
 	}
 	return ""
-}
-
-// prefixedAPIBase returns "https://api.github.com" wrapped in the configured
-// release mirror, if any. Returns "" when no mirror so updater uses its default.
-func prefixedAPIBase(mirror string) string {
-	if mirror == "" {
-		return ""
-	}
-	m := strings.TrimSuffix(mirror, "/")
-	return m + "/" + "https://api.github.com"
 }

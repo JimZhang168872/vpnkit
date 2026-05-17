@@ -92,25 +92,6 @@ func TestInitIdempotent(t *testing.T) {
 	}
 }
 
-func TestInitWritesReleaseMirror(t *testing.T) {
-	p, restore := initEnv(t)
-	defer restore()
-
-	var out bytes.Buffer
-	if err := runInit(&out, runInitOpts{ReleaseMirror: "https://ghproxy.com/"}); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(p.VpnkitConfigFile())
-	if !strings.Contains(string(data), `release_mirror = "https://ghproxy.com/"`) {
-		t.Errorf("release_mirror not persisted:\n%s", string(data))
-	}
-	// And mihomo config.yaml's geox-url should be mirror-prefixed.
-	yaml, _ := os.ReadFile(p.MihomoConfigFile())
-	if !strings.Contains(string(yaml), "ghproxy.com/https://github.com") {
-		t.Errorf("geox-url not mirror-prefixed:\n%s", string(yaml))
-	}
-}
-
 func TestInitRestoresProfiles(t *testing.T) {
 	p, restore := initEnv(t)
 	defer restore()

@@ -25,13 +25,8 @@ func (m coreModel) Update(message tea.Msg) (coreModel, tea.Cmd) {
 		return m, nil
 	}
 	if km.String() == "u" {
-		mirror := ""
-		if m.store != nil {
-			mirror = m.store.Cfg.ReleaseMirror
-		}
 		res, err := installer.Install(installer.Options{
-			Dst:    m.paths.MihomoBinary(),
-			Mirror: mirror,
+			Dst: m.paths.MihomoBinary(),
 		}, nil)
 		if err != nil {
 			m.flash = "upgrade: " + err.Error()
@@ -48,24 +43,12 @@ func (m coreModel) View(width, height int) string {
 	if info, err := os.Stat(m.paths.MihomoBinary()); err == nil {
 		size = fmt.Sprintf("%d bytes", info.Size())
 	}
-	mirror := ""
-	if m.store != nil {
-		mirror = m.store.Cfg.ReleaseMirror
-	}
 	body := header + "\n\n" +
 		fmt.Sprintf("  Binary : %s\n", m.paths.MihomoBinary()) +
 		fmt.Sprintf("  Size   : %s\n", size) +
-		fmt.Sprintf("  Mirror : %s\n", coreFallback(mirror, "(direct GitHub)")) +
 		"\n  [u] upgrade to latest release\n"
 	if m.flash != "" {
 		body += "\n  → " + m.flash + "\n"
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(body)
-}
-
-func coreFallback(s, alt string) string {
-	if s == "" {
-		return alt
-	}
-	return s
 }

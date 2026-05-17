@@ -222,6 +222,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard, cmd = m.dashboard.Update(msg)
 	case ProxiesSnapshot, DelayResults:
 		m.proxiesTab, cmd = m.proxiesTab.Update(msg)
+		if snap, ok := msg.(ProxiesSnapshot); ok {
+			m.recordProxyNames(snap)
+		}
 	case ConnectionsSnapshot:
 		m.connectionsTab, cmd = m.connectionsTab.Update(msg)
 	case RulesSnapshot:

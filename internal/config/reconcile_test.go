@@ -147,9 +147,8 @@ func TestEnsureSecurityFieldsMissingFileIsError(t *testing.T) {
 }
 
 func TestEnsureSecurityFieldsInjectsGeoxUrlWhenMissing(t *testing.T) {
-	// Pre-v0.8.3 config.yaml: no geox-url at all → mihomo would try to download
-	// MMDB from github.com on boot and hang inside the GFW. We backfill the
-	// jsdelivr default so existing users self-heal on next launch.
+	// Pre-v0.8.3 config.yaml: no geox-url at all. We backfill direct
+	// GitHub Releases URLs so existing users self-heal on next launch.
 	pre := `mixed-port: 7890
 external-controller: 127.0.0.1:9090
 secret: s
@@ -177,7 +176,7 @@ rules:
 	}
 	out, _ := os.ReadFile(path)
 	s := string(out)
-	if !strings.Contains(s, "geox-url") || !strings.Contains(s, "cdn.jsdelivr.net/gh/MetaCubeX") {
+	if !strings.Contains(s, "geox-url") || !strings.Contains(s, "github.com/MetaCubeX/meta-rules-dat/releases/download/latest") {
 		t.Errorf("geox-url not injected:\n%s", s)
 	}
 	if !strings.Contains(s, "HK") {

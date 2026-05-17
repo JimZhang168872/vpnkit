@@ -32,34 +32,10 @@ old version before installing the new one. Pin a version with
 
 From source: `git clone … && cd vpnkit && make install` (needs Go 1.22+).
 
-### Behind the GFW
-
-vpnkit defaults to `cdn.jsdelivr.net` for mihomo's geoip/geosite downloads,
-so the **first launch usually works inside mainland China without any
-extra setup**. If `github.com` is also too slow for the install itself, run
-through a public GitHub mirror — one env var covers the installer **and**
-mihomo's later downloads:
-
-```bash
-MIRROR="https://ghproxy.com/"           # pick one that's currently up
-VERSION="v0.9.0"                         # most mirrors don't proxy api.github.com, so pin
-
-curl -sSL "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.sh" \
-  | INSTALL_MIRROR="$MIRROR" VERSION="$VERSION" bash
-```
-
-Test a mirror before using it:
-
-```bash
-curl -fsSL --max-time 5 -o /dev/null \
-  "${MIRROR}https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/README.md" \
-  && echo OK || echo "mirror dead, try another"
-```
-
-Alternates: `https://mirror.ghproxy.com/`, `https://ghp.ci/`,
-`https://gh.api.99988866.xyz/`. `INSTALL_MIRROR` is persisted into
-`~/.config/vpnkit/config.toml` (`release_mirror`), so every later GitHub
-download — mihomo upgrades, geo data refreshes — goes through the same mirror.
+> **Network:** vpnkit reaches `github.com` directly — no mirror fallback.
+> Behind a restrictive network? Configure `HTTPS_PROXY` in your shell
+> *before* installing (and before `vpnkit update` runs). SmartClient will
+> probe the env proxy at request time and route through it when reachable.
 
 ## First run
 
@@ -121,10 +97,50 @@ vpnkit update --vpnkit-only              # leave mihomo alone
 vpnkit update --mihomo-only              # leave vpnkit alone
 ```
 
-`vpnkit update` upgrades vpnkit and mihomo through `release_mirror`, swaps
-the binaries atomically (POSIX rename over a running executable is safe),
+`vpnkit update` upgrades vpnkit and mihomo via direct downloads from
+GitHub Releases (through `HTTPS_PROXY` if you have one set), swaps the
+binaries atomically (POSIX rename over a running executable is safe),
 and `syscall.Exec`'s the new vpnkit so the TUI relaunches with the new
 version. Mihomo restarts during the swap, so the proxy is down for ~1 s.
+
+## Extensions: chains & custom groups
+
+Chain one subscription node through another (multi-hop egress, `dialer-proxy`)
+and add your own proxy-groups. Edits persist in
+`~/.config/vpnkit/extensions.toml` and survive subscription updates.
+
+### CLI
+
+```bash
+vpnkit chain ls
+vpnkit chain set "US-1" "JP-Relay"        # US-1 egress now hops through JP-Relay
+vpnkit chain unset "US-1"
+
+vpnkit group ls
+vpnkit group add "Stream" --type select --proxies "US-1,JP-1,DIRECT"
+vpnkit group add "Auto-US" --type url-test \
+    --proxies "US-1,US-2" \
+    --url https://www.gstatic.com/generate_204 \
+    --interval 300 --tolerance 50
+vpnkit group rm "Stream"
+
+vpnkit ext apply                          # reassemble active profile + reload mihomo
+```
+
+### TUI
+
+Settings → Extensions. `c` toggles to Chains, `g` to Groups, `a/e/d`
+add/edit/delete the highlighted row, `r` reassembles + reloads. Form has
+inline autocomplete hints from the live `/proxies` snapshot.
+
+### Migration from `patch.yaml`
+
+vpnkit no longer reads `~/.config/mihomo/patch.yaml`. The Settings → Patch
+Editor sub-page has been replaced by Settings → Extensions. For chain /
+proxy-group tweaks, the new structured format is friendlier than free-form
+YAML; for arbitrary mihomo config overrides not covered by chains/groups,
+edit `~/.config/mihomo/config.yaml` after each subscription update
+(or keep an existing `patch.yaml` and merge it manually).
 
 ## Multi-user / multi-instance safety
 
@@ -151,8 +167,11 @@ listens on the shared loopback.
 | `vpnkit use '<group>' '<node>'` | switch a group's selection |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
-| `vpnkit init [--restore <path>] [--release-mirror <url>]` | regenerate config skeleton |
+| `vpnkit init [--restore <path>]` | regenerate config skeleton |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
+| `vpnkit chain ls/set/unset` | manage dialer-proxy chains |
+| `vpnkit group ls/add/rm` | manage custom proxy-groups |
+| `vpnkit ext apply` | reassemble + reload mihomo with current extensions |
 
 All read commands accept `--json` for scripting. Exit codes: `0` ok,
 `1` user error, `2` runtime error.
@@ -165,7 +184,8 @@ All read commands accept `--json` for scripting. Exit codes: `0` ok,
 - **Proxies**: `Enter` on group expand/collapse · `Enter` on node switch · `t` delay-test
 - **Connections**: `x` close selected · `/` filter
 - **Rules**: `/` filter · `u` refresh providers
-- **Settings**: `↑`/`↓` cycle subpages (Mihomo Core, Service, External Controller, Default Rules, Patch Editor, Logs, Cache, About)
+- **Settings**: `↑`/`↓` cycle subpages (Mihomo Core, Service, External Controller, Default Rules, Extensions, Logs, Cache, About)
+- **Settings → Extensions**: `c` chains / `g` groups · `a` add · `e` edit · `d` delete · `r` apply (reassemble + reload)
 
 ## Layout
 
@@ -173,9 +193,9 @@ All read commands accept `--json` for scripting. Exit codes: `0` ok,
 |---|---|
 | `~/.local/bin/vpnkit` | this binary |
 | `~/.local/bin/mihomo` | managed mihomo core |
-| `~/.config/vpnkit/config.toml` | profiles, ports, proxy creds, controller secret, release_mirror |
+| `~/.config/vpnkit/config.toml` | profiles, ports, proxy creds, controller secret |
+| `~/.config/vpnkit/extensions.toml` | chains + custom proxy-groups overlay |
 | `~/.config/mihomo/config.yaml` | generated mihomo config (regenerated on each subscription update) |
-| `~/.config/mihomo/patch.yaml` | user overlay, deep-merged into the generated config |
 | `~/.config/systemd/user/mihomo.service` | systemd-user unit |
 | `~/.netrc` | proxy basic-auth entry (written by `vpnkit env`, mode 0600) |
 | `~/.local/state/vpnkit/` | logs, PID file (PID mode) |

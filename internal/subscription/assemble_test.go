@@ -1,19 +1,14 @@
 package subscription
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"vpnkit/internal/extensions"
 	"vpnkit/internal/subscription/proto"
 )
 
 func TestAssembleMergesEverything(t *testing.T) {
-	dir := t.TempDir()
-	patchPath := filepath.Join(dir, "patch.yaml")
-	_ = os.WriteFile(patchPath, []byte("log-level: debug\n"), 0o600)
-
 	r := Result{
 		Source: "uri",
 		Proxies: []proto.Proxy{
@@ -26,7 +21,6 @@ func TestAssembleMergesEverything(t *testing.T) {
 		ControllerPort:   9090,
 		ControllerSecret: "secret",
 		RuleTemplate:     "minimal",
-		PatchPath:        patchPath,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +30,6 @@ func TestAssembleMergesEverything(t *testing.T) {
 		"mixed-port: 7890",
 		"HK-01",
 		"GEOIP,CN",
-		"log-level: debug",
 		"🚀 Proxy",
 	} {
 		if !strings.Contains(s, want) {
@@ -45,20 +38,23 @@ func TestAssembleMergesEverything(t *testing.T) {
 	}
 }
 
-func TestAssembleAppliesReleaseMirror(t *testing.T) {
+func TestAssembleGeoxURLPointsAtGitHubDirectly(t *testing.T) {
 	out, err := Assemble(AssembleInput{
 		Result:           Result{Source: "uri", Proxies: nil},
 		MixedPort:        7890,
 		ControllerPort:   9090,
 		ControllerSecret: "s",
 		RuleTemplate:     "minimal",
-		ReleaseMirror:    "https://ghproxy.com/",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "ghproxy.com/https://github.com") {
-		t.Errorf("missing mirror-prefixed geox-url:\n%s", out)
+	s := string(out)
+	if !strings.Contains(s, "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest") {
+		t.Errorf("expected direct GitHub geox-url, got:\n%s", s)
+	}
+	if strings.Contains(s, "jsdelivr") || strings.Contains(s, "ghproxy") {
+		t.Errorf("found mirror reference in geox-url:\n%s", s)
 	}
 }
 
@@ -96,5 +92,40 @@ func TestAssembleKeepsExistingGroupsFromClash(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "MyGroup") {
 		t.Errorf("custom group lost:\n%s", out)
+	}
+}
+
+func TestAssembleAppliesExtensions(t *testing.T) {
+	in := AssembleInput{
+		Result: Result{
+			Source: "uri",
+			Proxies: []proto.Proxy{
+				{"name": "US-1", "type": "ss", "server": "x", "port": 1, "cipher": "c", "password": "p"},
+				{"name": "JP-Relay", "type": "ss", "server": "y", "port": 2, "cipher": "c", "password": "p"},
+			},
+		},
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		RuleTemplate:     "minimal",
+		Extensions: extensions.Extensions{
+			Chains: []extensions.Chain{
+				{Node: "US-1", Via: "JP-Relay"},
+			},
+			Groups: []extensions.Group{
+				{Name: "Stream", Type: "select", Proxies: []string{"US-1", "DIRECT"}},
+			},
+		},
+	}
+	out, err := Assemble(in)
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "dialer-proxy: JP-Relay") {
+		t.Fatalf("expected dialer-proxy line, got:\n%s", s)
+	}
+	if !strings.Contains(s, "name: Stream") {
+		t.Fatalf("expected custom group Stream, got:\n%s", s)
 	}
 }

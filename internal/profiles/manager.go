@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vpnkit/internal/config"
+	"vpnkit/internal/extensions"
 	"vpnkit/internal/subscription"
 )
 
@@ -24,12 +25,11 @@ type Profile struct {
 // Config configures Manager.
 type Config struct {
 	ConfigYAMLPath   string
-	PatchPath        string
+	ExtensionsPath   string // ~/.config/vpnkit/extensions.toml
 	ControllerPort   int
 	ControllerSecret string
 	MixedPort        int
 	RuleTemplate     string
-	ReleaseMirror    string
 	ProxyUser        string
 	ProxyPass        string
 }
@@ -140,7 +140,8 @@ func (m *Manager) Remove(name string) {
 	m.fireChange()
 }
 
-// Update fetches the named profile's URL, converts, assembles, and writes config.yaml.
+// Update fetches the named profile's URL, converts, assembles (with extensions
+// overlay loaded from disk), and writes config.yaml.
 func (m *Manager) Update(ctx context.Context, name string) (int, error) {
 	m.mu.Lock()
 	var p *Profile
@@ -164,14 +165,16 @@ func (m *Manager) Update(ctx context.Context, name string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	ext, _ := extensions.Load(cfg.ExtensionsPath)
+
 	yamlBytes, err := subscription.Assemble(subscription.AssembleInput{
 		Result:           res,
 		MixedPort:        cfg.MixedPort,
 		ControllerPort:   cfg.ControllerPort,
 		ControllerSecret: cfg.ControllerSecret,
 		RuleTemplate:     cfg.RuleTemplate,
-		PatchPath:        cfg.PatchPath,
-		ReleaseMirror:    cfg.ReleaseMirror,
+		Extensions:       ext,
 		ProxyUser:        cfg.ProxyUser,
 		ProxyPass:        cfg.ProxyPass,
 	})

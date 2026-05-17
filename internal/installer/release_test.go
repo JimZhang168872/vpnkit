@@ -54,14 +54,3 @@ func TestFindAssetURL(t *testing.T) {
 	}
 }
 
-func TestApplyMirror(t *testing.T) {
-	const orig = "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.16/x.gz"
-	got := ApplyMirror(orig, "https://ghproxy.com/")
-	want := "https://ghproxy.com/https://github.com/MetaCubeX/mihomo/releases/download/v1.19.16/x.gz"
-	if got != want {
-		t.Errorf("got %s want %s", got, want)
-	}
-	if ApplyMirror(orig, "") != orig {
-		t.Error("empty mirror must passthrough")
-	}
-}

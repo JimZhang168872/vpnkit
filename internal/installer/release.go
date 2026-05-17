@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"vpnkit/internal/netx"
@@ -103,14 +102,3 @@ func (c *ReleaseClient) byPath(path string) (Release, error) {
 	return r, nil
 }
 
-// ApplyMirror prefixes the GitHub URL with `mirror` (trailing slash respected).
-// Empty mirror returns url unchanged.
-func ApplyMirror(url, mirror string) string {
-	if mirror == "" {
-		return url
-	}
-	if !strings.HasSuffix(mirror, "/") {
-		mirror += "/"
-	}
-	return mirror + url
-}

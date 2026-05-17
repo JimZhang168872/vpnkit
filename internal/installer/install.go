@@ -2,36 +2,26 @@ package installer
 
 import (
 	"fmt"
-
-	"vpnkit/internal/netx"
 )
 
 // Options control an Install call.
 type Options struct {
-	APIBase     string         // override GitHub API base (for tests / enterprise)
-	Token       string         // GITHUB_TOKEN
-	Mirror      string         // optional URL prefix applied to release download URLs
-	Dst         string         // absolute destination path for mihomo binary
-	Version     string         // empty = latest
-	ForceCompat *bool          // nil = autodetect; true/false = override
-	OnAttempt   netx.OnAttempt // per-mirror callback; nil = silent
+	APIBase     string // override GitHub API base (for tests / enterprise)
+	Token       string // GITHUB_TOKEN
+	Dst         string // absolute destination path for mihomo binary
+	Version     string // empty = latest
+	ForceCompat *bool  // nil = autodetect; true/false = override
 }
 
 // Result describes a successful install.
 type Result struct {
 	Version    string
 	Compatible bool
-	// Mirror is the prefix that actually served the binary, "" for direct.
-	// Callers may persist this back to store.Cfg.ReleaseMirror so the next
-	// download starts with the known-good endpoint.
-	Mirror string
 }
 
-// Install runs the full flow: resolve release → choose asset → download → verify → unpack → rename.
-//
-// opts.Mirror is the *preferred* mirror; if it doesn't work or is empty,
-// Download falls through to direct github + builtin public mirrors. The
-// mirror that actually served the bytes is returned in Result.Mirror.
+// Install runs the full flow: resolve release → choose asset → download →
+// unpack → rename. No mirror layer; network errors propagate unchanged so
+// the caller can surface them with a "configure HTTPS_PROXY" hint.
 func Install(opts Options, progress ProgressFunc) (Result, error) {
 	if opts.Dst == "" {
 		return Result{}, fmt.Errorf("install: Dst is required")
@@ -67,11 +57,10 @@ func Install(opts Options, progress ProgressFunc) (Result, error) {
 		compat = !compat
 	}
 
-	winningMirror, derr := Download(url, "", opts.Dst, opts.Mirror, opts.OnAttempt, progress)
-	if derr != nil {
-		return Result{}, fmt.Errorf("install: download: %w", derr)
+	if err := Download(url, "", opts.Dst, progress); err != nil {
+		return Result{}, fmt.Errorf("install: download: %w", err)
 	}
-	return Result{Version: rel.Tag, Compatible: compat, Mirror: winningMirror}, nil
+	return Result{Version: rel.Tag, Compatible: compat}, nil
 }
 
 // currentArch wraps runtime.GOARCH so tests can override via build tags later if needed.

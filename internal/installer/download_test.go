@@ -11,8 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"vpnkit/internal/netx"
 )
 
 // Clear proxy env leaks from the parent shell — SmartClient inside Download
@@ -44,7 +42,7 @@ func TestDownloadAndVerify(t *testing.T) {
 
 	dst := filepath.Join(t.TempDir(), "mihomo")
 	progresses := []int64{}
-	_, err := Download(srv.URL+"/mihomo.gz", expected, dst, "", nil, func(n, total int64) {
+	err := Download(srv.URL+"/mihomo.gz", expected, dst, func(n, total int64) {
 		progresses = append(progresses, n)
 	})
 	if err != nil {
@@ -74,7 +72,7 @@ func TestDownloadSHAMismatch(t *testing.T) {
 	defer srv.Close()
 
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	_, err := Download(srv.URL, "00deadbeef", dst, "", nil, nil)
+	err := Download(srv.URL, "00deadbeef", dst, nil)
 	if err == nil {
 		t.Fatal("expected SHA mismatch error")
 	}
@@ -96,18 +94,12 @@ func gzipBytes(p []byte) ([]byte, error) {
 }
 
 func TestDownloadHTTPError(t *testing.T) {
-	// Skip the public-mirror chain in this test — it would otherwise spend
-	// 45 s trying ghproxy.com/etc. wrapped around the httptest URL.
-	saved := netx.BuiltinGitHubMirrors
-	netx.BuiltinGitHubMirrors = nil
-	defer func() { netx.BuiltinGitHubMirrors = saved }()
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	if _, err := Download(srv.URL, "", dst, "", nil, nil); err == nil {
+	if err := Download(srv.URL, "", dst, nil); err == nil {
 		t.Fatal("expected error")
 	}
 }

@@ -22,13 +22,12 @@ type UpdateAvailableMsg struct {
 // are swallowed — a missing network shouldn't surface a flash to the user.
 // We delay 2s so the bootstrap status messages have time to settle before
 // any "⚡ update available" line shows up.
-func pollUpdate(prog *tea.Program, vpnkitVer, mihomoBinary, releaseMirror string) {
+func pollUpdate(prog *tea.Program, vpnkitVer, mihomoBinary string) {
 	time.Sleep(2 * time.Second)
 	mihomoVer := readMihomoVersionForCheck(mihomoBinary)
 	info, err := updater.Check(updater.Opts{
 		VpnkitCurrent: vpnkitVer,
 		MihomoCurrent: mihomoVer,
-		APIBase:       prefixedAPIBaseForCheck(releaseMirror),
 	})
 	if err != nil {
 		return
@@ -59,12 +58,4 @@ func readMihomoVersionForCheck(binary string) string {
 		}
 	}
 	return ""
-}
-
-func prefixedAPIBaseForCheck(mirror string) string {
-	if mirror == "" {
-		return ""
-	}
-	m := strings.TrimSuffix(mirror, "/")
-	return m + "/" + "https://api.github.com"
 }

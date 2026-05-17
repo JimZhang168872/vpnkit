@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,86 +19,83 @@ import (
 // ProgressFunc reports bytes downloaded so far and the total expected (-1 if unknown).
 type ProgressFunc func(n, total int64)
 
-// Download fetches a gzipped mihomo binary through a fallback chain (preferred
-// mirror → direct → builtin public mirrors), verifies SHA256 of the raw gzip
-// stream against expectedSHA (hex; empty = skip check), decompresses, and
-// writes the resulting executable atomically to dst with mode 0o755.
+// Download fetches a gzipped mihomo binary directly from githubURL using
+// netx.SmartClient (which honors a live env proxy if one is reachable, else
+// goes direct). Verifies SHA256 of the raw gzip stream against expectedSHA
+// (hex; empty = skip check), decompresses, and writes the resulting
+// executable atomically to dst with mode 0o755.
 //
-// onAttempt (optional) receives each chain entry's outcome as it happens so
-// callers can print live progress to the user. Errors from each attempt are
-// also aggregated into the final returned error if everything fails.
-//
-// Returns the mirror that actually served the bytes (empty = direct github,
-// or one of netx.BuiltinGitHubMirrors). Callers should persist a non-empty
-// winner so the next download skips the dead-direct timeout.
-func Download(githubURL, expectedSHA, dst, preferredMirror string, onAttempt netx.OnAttempt, progress ProgressFunc) (string, error) {
+// There is no mirror fallback chain. If the GET fails, the error is returned
+// as-is; callers should surface it to the user with a hint to configure a
+// proxy (HTTPS_PROXY env) if they're inside a restricted network.
+func Download(githubURL, expectedSHA, dst string, progress ProgressFunc) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	body, winningMirror, err := netx.OpenWithFallback(
-		ctx, githubURL, preferredMirror,
-		netx.BuiltinGitHubMirrors,
-		15*time.Second, // per-attempt connect/read timeout
-		onAttempt,
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("download %s: %w", githubURL, err)
+		return fmt.Errorf("download %s: %w", githubURL, err)
 	}
-	defer body.Close()
-
-	total := int64(-1) // chunked / unknown via fallback path
+	client := netx.SmartClient(0)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", githubURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("download %s: HTTP %s", githubURL, resp.Status)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return winningMirror, err
+		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(dst), "mihomo-*.dl")
 	if err != nil {
-		return winningMirror, err
+		return err
 	}
 	tmpName := tmp.Name()
 	cleanup := func() { tmp.Close(); os.Remove(tmpName) }
 
 	hasher := sha256.New()
-	reader := io.TeeReader(body, hasher)
-	gz, err := gzip.NewReader(progressReader(reader, total, progress))
+	reader := io.TeeReader(resp.Body, hasher)
+	gz, err := gzip.NewReader(progressReader(reader, -1, progress))
 	if err != nil {
 		cleanup()
-		return winningMirror, err
+		return err
 	}
 	if _, err := io.Copy(tmp, gz); err != nil {
 		cleanup()
-		return winningMirror, err
+		return err
 	}
 	if err := gz.Close(); err != nil {
 		cleanup()
-		return winningMirror, err
+		return err
 	}
 	if expectedSHA != "" {
 		got := hex.EncodeToString(hasher.Sum(nil))
 		if got != expectedSHA {
 			cleanup()
-			return winningMirror, fmt.Errorf("sha256 mismatch: got %s expected %s", got, expectedSHA)
+			return fmt.Errorf("sha256 mismatch: got %s expected %s", got, expectedSHA)
 		}
 	}
 	if err := tmp.Chmod(0o755); err != nil {
 		cleanup()
-		return winningMirror, err
+		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		cleanup()
-		return winningMirror, err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		return winningMirror, err
+		return err
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
 		os.Remove(tmpName)
-		return winningMirror, err
+		return err
 	}
-	return winningMirror, nil
+	return nil
 }
 
-// progressReader wraps r, invoking cb at most every 64KiB.
 func progressReader(r io.Reader, total int64, cb ProgressFunc) io.Reader {
 	if cb == nil {
 		return r
