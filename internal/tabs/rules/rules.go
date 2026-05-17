@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // Model is the Rules tab.
@@ -18,6 +19,65 @@ type Model struct {
 	filter      string
 	filterInput textinput.Model
 	filtering   bool
+	cursor      int // index into the filtered rules slice
+}
+
+// MoveDown advances the cursor by one filtered row, clamped to the last row.
+func (m *Model) MoveDown() {
+	max := len(m.filtered()) - 1
+	if m.cursor < max {
+		m.cursor++
+	}
+}
+
+// MoveUp moves the cursor up one filtered row, clamped at 0.
+func (m *Model) MoveUp() {
+	if m.cursor > 0 {
+		m.cursor--
+	}
+}
+
+// PageSize is the cursor jump for MovePageUp/MovePageDown. Chosen as a
+// constant rather than view-height-aware so the model stays decoupled
+// from rendering; 10 is roughly a "screen" on a typical 24-row terminal
+// once header/footer/providers are accounted for.
+const PageSize = 10
+
+// MovePageDown jumps the cursor PageSize rows downward, clamped.
+func (m *Model) MovePageDown() {
+	max := len(m.filtered()) - 1
+	if max < 0 {
+		return
+	}
+	m.cursor += PageSize
+	if m.cursor > max {
+		m.cursor = max
+	}
+}
+
+// MovePageUp jumps the cursor PageSize rows upward, clamped.
+func (m *Model) MovePageUp() {
+	m.cursor -= PageSize
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
+// filtered returns the post-filter slice of rules; computed lazily on each
+// call so cursor + view always see the same data.
+func (m Model) filtered() []msg.RuleEntry {
+	if m.filter == "" {
+		return m.rules
+	}
+	out := make([]msg.RuleEntry, 0, len(m.rules))
+	for _, r := range m.rules {
+		if strings.Contains(r.Payload, m.filter) ||
+			strings.Contains(r.Type, m.filter) ||
+			strings.Contains(r.Proxy, m.filter) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func New() Model {
@@ -53,6 +113,15 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if ev, ok := message.(msg.RulesSnapshot); ok {
 		m.rules = ev.Rules
 		m.providers = ev.Providers
+		// Clamp cursor in case the rule count shrank.
+		max := len(m.filtered()) - 1
+		if m.cursor > max {
+			if max < 0 {
+				m.cursor = 0
+			} else {
+				m.cursor = max
+			}
+		}
 		return m, nil
 	}
 	if m.filtering {
@@ -81,31 +150,78 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 func (m *Model) SetFilter(s string) { m.filter = s }
 
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
 	rows := []string{header, ""}
 
+	innerWidthProv := width - 6
+	if innerWidthProv < 10 {
+		innerWidthProv = 10
+	}
 	if len(m.providers) > 0 {
 		rows = append(rows, lipgloss.NewStyle().Bold(true).Render("Rule Providers"))
 		for _, p := range m.providers {
-			rows = append(rows, fmt.Sprintf("  %-20s  %-8s  count=%d  updated=%s",
-				p.Name, p.Behavior, p.RuleCount, p.UpdatedAt))
+			line := fmt.Sprintf("%-20s  %-8s  count=%d  updated=%s",
+				p.Name, p.Behavior, p.RuleCount, p.UpdatedAt)
+			rows = append(rows, "  "+viewport.TruncateDisplay(line, innerWidthProv))
 		}
 		rows = append(rows, "")
 	}
 
-	rows = append(rows, lipgloss.NewStyle().Bold(true).Render("Rules"))
-	for _, r := range m.rules {
-		if m.filter != "" && !strings.Contains(r.Payload, m.filter) && !strings.Contains(r.Type, m.filter) && !strings.Contains(r.Proxy, m.filter) {
-			continue
+	filtered := m.filtered()
+
+	// Reserve rows: header(1) + blank + "Rules"(1) + filter-line(2) + footer(1)
+	// + padding(2) + provider block (variable).
+	providerRows := 0
+	if len(m.providers) > 0 {
+		providerRows = 1 + len(m.providers) + 1 // header + N rows + blank
+	}
+	maxList := height - providerRows - 8
+	if maxList < 3 {
+		maxList = 3
+	}
+	start, end := viewport.Window(len(filtered), m.cursor, maxList)
+	indicator := viewport.Indicator(start, len(filtered), maxList, m.cursor)
+
+	rulesHeader := lipgloss.NewStyle().Bold(true).Render("Rules")
+	if indicator != "" {
+		rulesHeader += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	rows = append(rows, rulesHeader)
+	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	// Hard-truncate each row to the body's inner width so lipgloss never
+	// soft-wraps a long rule onto a second line — wrapping doubles the row
+	// count and overflows Height, which is what was pushing the sidebar
+	// off-screen on the Rules tab.
+	innerWidth := width - 6 // -4 padding (2*2) - 2 cursor/marker prefix slack
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
+	for i := start; i < end; i++ {
+		r := filtered[i]
+		line := fmt.Sprintf("%-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy)
+		line = viewport.TruncateDisplay(line, innerWidth)
+		if i == m.cursor {
+			rows = append(rows, cursorStyle.Render("▶ "+line))
+		} else {
+			rows = append(rows, "  "+line)
 		}
-		rows = append(rows, fmt.Sprintf("  %-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy))
 	}
 	if m.filtering {
 		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
 	} else {
-		rows = append(rows, "", "[/] filter  [u] refresh providers")
+		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate")
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	// MaxHeight enforces clip at body height — without it, lipgloss lets
+	// content extend below the box, and JoinHorizontal then misaligns the
+	// sidebar.
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func truncate(s string, n int) string {

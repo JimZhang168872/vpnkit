@@ -11,6 +11,7 @@ import (
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 	"vpnkit/internal/tabs/logs"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // SubPage identifies a sub-page.
@@ -26,6 +27,20 @@ const (
 	SubCache
 	SubAbout
 	NumSubPages
+)
+
+// SettingsFocus is the two-state focus the user toggles with ←/→ inside
+// Settings to indicate which panel ↑/↓ should affect. Without this, ↑/↓
+// behavior depended on which sub-page was active and the user couldn't
+// tell what they were navigating.
+type SettingsFocus int
+
+const (
+	// FocusSidebar = ↑/↓ moves between sub-pages.
+	FocusSidebar SettingsFocus = iota
+	// FocusContent = ↑/↓ goes to the sub-page's internal list (only
+	// meaningful on sub-pages that own arrows, currently SubExtensions).
+	FocusContent
 )
 
 // SubPageNames is human labels for the sidebar.
@@ -55,6 +70,7 @@ type Deps struct {
 type Model struct {
 	deps    Deps
 	current SubPage
+	focus   SettingsFocus
 
 	about      aboutModel
 	cache      cacheModel
@@ -64,6 +80,27 @@ type Model struct {
 	core       coreModel
 	extensions extensionsModel
 	logs       logs.Model
+}
+
+// Focus exposes the active focus state (for tests / rendering).
+func (m Model) Focus() SettingsFocus { return m.focus }
+
+// SetFocus updates the inner focus state. Called by the app-level ←/→
+// handler when it wants to shift focus between this tab's sub-sidebar and
+// the active sub-page's content panel.
+func (m *Model) SetFocus(f SettingsFocus) { m.focus = f }
+
+// SubPageOwnsContent reports whether the active sub-page has a navigable
+// content panel that the user can shift focus into (currently Extensions
+// is the only one). App-level →/← uses this to decide whether to advance
+// inner focus or to bounce focus all the way to MainSidebar.
+func (m Model) SubPageOwnsContent() bool { return subPageOwnsArrows(m.current) }
+
+// InputOpen reports whether a sub-page is currently in a state where every
+// key should be delivered to it (e.g. Extensions add/edit form). Used by
+// the app's global focus shifter to step aside.
+func (m Model) InputOpen() bool {
+	return m.current == SubExtensions && m.extensions.formOpen()
 }
 
 // New constructs the Settings tab Model with all sub-pages instantiated.
@@ -91,6 +128,14 @@ func New(deps Deps) Model {
 // SelectedPage exposes the active sub-page (for tests).
 func (m Model) SelectedPage() SubPage { return m.current }
 
+// subPageOwnsArrows reports whether ↑/↓ should be delegated to the sub-page
+// (because it has its own list navigation) rather than used at the parent
+// level to switch between sub-pages. Add new sub-pages with internal nav
+// here.
+func subPageOwnsArrows(p SubPage) bool {
+	return p == SubExtensions
+}
+
 // LogsModel exposes the embedded Logs model so the parent app can route LogLine into it.
 func (m *Model) LogsModel() *logs.Model { return &m.logs }
 
@@ -98,16 +143,48 @@ func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
+		// Focus-based navigation model (Bug M):
+		//   ←  : if Extensions+FocusContent → focus sidebar; else prev sub-page
+		//   →  : if Extensions+FocusSidebar → focus content; else next sub-page
+		//   ↑↓ : on FocusContent → delegate to sub-page; else switch sub-page
+		//   PgUp/PgDn: ALWAYS switch sub-page (force exit from content)
+		// Any sub-page change resets focus to sidebar so the user doesn't
+		// land on a non-Extensions page with stale FocusContent.
 		switch km.Type {
-		case tea.KeyDown:
+		// ←/→ are owned by the app-level handler now (Bug N): they shift
+		// focus between MainSidebar / Settings sidebar / Settings content
+		// in one consistent model across the whole app. Settings.Update
+		// no longer consumes them — the app intercepts before delegating.
+		case tea.KeyPgDown:
 			if m.current < NumSubPages-1 {
 				m.current++
 			}
+			m.focus = FocusSidebar
 			return m, nil
-		case tea.KeyUp:
+		case tea.KeyPgUp:
 			if m.current > 0 {
 				m.current--
 			}
+			m.focus = FocusSidebar
+			return m, nil
+		case tea.KeyDown:
+			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
+				// fall through to sub-page delegation below
+				break
+			}
+			if m.current < NumSubPages-1 {
+				m.current++
+			}
+			m.focus = FocusSidebar
+			return m, nil
+		case tea.KeyUp:
+			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
+				break
+			}
+			if m.current > 0 {
+				m.current--
+			}
+			m.focus = FocusSidebar
 			return m, nil
 		}
 	}
@@ -133,10 +210,23 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View defaults to TabBody-focused for direct callers (tests). app/view.go
+// passes the app-level focus via ViewFocused.
 func (m Model) View(width, height int) string {
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused renders Settings with the given app-level "is this tab body
+// focused?" flag. The inner Settings focus state (Sidebar / Content) is
+// combined with it so an unfocused tab never shows a bright cursor —
+// neither sub-sidebar nor content can "own" input when the user has
+// shifted focus to the MainSidebar.
+func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 	subWidth := 22
 	bodyWidth := width - subWidth - 1
-	side := renderSubSidebar(m.current, height)
+	sidebarFocused := tabBodyFocused && m.focus == FocusSidebar
+	contentFocused := tabBodyFocused && m.focus == FocusContent
+	side := renderSubSidebar(m.current, height, sidebarFocused)
 	var body string
 	switch m.current {
 	case SubAbout:
@@ -152,17 +242,24 @@ func (m Model) View(width, height int) string {
 	case SubCore:
 		body = m.core.View(bodyWidth, height)
 	case SubExtensions:
-		body = m.extensions.View(bodyWidth, height)
+		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubLogs:
-		body = m.logs.View(bodyWidth, height)
+		body = m.logs.ViewFocused(bodyWidth, height, false)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }
 
-func renderSubSidebar(active SubPage, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Render("Settings")
+func renderSubSidebar(active SubPage, height int, focused bool) string {
+	// Focus dot lives at top-left of EVERY panel — consistent UX across
+	// MainSidebar / Settings sub-sidebar / Settings content / each tab body.
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Render("Settings")
 	rows := []string{header, ""}
-	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	activeColor := lipgloss.Color("240") // dim when not focused
+	if focused {
+		activeColor = lipgloss.Color("212")
+	}
+	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(activeColor)
 	inactiveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	for i := SubPage(0); i < NumSubPages; i++ {
 		line := SubPageNames[i]
@@ -172,7 +269,7 @@ func renderSubSidebar(active SubPage, height int) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	rows = append(rows, "", "[↑↓] navigate")
+	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] page"))
 	return lipgloss.NewStyle().Width(22).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))

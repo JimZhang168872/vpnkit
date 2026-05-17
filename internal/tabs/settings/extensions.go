@@ -5,9 +5,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/extensions"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // ProxyNamesFunc returns the current set of mihomo proxy names + group names
@@ -22,25 +24,30 @@ const (
 	paneGroups
 )
 
+// extForm holds an in-progress add/edit. Inputs use bubbles/textinput so
+// cursor positioning, Home/End, paste, and Delete behave correctly — the
+// hand-rolled []string + focus that lived here before couldn't.
 type extForm struct {
 	pane      extPane
-	editIndex int      // -1 = add; >= 0 = edit existing
-	labels    []string // visible labels for each field
-	fields    []string // current values
+	editIndex int                 // -1 = add; >= 0 = edit existing
+	labels    []string            // visible labels for each field
+	inputs    []textinput.Model   // one textinput per labeled field
 	focus     int
 }
 
 func newChainForm(editIndex int, pref extensions.Chain) *extForm {
-	return &extForm{
+	f := &extForm{
 		pane:      paneChains,
 		editIndex: editIndex,
 		labels:    []string{"Node", "Via"},
-		fields:    []string{pref.Node, pref.Via},
+		inputs:    []textinput.Model{newInput("node", pref.Node), newInput("upstream", pref.Via)},
 	}
+	f.inputs[0].Focus()
+	return f
 }
 
 func newGroupForm(editIndex int, pref extensions.Group) *extForm {
-	return &extForm{
+	f := &extForm{
 		pane:      paneGroups,
 		editIndex: editIndex,
 		labels: []string{
@@ -48,12 +55,28 @@ func newGroupForm(editIndex int, pref extensions.Group) *extForm {
 			"Proxies (comma-separated)", "URL (optional)",
 			"Interval (optional, int)", "Tolerance (optional, int)",
 		},
-		fields: []string{
-			pref.Name, pref.Type,
-			strings.Join(pref.Proxies, ","),
-			pref.URL, intStr(pref.Interval), intStr(pref.Tolerance),
+		inputs: []textinput.Model{
+			newInput("group name", pref.Name),
+			newInput("select", pref.Type),
+			newInput("DIRECT,A,B,...", strings.Join(pref.Proxies, ",")),
+			newInput("https://www.gstatic.com/generate_204", pref.URL),
+			newInput("300", intStr(pref.Interval)),
+			newInput("50", intStr(pref.Tolerance)),
 		},
 	}
+	f.inputs[0].Focus()
+	return f
+}
+
+func newInput(placeholder, value string) textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = placeholder
+	ti.CharLimit = 256
+	ti.Width = 40
+	if value != "" {
+		ti.SetValue(value)
+	}
+	return ti
 }
 
 func intStr(n int) string {
@@ -68,6 +91,7 @@ type extensionsModel struct {
 	ext       extensions.Extensions
 	pane      extPane
 	row       int
+	height    int // last known body height, set on each View call
 	flash     string
 	names     ProxyNamesFunc
 	form      *extForm
@@ -145,28 +169,38 @@ func (m extensionsModel) updateForm(km tea.KeyMsg) (extensionsModel, tea.Cmd) {
 	case tea.KeyEnter:
 		return m.commitForm(), nil
 	case tea.KeyTab:
-		m.form.focus = (m.form.focus + 1) % len(m.form.fields)
+		m.form.advanceFocus(+1)
 		return m, nil
 	case tea.KeyShiftTab:
-		m.form.focus = (m.form.focus + len(m.form.fields) - 1) % len(m.form.fields)
-		return m, nil
-	case tea.KeyBackspace:
-		if len(m.form.fields[m.form.focus]) > 0 {
-			s := m.form.fields[m.form.focus]
-			m.form.fields[m.form.focus] = s[:len(s)-1]
-		}
-		return m, nil
-	case tea.KeyRunes, tea.KeySpace:
-		m.form.fields[m.form.focus] += string(km.Runes)
+		m.form.advanceFocus(-1)
 		return m, nil
 	}
-	return m, nil
+	// Delegate everything else (printable runes, backspace, delete, arrow keys,
+	// home/end, ctrl-a/e, paste) to the active textinput.Model.
+	var cmd tea.Cmd
+	m.form.inputs[m.form.focus], cmd = m.form.inputs[m.form.focus].Update(km)
+	return m, cmd
+}
+
+// advanceFocus moves focus by step (+1 or -1) and blurs/focuses inputs.
+func (f *extForm) advanceFocus(step int) {
+	n := len(f.inputs)
+	if n == 0 {
+		return
+	}
+	f.inputs[f.focus].Blur()
+	f.focus = ((f.focus + step) % n + n) % n
+	f.inputs[f.focus].Focus()
 }
 
 func (m extensionsModel) commitForm() extensionsModel {
+	values := make([]string, len(m.form.inputs))
+	for i, in := range m.form.inputs {
+		values[i] = strings.TrimSpace(in.Value())
+	}
 	switch m.form.pane {
 	case paneChains:
-		c := extensions.Chain{Node: m.form.fields[0], Via: m.form.fields[1]}
+		c := extensions.Chain{Node: values[0], Via: values[1]}
 		newChains := append([]extensions.Chain{}, m.ext.Chains...)
 		if m.form.editIndex >= 0 && m.form.editIndex < len(newChains) {
 			newChains[m.form.editIndex] = c
@@ -181,13 +215,13 @@ func (m extensionsModel) commitForm() extensionsModel {
 		}
 		m.ext = candidate
 	case paneGroups:
-		interval, _ := strconv.Atoi(m.form.fields[4])
-		tolerance, _ := strconv.Atoi(m.form.fields[5])
+		interval, _ := strconv.Atoi(values[4])
+		tolerance, _ := strconv.Atoi(values[5])
 		g := extensions.Group{
-			Name:      m.form.fields[0],
-			Type:      m.form.fields[1],
-			Proxies:   splitCSV(m.form.fields[2]),
-			URL:       m.form.fields[3],
+			Name:      values[0],
+			Type:      values[1],
+			Proxies:   splitCSV(values[2]),
+			URL:       values[3],
 			Interval:  interval,
 			Tolerance: tolerance,
 		}
@@ -214,22 +248,50 @@ func (m extensionsModel) commitForm() extensionsModel {
 	return m
 }
 
+// View renders the Extensions sub-page assuming this panel has the input
+// focus (tests + standalone callers go here). Settings.View prefers
+// ViewFocused so it can dim the cursor when the sub-sidebar is focused.
 func (m extensionsModel) View(width, height int) string {
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused is View + an explicit focused-state flag controlling the
+// cursor color (212 bright when focused, 240 dim when sidebar is focused).
+func (m extensionsModel) ViewFocused(width, height int, focused bool) string {
+	m.height = height
 	if m.form != nil {
 		return m.renderForm(width, height)
 	}
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Extensions")
 	tabs := m.renderTabs()
-	body := m.renderList()
-	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
-		"[c]hains [g]roups   [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply",
-	)
-	out := header + "\n\n" + tabs + "\n\n" + body + "\n\n" + footer
-	if m.flash != "" {
-		out += "\n  → " + m.flash
+	// Reserve rows: header(1) + blank + tabs(1) + blank + blank + footer(1) +
+	// flash(1 if present) + blank + file:(1) + padding(2) ≈ 10. The
+	// viewport gets whatever's left.
+	maxList := height - 11
+	if maxList < 3 {
+		maxList = 3
 	}
-	out += fmt.Sprintf("\n\nfile: %s", m.path)
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(out)
+	innerWidth := width - 4
+	if innerWidth < 20 {
+		innerWidth = 20
+	}
+	body, indicator := m.renderList(maxList, innerWidth, focused)
+	hint := "[↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply  [c]hains [g]roups"
+	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
+		viewport.TruncateDisplay(hint, innerWidth),
+	)
+	// Focus dot uses the shared helper so all panels look identical.
+	out := viewport.FocusDot(focused) + header + "\n\n" + tabs
+	if indicator != "" {
+		out += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	out += "\n\n" + body + "\n\n" + footer
+	if m.flash != "" {
+		out += "\n  → " + viewport.TruncateDisplay(m.flash, innerWidth-4)
+	}
+	out += fmt.Sprintf("\n\nfile: %s", viewport.TruncateDisplay(m.path, innerWidth-6))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(out)
 }
 
 func (m extensionsModel) renderTabs() string {
@@ -244,31 +306,46 @@ func (m extensionsModel) renderTabs() string {
 		style(m.pane == paneGroups).Render(fmt.Sprintf("[g] Groups (%d)", len(m.ext.Groups)))
 }
 
-func (m extensionsModel) renderList() string {
-	lines := []string{}
-	cursor := func(i int) string {
+func (m extensionsModel) renderList(maxRows, innerWidth int, focused bool) (body, indicator string) {
+	total := m.activeLen()
+	if total == 0 {
+		switch m.pane {
+		case paneChains:
+			return "  (no chains)", ""
+		case paneGroups:
+			return "  (no groups)", ""
+		}
+	}
+	start, end := viewport.Window(total, m.row, maxRows)
+	// Cursor color: bright pink when this panel is focused, gray when not —
+	// the user can see at a glance whether ↑/↓ will move this cursor.
+	cursorColor := lipgloss.Color("240")
+	if focused {
+		cursorColor = lipgloss.Color("212")
+	}
+	cursorStyle := lipgloss.NewStyle().Foreground(cursorColor)
+	mark := func(i int) string {
 		if i == m.row {
-			return "▶ "
+			return cursorStyle.Render("▶ ")
 		}
 		return "  "
 	}
+	lines := []string{}
 	switch m.pane {
 	case paneChains:
-		for i, c := range m.ext.Chains {
-			lines = append(lines, cursor(i)+fmt.Sprintf("%-30s → %s", c.Node, c.Via))
-		}
-		if len(lines) == 0 {
-			lines = append(lines, "  (no chains)")
+		for i := start; i < end; i++ {
+			c := m.ext.Chains[i]
+			line := fmt.Sprintf("%-30s → %s", c.Node, c.Via)
+			lines = append(lines, mark(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	case paneGroups:
-		for i, g := range m.ext.Groups {
-			lines = append(lines, cursor(i)+fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ",")))
-		}
-		if len(lines) == 0 {
-			lines = append(lines, "  (no groups)")
+		for i := start; i < end; i++ {
+			g := m.ext.Groups[i]
+			line := fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ","))
+			lines = append(lines, mark(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), viewport.Indicator(start, total, maxRows, m.row)
 }
 
 func (m extensionsModel) renderForm(width, height int) string {
@@ -278,7 +355,8 @@ func (m extensionsModel) renderForm(width, height int) string {
 		if i == m.form.focus {
 			marker = "▶ "
 		}
-		rows = append(rows, fmt.Sprintf("%s%-46s %s", marker, lbl, m.form.fields[i]))
+		rows = append(rows, fmt.Sprintf("%s%-46s", marker, lbl))
+		rows = append(rows, "    "+m.form.inputs[i].View())
 	}
 	if m.names != nil && len(m.names()) > 0 {
 		preview := m.names()

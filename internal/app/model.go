@@ -29,6 +29,18 @@ const (
 	NumTabs
 )
 
+// AppFocus tracks whether the input focus is on the main sidebar (top tab
+// list) or on the active tab's body. Default is FocusTabBody so existing
+// muscle memory (↑/↓ scrolls Profiles/Rules cursor) keeps working — the
+// user opts into top-tab navigation by pressing ← to "escape" to the
+// sidebar.
+type AppFocus int
+
+const (
+	FocusTabBody AppFocus = iota
+	FocusMainSidebar
+)
+
 var TabNames = [NumTabs]string{
 	"🏠 Dashboard", "🚀 Proxies", "📋 Profiles", "🔗 Connections", "📜 Rules", "⚙️  Settings",
 }
@@ -61,6 +73,9 @@ type Model struct {
 	// updateBadge is set when pollUpdate finds a new release. Format is the
 	// short string we drop into the status bar; e.g. "⚡ v0.9.0".
 	updateBadge string
+	// appFocus is the global focus level (Bug N). MainSidebar → ↑/↓ cycles
+	// top tabs; TabBody → ↑/↓ delegates to active tab's nav.
+	appFocus AppFocus
 
 	// proxyNames is the deduped union of mihomo proxy names + group names
 	// from the latest /proxies snapshot. Used by Settings → Extensions for
@@ -72,6 +87,63 @@ type Model struct {
 type proxyNamesState struct {
 	mu    sync.Mutex
 	names []string
+}
+
+// AppFocus exposes the app-level focus state (for tests / rendering).
+func (m *Model) AppFocus() AppFocus { return m.appFocus }
+
+// inputOpen reports whether some textinput-style overlay is consuming
+// keypresses (Profiles add-form, or a filter input). When true the global
+// focus shifter must NOT eat keys.
+func (m Model) inputOpen() bool {
+	if m.showAddForm {
+		return true
+	}
+	if m.connectionsTab.IsFiltering() {
+		return true
+	}
+	if m.rulesTab.IsFiltering() {
+		return true
+	}
+	// Extensions inline form (add/edit chain/group) absorbs every key
+	// including ←/→ for cursor positioning inside the textinput; the
+	// app-level focus shifter must NOT eat them.
+	if m.activeTab == TabSettings && m.settingsTab.InputOpen() {
+		return true
+	}
+	return false
+}
+
+// shiftFocusLeft moves focus one step toward the main sidebar.
+//   Settings content → Settings sidebar
+//   Settings sidebar (or any other TabBody) → MainSidebar
+//   MainSidebar → no-op
+func (m Model) shiftFocusLeft() Model {
+	if m.activeTab == TabSettings && m.appFocus == FocusTabBody {
+		if m.settingsTab.Focus() == tabsettings.FocusContent {
+			m.settingsTab.SetFocus(tabsettings.FocusSidebar)
+			return m
+		}
+	}
+	m.appFocus = FocusMainSidebar
+	return m
+}
+
+// shiftFocusRight moves focus one step away from the main sidebar.
+//   MainSidebar → TabBody
+//   Settings sidebar (on a sub-page that owns content) → Settings content
+//   Otherwise → no-op
+func (m Model) shiftFocusRight() Model {
+	if m.appFocus == FocusMainSidebar {
+		m.appFocus = FocusTabBody
+		return m
+	}
+	if m.activeTab == TabSettings &&
+		m.settingsTab.Focus() == tabsettings.FocusSidebar &&
+		m.settingsTab.SubPageOwnsContent() {
+		m.settingsTab.SetFocus(tabsettings.FocusContent)
+	}
+	return m
 }
 
 // CurrentProxyNames returns the latest known set of mihomo proxy + group

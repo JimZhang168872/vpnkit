@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // cursorPos identifies a navigable row in the proxies view.
@@ -151,9 +152,15 @@ func (m *Model) ToggleExpand() {
 	}
 }
 
-// View renders the tab.
+// View renders the tab; defaults to focused for direct callers (tests).
 func (m Model) View(width, height int) string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("🚀 Proxies")
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused = View + focus dot.
+func (m Model) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("🚀 Proxies")
 	cur := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	var rows []string
 	rows = append(rows, header, "")

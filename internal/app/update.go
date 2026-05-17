@@ -49,6 +49,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = v.Width, v.Height
 		return m, nil
 	case tea.KeyMsg:
+		// Bug N — global focus handler. ←/→ shift focus across the levels
+		// (MainSidebar ↔ Settings sub-sidebar ↔ Settings content), and ↑/↓
+		// on MainSidebar cycles top tabs. These intercept BEFORE tab-
+		// specific handlers so list cursors no longer eat the key when
+		// the user is operating the sidebar.
+		//
+		// Skip the global handler entirely when a textinput-style overlay
+		// is open (Profiles add-form, Connections/Rules filter) so typing
+		// in those fields isn't hijacked.
+		if !m.inputOpen() {
+			switch v.String() {
+			case "left", "h":
+				m = m.shiftFocusLeft()
+				return m, nil
+			case "right", "l":
+				m = m.shiftFocusRight()
+				return m, nil
+			case "up", "k":
+				if m.appFocus == FocusMainSidebar {
+					if m.activeTab > 0 {
+						m.activeTab--
+					}
+					return m, nil
+				}
+				// else: fall through to tab-specific handlers below
+			case "down", "j":
+				if m.appFocus == FocusMainSidebar {
+					if m.activeTab < NumTabs-1 {
+						m.activeTab++
+					}
+					return m, nil
+				}
+				// else: fall through
+			}
+		}
 		// Connections-tab-specific keys.
 		if m.activeTab == TabConnections {
 			if m.connectionsTab.IsFiltering() {
@@ -65,6 +100,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "down", "j":
 				m.connectionsTab.MoveDown()
+				return m, nil
+			case "pgup":
+				m.connectionsTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.connectionsTab.MovePageDown()
 				return m, nil
 			case "x":
 				if id := m.connectionsTab.SelectedID(); id != "" && m.apiClient != nil {
@@ -92,6 +133,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.apiClient != nil {
 					return m, tabrules.RefreshAllProvidersCmd(m.apiClient, m.rulesTab.ProviderNames())
 				}
+				return m, nil
+			case "up", "k":
+				m.rulesTab.MoveUp()
+				return m, nil
+			case "down", "j":
+				m.rulesTab.MoveDown()
+				return m, nil
+			case "pgup":
+				m.rulesTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.rulesTab.MovePageDown()
 				return m, nil
 			}
 		}
@@ -194,6 +247,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "down", "j":
 				m.profilesTab.MoveDown()
+				return m, nil
+			case "pgup":
+				m.profilesTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.profilesTab.MovePageDown()
 				return m, nil
 			}
 		}

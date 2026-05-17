@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 const historySize = 60
@@ -72,11 +73,19 @@ func (m Model) DownHistoryLast() int64 {
 	return m.downHist[len(m.downHist)-1]
 }
 
-// View renders the dashboard within (width, height).
+// View renders the dashboard within (width, height). Defaults to focused
+// presentation for direct callers (tests). The app's main view passes the
+// app-level focus state via ViewFocused.
 func (m Model) View(width, height int) string {
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused is View + focus state for the focus-dot prefix on the header.
+func (m Model) ViewFocused(width, height int, focused bool) string {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	body := fmt.Sprintf(
-		"%s\n\n  Status : %s\n  Version: %s\n  Mode   : %s\n\n  ↑ %s/s\n  ↓ %s/s\n",
+		"%s%s\n\n  Status : %s\n  Version: %s\n  Mode   : %s\n\n  ↑ %s/s\n  ↓ %s/s\n",
+		viewport.FocusDot(focused),
 		headerStyle.Render("Mihomo"),
 		runStr(m.running),
 		fallback(m.mihomoVer, "unknown"),

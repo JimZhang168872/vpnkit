@@ -143,6 +143,7 @@ func Run(version string) error {
 	go streamConnections(prog, client)
 	go pollRules(prog, client)
 	go streamLogs(prog, svc)
+	go pollServiceStatus(prog, svc)
 
 	_, err = prog.Run()
 	return err
@@ -195,6 +196,28 @@ func pollVersion(prog *tea.Program, client *api.Client) {
 		v, err := client.Version(ctx)
 		cancel()
 		prog.Send(VersionMsg{Version: v.Version, Err: err})
+		<-ticker.C
+	}
+}
+
+// pollServiceStatus periodically probes the service manager (systemd-user or
+// pid) and pushes the result to the dashboard. Without this loop the
+// Dashboard's "Status:" line is stuck at the zero value "○ stopped" because
+// no other code path sends msg.ServiceStatus (Bug G).
+func pollServiceStatus(prog *tea.Program, svc service.Manager) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		st, err := svc.Status(ctx)
+		cancel()
+		if err == nil {
+			prog.Send(msg.ServiceStatus{
+				Running: st.Running,
+				PID:     st.PID,
+				Mode:    string(st.Mode),
+			})
+		}
 		<-ticker.C
 	}
 }
