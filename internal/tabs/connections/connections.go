@@ -94,6 +94,29 @@ func (m *Model) MoveDown() {
 	}
 }
 
+// PageSize controls how far MovePageUp/Down jump.
+const PageSize = 10
+
+// MovePageDown jumps cursor PageSize rows downward, clamped.
+func (m *Model) MovePageDown() {
+	max := len(m.visible()) - 1
+	if max < 0 {
+		return
+	}
+	m.cursor += PageSize
+	if m.cursor > max {
+		m.cursor = max
+	}
+}
+
+// MovePageUp jumps cursor PageSize rows upward, clamped.
+func (m *Model) MovePageUp() {
+	m.cursor -= PageSize
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
 // SelectedID returns the highlighted connection ID (empty if none).
 func (m Model) SelectedID() string {
 	visible := m.visible()

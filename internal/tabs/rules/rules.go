@@ -37,6 +37,32 @@ func (m *Model) MoveUp() {
 	}
 }
 
+// PageSize is the cursor jump for MovePageUp/MovePageDown. Chosen as a
+// constant rather than view-height-aware so the model stays decoupled
+// from rendering; 10 is roughly a "screen" on a typical 24-row terminal
+// once header/footer/providers are accounted for.
+const PageSize = 10
+
+// MovePageDown jumps the cursor PageSize rows downward, clamped.
+func (m *Model) MovePageDown() {
+	max := len(m.filtered()) - 1
+	if max < 0 {
+		return
+	}
+	m.cursor += PageSize
+	if m.cursor > max {
+		m.cursor = max
+	}
+}
+
+// MovePageUp jumps the cursor PageSize rows upward, clamped.
+func (m *Model) MovePageUp() {
+	m.cursor -= PageSize
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
 // filtered returns the post-filter slice of rules; computed lazily on each
 // call so cursor + view always see the same data.
 func (m Model) filtered() []msg.RuleEntry {

@@ -66,6 +66,41 @@ func TestRulesScrollViewport(t *testing.T) {
 	}
 }
 
+// TestRulesPageNavigationJumpsBy10 covers the PgUp/PgDn paging feature.
+func TestRulesPageNavigationJumpsBy10(t *testing.T) {
+	rules := make([]msg.RuleEntry, 0, 50)
+	for i := 0; i < 50; i++ {
+		rules = append(rules, msg.RuleEntry{Type: "DOMAIN", Payload: "x", Proxy: "P"})
+	}
+	m := New()
+	m, _ = m.Update(msg.RulesSnapshot{Rules: rules})
+	m.MovePageDown()
+	if m.cursor != PageSize {
+		t.Errorf("after MovePageDown: cursor = %d, want %d", m.cursor, PageSize)
+	}
+	m.MovePageDown()
+	if m.cursor != 2*PageSize {
+		t.Errorf("after 2nd MovePageDown: cursor = %d, want %d", m.cursor, 2*PageSize)
+	}
+	// Spam PageDown — clamps at last (49).
+	for i := 0; i < 10; i++ {
+		m.MovePageDown()
+	}
+	if m.cursor != 49 {
+		t.Errorf("PageDown spam clamp: cursor = %d, want 49", m.cursor)
+	}
+	m.MovePageUp()
+	if m.cursor != 49-PageSize {
+		t.Errorf("PageUp: cursor = %d, want %d", m.cursor, 49-PageSize)
+	}
+	for i := 0; i < 20; i++ {
+		m.MovePageUp()
+	}
+	if m.cursor != 0 {
+		t.Errorf("PageUp clamp: cursor = %d, want 0", m.cursor)
+	}
+}
+
 // TestRulesMoveCursorBounds ensures MoveUp/Down don't run past list edges.
 func TestRulesMoveCursorBounds(t *testing.T) {
 	rules := []msg.RuleEntry{

@@ -66,6 +66,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "down", "j":
 				m.connectionsTab.MoveDown()
 				return m, nil
+			case "pgup":
+				m.connectionsTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.connectionsTab.MovePageDown()
+				return m, nil
 			case "x":
 				if id := m.connectionsTab.SelectedID(); id != "" && m.apiClient != nil {
 					client := m.apiClient
@@ -98,6 +104,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "down", "j":
 				m.rulesTab.MoveDown()
+				return m, nil
+			case "pgup":
+				m.rulesTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.rulesTab.MovePageDown()
 				return m, nil
 			}
 		}
@@ -200,6 +212,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "down", "j":
 				m.profilesTab.MoveDown()
+				return m, nil
+			case "pgup":
+				m.profilesTab.MovePageUp()
+				return m, nil
+			case "pgdown":
+				m.profilesTab.MovePageDown()
 				return m, nil
 			}
 		}

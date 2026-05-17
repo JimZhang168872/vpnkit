@@ -54,6 +54,29 @@ func (m *Model) MoveUp() {
 	}
 }
 
+// PageSize controls how far MovePageUp/Down jump.
+const PageSize = 10
+
+// MovePageDown jumps the cursor PageSize rows downward, clamped to the last row.
+func (m *Model) MovePageDown() {
+	max := len(m.list) - 1
+	if max < 0 {
+		return
+	}
+	m.cursor += PageSize
+	if m.cursor > max {
+		m.cursor = max
+	}
+}
+
+// MovePageUp jumps the cursor PageSize rows upward, clamped at 0.
+func (m *Model) MovePageUp() {
+	m.cursor -= PageSize
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
 // Init satisfies tea.Model.
 func (Model) Init() tea.Cmd { return nil }
 
