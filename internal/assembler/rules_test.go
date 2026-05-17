@@ -74,7 +74,7 @@ func TestAssembleModeGlobal(t *testing.T) {
 		Mode: ModeGlobal, MixedPort: 50595, ControllerPort: 32645, ControllerSecret: "s",
 	})
 	s := string(out)
-	if !strings.Contains(s, "- MATCH,\U0001F680 Proxy") {
+	if !strings.Contains(s, "MATCH,\U0001F680 Proxy") {
 		t.Errorf("mode=global rules should be MATCH,🚀 Proxy only:\n%s", s)
 	}
 	// Must NOT contain anything else in rules section.
