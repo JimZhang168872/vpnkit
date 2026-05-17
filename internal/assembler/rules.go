@@ -29,6 +29,16 @@ func emitRules(mode Mode, locals []localrules.Rule, subs []groups.Group) []any {
 		return []any{"MATCH,🎯 Direct"}
 	}
 
+	// Build the set of all enabled subscription group names so rewriteTarget
+	// can recognize a target that names a *sibling* group and pass it through
+	// rather than blindly rewriting to the current group.
+	siblingGroups := make(map[string]bool, len(subs))
+	for _, g := range subs {
+		if g.Enabled() {
+			siblingGroups[g.Name()] = true
+		}
+	}
+
 	out := make([]any, 0, len(locals)+8)
 	// 1. local rules (highest priority)
 	for _, r := range locals {
@@ -41,7 +51,7 @@ func emitRules(mode Mode, locals []localrules.Rule, subs []groups.Group) []any {
 		}
 		nodeMap := nodeNameSet(g) // original name → namespaced name
 		for _, r := range g.Rules() {
-			rewritten := rewriteTarget(r, g.Name(), nodeMap)
+			rewritten := rewriteTarget(r, g.Name(), nodeMap, siblingGroups)
 			if rewritten.Target == "" {
 				continue // dropped
 			}
@@ -67,8 +77,9 @@ func nodeNameSet(g groups.Group) map[string]string {
 // rewriteTarget adjusts a subscription rule's target:
 //   - reserved target (🚀 Proxy / 🎯 Direct / 🛑 Reject / DIRECT / REJECT) → unchanged
 //   - original node name present in nodeMap → "<group>:<node>"
+//   - target names a sibling subscription group → pass through (cross-group routing)
 //   - anything else (likely an internal proxy-group name) → group name
-func rewriteTarget(r localrules.Rule, groupName string, nodeMap map[string]string) localrules.Rule {
+func rewriteTarget(r localrules.Rule, groupName string, nodeMap map[string]string, siblingGroups map[string]bool) localrules.Rule {
 	if reservedTargets[r.Target] {
 		return r
 	}
@@ -76,9 +87,13 @@ func rewriteTarget(r localrules.Rule, groupName string, nodeMap map[string]strin
 		r.Target = ns
 		return r
 	}
-	// Heuristic: any other unrecognized target (often an internal proxy-group
-	// name from the subscription) is mapped to the subscription's group name
-	// so user routing intent is preserved at the group level.
+	// Target names a sibling group — keep as-is so the user's cross-group
+	// routing intent is preserved.
+	if siblingGroups[r.Target] {
+		return r
+	}
+	// Unknown target: heuristic — map to the current subscription's group,
+	// preserving the user's high-level "this rule belongs to my group" intent.
 	r.Target = groupName
 	return r
 }

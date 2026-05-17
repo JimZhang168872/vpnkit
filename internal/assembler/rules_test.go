@@ -69,6 +69,34 @@ func TestAssembleSubscriptionRuleRewritesTarget(t *testing.T) {
 	}
 }
 
+func TestAssembleSubscriptionRuleSiblingGroupPassthrough(t *testing.T) {
+	subDoge := groups.NewSubscriptionGroup("doge", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "HK-A", "type": "ss"}},
+		Raw: map[string]any{
+			"rules": []any{
+				"DOMAIN-SUFFIX,example.com,boost", // sibling group name → pass through
+			},
+		},
+	})
+	subBoost := groups.NewSubscriptionGroup("boost", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "SG-1", "type": "ss"}},
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		Subscriptions:    []groups.Group{subDoge, subBoost},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+	})
+	s := string(out)
+	if !strings.Contains(s, "DOMAIN-SUFFIX,example.com,boost") {
+		t.Errorf("sibling-group target should pass through, got:\n%s", s)
+	}
+	if strings.Contains(s, "DOMAIN-SUFFIX,example.com,doge") {
+		t.Errorf("sibling-group target should NOT be rewritten to current group, got:\n%s", s)
+	}
+}
+
 func TestAssembleModeGlobal(t *testing.T) {
 	out, _ := Assemble(Input{
 		Mode: ModeGlobal, MixedPort: 50595, ControllerPort: 32645, ControllerSecret: "s",

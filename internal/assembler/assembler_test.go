@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestAssembleRejectsZeroPorts(t *testing.T) {
+	cases := []Input{
+		{ControllerPort: 32645, ControllerSecret: "s"},    // MixedPort=0
+		{MixedPort: 50595, ControllerSecret: "s"},         // ControllerPort=0
+	}
+	for i, in := range cases {
+		_, err := Assemble(in)
+		if err == nil {
+			t.Errorf("case %d: expected error for zero port, got nil", i)
+		}
+	}
+}
+
 func TestAssembleEmitsBaseConfig(t *testing.T) {
 	out, err := Assemble(Input{
 		Mode:             ModeRule,

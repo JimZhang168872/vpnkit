@@ -78,6 +78,9 @@ func nodeNames(g groups.Group) []string {
 	return out
 }
 
+// withTargetFirst moves target to index 0. Defensive: Assemble fills a
+// default GlobalTarget before calling, so target=="" should be unreachable;
+// the guard keeps the function safe for direct unit testing.
 func withTargetFirst(list []string, target string) []string {
 	if target == "" {
 		return list

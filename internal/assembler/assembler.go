@@ -80,14 +80,16 @@ func Assemble(in Input) ([]byte, error) {
 	if err := enc.Encode(doc); err != nil {
 		return nil, err
 	}
-	_ = enc.Close()
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("yaml close: %w", err)
+	}
 
-	// Reverse yaml.v3's emoji escaping so the output contains literal emoji.
+	// yaml.v3 escapes codepoints above U+FFFF (surrogate pairs) as \UXXXXXXXX.
+	// Only the three emoji we actually emit (🚀 🎯 🛑) need un-escaping.
 	result := strings.NewReplacer(
 		`\U0001F680`, "🚀",
 		`\U0001F3AF`, "🎯",
 		`\U0001F6D1`, "🛑",
-		`\U000267B`, "♻️",
 	).Replace(buf.String())
 	return []byte(result), nil
 }
