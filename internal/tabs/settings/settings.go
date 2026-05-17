@@ -143,7 +143,7 @@ func (m Model) SelectedPage() SubPage { return m.current }
 // level to switch between sub-pages. Add new sub-pages with internal nav
 // here.
 func subPageOwnsArrows(p SubPage) bool {
-	return p == SubExtensions
+	return p == SubExtensions || p == SubRouting
 }
 
 func (Model) Init() tea.Cmd { return nil }
