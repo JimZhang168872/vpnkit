@@ -145,7 +145,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Sources-tab-specific keys: forward to sourcesTab unless global key.
+		// When a text-input overlay is open, swallow EVERYTHING (including
+		// digits and Tab) so URL/UA fields can be typed without the global
+		// 1-7 / Tab tab-switcher hijacking the input.
 		if m.activeTab == TabSources {
+			if m.sourcesTab.InputOpen() {
+				var c tea.Cmd
+				m.sourcesTab, c = m.sourcesTab.Update(msg)
+				return m, c
+			}
 			if v.String() == "1" || v.String() == "2" || v.String() == "3" ||
 				v.String() == "4" || v.String() == "5" || v.String() == "6" ||
 				v.String() == "7" ||
@@ -157,8 +165,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, c
 			}
 		}
-		// Settings-tab-specific keys: forward to settingsTab unless it's a global tab/quit key.
+		// Settings-tab-specific keys: same rule — input overlay swallows all.
 		if m.activeTab == TabSettings {
+			if m.settingsTab.InputOpen() {
+				var c tea.Cmd
+				m.settingsTab, c = m.settingsTab.Update(msg)
+				return m, c
+			}
 			if v.String() == "1" || v.String() == "2" || v.String() == "3" ||
 				v.String() == "4" || v.String() == "5" || v.String() == "6" ||
 				v.String() == "7" ||
