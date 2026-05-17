@@ -334,6 +334,7 @@ func (p *Pipeline) AddLocalGroup(name string) error {
 		return fmt.Errorf("local group name required")
 	}
 	p.mu.Lock()
+	// (cannot defer Unlock: store.Save acquires its own lock and we must not hold p.mu across I/O)
 	for _, g := range p.store.Cfg.LocalNodeGroups {
 		if g.Name == name {
 			p.mu.Unlock()
@@ -351,8 +352,11 @@ func (p *Pipeline) AddLocalGroup(name string) error {
 // nodes (caller must mv them or pass force=true to delete cascadingly).
 func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
 	p.mu.Lock()
+	// (cannot defer Unlock: store.Save acquires its own lock and we must not hold p.mu across I/O)
+	// Check the in-memory manager — it's the authoritative source for nodes
+	// that haven't been SaveLocal()-ed yet, which the store slice misses.
 	hasNodes := false
-	for _, n := range p.store.Cfg.LocalNodes {
+	for _, n := range p.localNodes.All() {
 		if n.Group == name {
 			hasNodes = true
 			break
@@ -375,7 +379,7 @@ func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
 	}
 	p.store.Cfg.LocalNodeGroups = append(p.store.Cfg.LocalNodeGroups[:idx], p.store.Cfg.LocalNodeGroups[idx+1:]...)
 	if force {
-		filtered := p.store.Cfg.LocalNodes[:0]
+		filtered := make([]store.LocalNode, 0, len(p.store.Cfg.LocalNodes))
 		for _, n := range p.store.Cfg.LocalNodes {
 			if n.Group != name {
 				filtered = append(filtered, n)
@@ -391,6 +395,7 @@ func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
 		}
 		p.localNodes.Load(nodes)
 	}
+	// Non-force path: group was empty, nothing in p.localNodes to reload.
 	p.mu.Unlock()
 	return p.store.Save()
 }
@@ -398,6 +403,7 @@ func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
 // ToggleLocalGroupEnabled flips the Enabled flag.
 func (p *Pipeline) ToggleLocalGroupEnabled(name string) error {
 	p.mu.Lock()
+	// (cannot defer Unlock: store.Save acquires its own lock and we must not hold p.mu across I/O)
 	for i, g := range p.store.Cfg.LocalNodeGroups {
 		if g.Name == name {
 			p.store.Cfg.LocalNodeGroups[i].Enabled = !g.Enabled
@@ -410,6 +416,12 @@ func (p *Pipeline) ToggleLocalGroupEnabled(name string) error {
 }
 
 // RenameLocalGroup renames a group and migrates every node's Group field.
+// NOTE: if store.Save() fails after the in-memory rename, the manager's
+// view temporarily diverges from disk (in-memory shows newName, disk still
+// has oldName). Callers must trigger a full reload — or restart vpnkit —
+// to recover consistent state. The same invariant applies to all five
+// Pipeline mutation methods; rename has the largest surface (touches
+// LocalNodeGroups + every LocalNode in the group) so the gap is widest here.
 func (p *Pipeline) RenameLocalGroup(oldName, newName string) error {
 	if newName == "" {
 		return fmt.Errorf("new name required")
@@ -418,6 +430,7 @@ func (p *Pipeline) RenameLocalGroup(oldName, newName string) error {
 		return nil
 	}
 	p.mu.Lock()
+	// (cannot defer Unlock: store.Save acquires its own lock and we must not hold p.mu across I/O)
 	for _, g := range p.store.Cfg.LocalNodeGroups {
 		if g.Name == newName {
 			p.mu.Unlock()

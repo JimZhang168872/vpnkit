@@ -9,6 +9,11 @@ package localnodes
 //
 // When Node.Via is non-empty, a "dialer-proxy" entry is added so mihomo
 // dials this node THROUGH the named proxy/group (multi-hop chain).
+//
+// Exception: when Node.Via is non-empty, the resulting `dialer-proxy` key
+// is written AFTER the Fields merge — so Via overrides any Fields value
+// for the same key. This is the only struct-field-wins case; treat
+// `dialer-proxy` as reserved for Node.Via and never populate it via Fields.
 func ToProxyMap(n Node) map[string]any {
 	m := make(map[string]any, 5+len(n.Fields))
 	m["name"] = n.Name

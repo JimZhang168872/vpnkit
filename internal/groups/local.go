@@ -21,6 +21,10 @@ func NewLocalNodesGroup(name string, m *localnodes.Manager) Group {
 // the subset of nodes whose Group field matches groupName. Used by the
 // assembler to emit one mihomo proxy-group per user-defined local group
 // (e.g. "home", "office") instead of a single hardcoded "local" group.
+//
+// groupName must be non-empty — passing "" would match every node whose
+// Group field was never set (e.g. pre-migration). Callers are expected
+// to use the migrated form ("local") instead.
 func NewLocalNodesGroupForGroup(groupName string, m *localnodes.Manager) Group {
 	return &localNodesGroup{name: groupName, mgr: m, filterByGroup: true}
 }
