@@ -63,3 +63,53 @@ func TestLocalNodesGroupContract(t *testing.T) {
 		t.Errorf("LocalNodesGroup should expose nil Rules: %v", g.Rules())
 	}
 }
+
+func TestSubscriptionGroupNilResultSafe(t *testing.T) {
+	g := NewSubscriptionGroup("orphan", true, nil)
+	if g.Name() != "orphan" {
+		t.Errorf("Name: %q", g.Name())
+	}
+	if g.Kind() != KindSubscription {
+		t.Errorf("Kind: %v", g.Kind())
+	}
+	if !g.Enabled() {
+		t.Error("Enabled: should be true")
+	}
+	if g.Proxies() != nil {
+		t.Errorf("Proxies should be nil for nil result, got %v", g.Proxies())
+	}
+	if g.Rules() != nil {
+		t.Errorf("Rules should be nil for nil result, got %v", g.Rules())
+	}
+}
+
+func TestSubscriptionGroupMalformedRuleLineSkipped(t *testing.T) {
+	res := &subscription.Result{
+		Raw: map[string]any{
+			"rules": []any{
+				"JUST-ONE-FIELD",                     // 1-part → skipped
+				42,                                   // non-string → skipped
+				"DOMAIN-SUFFIX,kept.com,🚀 Proxy",   // 3-part → kept
+				"MATCH,🚀 Proxy",                     // 2-part → kept (no payload)
+			},
+		},
+	}
+	g := NewSubscriptionGroup("x", true, res)
+	rs := g.Rules()
+	if len(rs) != 2 {
+		t.Fatalf("expected 2 rules after skipping malformed, got %d (%v)", len(rs), rs)
+	}
+	if rs[0].Payload != "kept.com" {
+		t.Errorf("rs[0]: %+v", rs[0])
+	}
+	if rs[1].Type != "MATCH" || rs[1].Payload != "" {
+		t.Errorf("rs[1] MATCH should have empty payload: %+v", rs[1])
+	}
+}
+
+func TestSubscriptionGroupDisabled(t *testing.T) {
+	g := NewSubscriptionGroup("off", false, &subscription.Result{})
+	if g.Enabled() {
+		t.Error("Enabled should be false")
+	}
+}

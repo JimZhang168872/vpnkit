@@ -24,11 +24,20 @@ func NewSubscriptionGroup(name string, enabled bool, res *subscription.Result) G
 func (g *subscriptionGroup) Name() string         { return g.name }
 func (g *subscriptionGroup) Kind() Kind           { return KindSubscription }
 func (g *subscriptionGroup) Enabled() bool        { return g.enabled }
-func (g *subscriptionGroup) Proxies() []proto.Proxy { return g.result.Proxies }
+func (g *subscriptionGroup) Proxies() []proto.Proxy {
+	if g.result == nil {
+		return nil
+	}
+	return g.result.Proxies
+}
 
 // Rules extracts the "rules:" key from a clash-style subscription Raw. Each
-// line is parsed into a localrules.Rule. Lines we can't parse are skipped
-// (subscriptions sometimes contain mihomo-only or older formats).
+// line is parsed into a localrules.Rule. Lines we can't parse (non-string,
+// 1-part) are skipped — subscriptions sometimes contain mihomo-only or older
+// formats. NOTE: rule Type is NOT validated against localrules.validTypes
+// here; that responsibility belongs to the assembler, so that mihomo-only
+// types unknown to this package can still pass through if a downstream
+// consumer (such as a future schema) accepts them.
 func (g *subscriptionGroup) Rules() []localrules.Rule {
 	if g.result == nil || g.result.Raw == nil {
 		return nil
