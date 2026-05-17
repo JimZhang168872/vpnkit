@@ -98,13 +98,19 @@ func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
+		// PgUp / PgDown switch between Settings sub-pages.
+		// ↑ / ↓ used to be hijacked here, which made sub-pages with their
+		// own list navigation (Extensions chains/groups) impossible to use
+		// — the parent stole the arrow keys before delegating. Now the
+		// arrow keys pass through to the active sub-page, and sub-page
+		// switching lives on PgUp/PgDown.
 		switch km.Type {
-		case tea.KeyDown:
+		case tea.KeyPgDown:
 			if m.current < NumSubPages-1 {
 				m.current++
 			}
 			return m, nil
-		case tea.KeyUp:
+		case tea.KeyPgUp:
 			if m.current > 0 {
 				m.current--
 			}
@@ -172,7 +178,7 @@ func renderSubSidebar(active SubPage, height int) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	rows = append(rows, "", "[↑↓] navigate")
+	rows = append(rows, "", "[PgUp/PgDn] page")
 	return lipgloss.NewStyle().Width(22).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))
