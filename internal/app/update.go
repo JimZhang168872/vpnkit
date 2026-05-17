@@ -3,37 +3,15 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	tabprofiles "vpnkit/internal/tabs/profiles"
-	tabproxies "vpnkit/internal/tabs/proxies"
 	tabrules "vpnkit/internal/tabs/rules"
 )
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-
-	// When the add-form overlay is open, route all key input to it (except Enter/Esc).
-	// TODO(v1-phase8): add-form will be replaced by Sources sub-page in TUI restructure.
-	if m.showAddForm {
-		if km, ok := msg.(tea.KeyMsg); ok {
-			switch km.Type {
-			case tea.KeyEnter:
-				m.showAddForm = false
-				m.flash = "⚠️  Profiles add not available in v1 — use `vpnkit subs add` CLI"
-				return m, nil
-			case tea.KeyEsc:
-				m.showAddForm = false
-				return m, nil
-			}
-			var c tea.Cmd
-			m.addForm, c = m.addForm.Update(msg)
-			return m, c
-		}
-	}
 
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -47,8 +25,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the user is operating the sidebar.
 		//
 		// Skip the global handler entirely when a textinput-style overlay
-		// is open (Profiles add-form, Connections/Rules filter) so typing
-		// in those fields isn't hijacked.
+		// is open (Sources form, Connections/Rules filter) so typing in
+		// those fields isn't hijacked.
 		if !m.inputOpen() {
 			switch v.String() {
 			case "left", "h":
@@ -117,6 +95,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, c
 			}
 			switch v.String() {
+			case "tab":
+				// Toggle between Live and Local sub-pages.
+				var c tea.Cmd
+				m.rulesTab, c = m.rulesTab.Update(msg)
+				return m, c
 			case "/":
 				cmd := m.rulesTab.StartFilter()
 				return m, cmd
@@ -137,84 +120,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "pgdown":
 				m.rulesTab.MovePageDown()
 				return m, nil
+			case "d", "K", "J":
+				// Local Rules CRUD — forward to rulesTab.
+				var c tea.Cmd
+				m.rulesTab, c = m.rulesTab.Update(msg)
+				return m, c
+			}
+		}
+		// Groups-tab-specific keys.
+		if m.activeTab == TabGroups {
+			switch v.String() {
+			case "up", "k":
+				m.groupsTab.MoveUp()
+				m.groupsTab.Refresh()
+				return m, nil
+			case "down", "j":
+				m.groupsTab.MoveDown()
+				m.groupsTab.Refresh()
+				return m, nil
+			case "r":
+				// Refresh group data from pipeline.
+				m.groupsTab.Refresh()
+				return m, nil
+			}
+		}
+		// Sources-tab-specific keys: forward to sourcesTab unless global key.
+		if m.activeTab == TabSources {
+			if v.String() == "1" || v.String() == "2" || v.String() == "3" ||
+				v.String() == "4" || v.String() == "5" || v.String() == "6" ||
+				v.String() == "7" ||
+				v.String() == "tab" || v.String() == "shift+tab" || v.String() == "q" || v.String() == "ctrl+c" {
+				// Fall through to global cascade.
+			} else {
+				var c tea.Cmd
+				m.sourcesTab, c = m.sourcesTab.Update(msg)
+				return m, c
 			}
 		}
 		// Settings-tab-specific keys: forward to settingsTab unless it's a global tab/quit key.
 		if m.activeTab == TabSettings {
 			if v.String() == "1" || v.String() == "2" || v.String() == "3" ||
 				v.String() == "4" || v.String() == "5" || v.String() == "6" ||
+				v.String() == "7" ||
 				v.String() == "tab" || v.String() == "shift+tab" || v.String() == "q" || v.String() == "ctrl+c" {
 				// Fall through to global cascade.
 			} else {
 				var c tea.Cmd
 				m.settingsTab, c = m.settingsTab.Update(msg)
 				return m, c
-			}
-		}
-		// Proxies-tab-specific keys.
-		if m.activeTab == TabProxies {
-			switch v.String() {
-			case "up", "k":
-				m.proxiesTab.MoveUp()
-				return m, nil
-			case "down", "j":
-				m.proxiesTab.MoveDown()
-				return m, nil
-			case "enter":
-				if grp, node, ok := m.proxiesTab.SelectedNode(); ok {
-					if m.apiClient != nil {
-						client := m.apiClient
-						return m, func() tea.Msg {
-							ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-							defer cancel()
-							if err := client.PutProxy(ctx, grp, node); err != nil {
-								return ProfileError{Name: grp + "/" + node, Err: err}
-							}
-							return nil
-						}
-					}
-					return m, nil
-				}
-				m.proxiesTab.ToggleExpand()
-				return m, nil
-			case "t":
-				grp := m.proxiesTab.SelectedGroup()
-				if grp != "" && m.apiClient != nil {
-					return m, tabproxies.DelayCmd(m.apiClient, grp)
-				}
-				return m, nil
-			}
-		}
-		// Profiles-tab-specific keys (only when not showing form).
-		// TODO(v1-phase8): this tab will be replaced by Groups/Sources in Phase 8.
-		// Until then, navigation works but add/update/delete/activate are no-ops.
-		if m.activeTab == TabProfiles && !m.showAddForm {
-			switch v.String() {
-			case "a":
-				m.addForm = tabprofiles.NewForm()
-				m.showAddForm = true
-				return m, nil
-			case "u":
-				m.flash = "⚠️  Use `vpnkit subs update <name>` CLI — TODO(v1-phase8)"
-				return m, nil
-			case "d":
-				m.flash = "⚠️  Use `vpnkit subs rm <name>` CLI — TODO(v1-phase8)"
-				return m, nil
-			case "enter":
-				m.flash = "⚠️  Profile activation not available in v1 — TODO(v1-phase8)"
-				return m, nil
-			case "up", "k":
-				m.profilesTab.MoveUp()
-				return m, nil
-			case "down", "j":
-				m.profilesTab.MoveDown()
-				return m, nil
-			case "pgup":
-				m.profilesTab.MovePageUp()
-				return m, nil
-			case "pgdown":
-				m.profilesTab.MovePageDown()
-				return m, nil
 			}
 		}
 		// Global key cascade.
@@ -224,15 +177,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(v, m.keys.Tab1):
 			m.activeTab = TabDashboard
 		case key.Matches(v, m.keys.Tab2):
-			m.activeTab = TabProxies
+			m.activeTab = TabGroups
 		case key.Matches(v, m.keys.Tab3):
-			m.activeTab = TabProfiles
+			m.activeTab = TabSources
 		case key.Matches(v, m.keys.Tab4):
-			m.activeTab = TabConnections
-		case key.Matches(v, m.keys.Tab5):
 			m.activeTab = TabRules
+		case key.Matches(v, m.keys.Tab5):
+			m.activeTab = TabConnections
 		case key.Matches(v, m.keys.Tab6):
-			m.activeTab = TabSettings
+			m.activeTab = TabLogs
 		case key.Matches(v, m.keys.NextTab):
 			m.activeTab = (m.activeTab + 1) % NumTabs
 		case key.Matches(v, m.keys.PrevTab):
@@ -241,7 +194,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
 	case ProxiesSnapshot, DelayResults:
-		m.proxiesTab, cmd = m.proxiesTab.Update(msg)
 		if snap, ok := msg.(ProxiesSnapshot); ok {
 			m.recordProxyNames(snap)
 		}
@@ -250,6 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RulesSnapshot:
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
+		m.logsTab, _ = m.logsTab.Update(msg)
 		lm := m.settingsTab.LogsModel()
 		*lm, _ = lm.Update(msg)
 	case BootstrapProgressMsg:
@@ -270,8 +223,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = "❌ " + v.Name + ": " + v.Err.Error()
 		}
 	case UpdateAvailableMsg:
-		// Build the badge string from whatever piece is upgradable. Keep it
-		// short — the status bar is tight.
 		switch {
 		case v.Info.VpnkitNeedsUpdate && v.Info.MihomoNeedsUpdate:
 			m.updateBadge = "⚡ vpnkit " + v.Info.VpnkitLatest + " + mihomo " + v.Info.MihomoLatest

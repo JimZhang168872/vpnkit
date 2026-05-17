@@ -1,4 +1,4 @@
-// Package rules implements the Rules tab (rule list + providers status).
+// Package rules implements the Rules tab (live mihomo rules + local rules CRUD).
 package rules
 
 import (
@@ -8,9 +8,25 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"vpnkit/internal/localrules"
 	"vpnkit/internal/msg"
 	"vpnkit/internal/tabs/viewport"
 )
+
+// subPage identifies which pane of the Rules tab is active.
+type subPage int
+
+const (
+	subLive  subPage = iota // Live mihomo /rules snapshot
+	subLocal                // Local Rules CRUD
+)
+
+// PipelineFace is the minimal interface needed for local rules mutations.
+type PipelineFace interface {
+	LocalRules() *localrules.Manager
+	SaveLocal() error
+	Assemble() error
+}
 
 // Model is the Rules tab.
 type Model struct {
@@ -20,6 +36,12 @@ type Model struct {
 	filterInput textinput.Model
 	filtering   bool
 	cursor      int // index into the filtered rules slice
+
+	// Sub-page state.
+	page       subPage
+	localPane  localRulesPane
+	// pipeline is optional; wired via SetPipeline for Local Rules mutations.
+	pipeline   PipelineFace
 }
 
 // MoveDown advances the cursor by one filtered row, clamped to the last row.
@@ -88,6 +110,14 @@ func New() Model {
 	return Model{filterInput: ti}
 }
 
+// SetPipeline wires the optional pipeline for Local Rules mutations.
+func (m *Model) SetPipeline(pl PipelineFace) {
+	m.pipeline = pl
+	if pl != nil {
+		m.localPane.rules = pl.LocalRules().All()
+	}
+}
+
 func (Model) Init() tea.Cmd { return nil }
 
 // IsFiltering reports whether the filter input is currently focused.
@@ -124,6 +154,26 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// Tab key toggles between Live and Local sub-pages.
+	if km, ok := message.(tea.KeyMsg); ok {
+		if km.Type == tea.KeyTab && !m.filtering {
+			if m.page == subLive {
+				m.page = subLocal
+				if m.pipeline != nil {
+					m.localPane.rules = m.pipeline.LocalRules().All()
+				}
+			} else {
+				m.page = subLive
+			}
+			return m, nil
+		}
+		// Local page receives its own keystrokes.
+		if m.page == subLocal {
+			var cmd tea.Cmd
+			m.localPane, cmd = m.localPane.Update(km, m.pipeline)
+			return m, cmd
+		}
+	}
 	if m.filtering {
 		if km, ok := message.(tea.KeyMsg); ok {
 			switch km.Type {
@@ -155,6 +205,9 @@ func (m Model) View(width, height int) string {
 
 // ViewFocused = View + focus dot.
 func (m Model) ViewFocused(width, height int, focused bool) string {
+	if m.page == subLocal {
+		return m.localPane.View(width, height, focused)
+	}
 	header := viewport.FocusDot(focused) +
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
 	rows := []string{header, ""}
@@ -215,7 +268,7 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 	if m.filtering {
 		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
 	} else {
-		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate")
+		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate  [Tab] local rules")
 	}
 	// MaxHeight enforces clip at body height — without it, lipgloss lets
 	// content extend below the box, and JoinHorizontal then misaligns the
@@ -229,4 +282,88 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// ─── Local Rules pane ─────────────────────────────────────────────────────
+
+// localRulesPane renders the Local Rules CRUD view inside the Rules tab.
+type localRulesPane struct {
+	rules  []localrules.Rule
+	cursor int
+	flash  string
+}
+
+func (p localRulesPane) Update(km tea.KeyMsg, pl PipelineFace) (localRulesPane, tea.Cmd) {
+	switch km.String() {
+	case "up", "k":
+		if p.cursor > 0 {
+			p.cursor--
+		}
+	case "down", "j":
+		if p.cursor < len(p.rules)-1 {
+			p.cursor++
+		}
+	case "d":
+		if p.cursor < len(p.rules) && pl != nil {
+			if err := pl.LocalRules().Remove(p.cursor); err != nil {
+				p.flash = "delete: " + err.Error()
+			} else {
+				p.flash = "deleted"
+				p.rules = pl.LocalRules().All()
+				_ = pl.SaveLocal()
+				if p.cursor > 0 && p.cursor >= len(p.rules) {
+					p.cursor = len(p.rules) - 1
+				}
+			}
+		}
+	case "K": // shift+K = move up
+		if p.cursor > 0 && pl != nil {
+			if err := pl.LocalRules().Move(p.cursor, p.cursor-1); err == nil {
+				p.rules = pl.LocalRules().All()
+				p.cursor--
+				_ = pl.SaveLocal()
+			}
+		}
+	case "J": // shift+J = move down
+		if p.cursor < len(p.rules)-1 && pl != nil {
+			if err := pl.LocalRules().Move(p.cursor, p.cursor+1); err == nil {
+				p.rules = pl.LocalRules().All()
+				p.cursor++
+				_ = pl.SaveLocal()
+			}
+		}
+	}
+	return p, nil
+}
+
+func (p localRulesPane) View(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Local Rules")
+	rows := []string{header, ""}
+
+	if p.flash != "" {
+		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(p.flash), "")
+	}
+
+	if len(p.rules) == 0 {
+		rows = append(rows, "  (no local rules — add via `vpnkit local-rules add` CLI)")
+	} else {
+		innerW := width - 6
+		if innerW < 20 {
+			innerW = 20
+		}
+		curStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+		for i, r := range p.rules {
+			line := fmt.Sprintf("%-16s  %-24s  → %s", r.Type, r.Payload, r.Target)
+			line = viewport.TruncateDisplay(line, innerW)
+			if i == p.cursor {
+				rows = append(rows, curStyle.Render("▶ ")+line)
+			} else {
+				rows = append(rows, "  "+line)
+			}
+		}
+	}
+	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] navigate  [d] delete  [K/J] move up/down  [Tab] live rules"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).
+		Render(strings.Join(rows, "\n"))
 }
