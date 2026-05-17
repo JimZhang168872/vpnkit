@@ -91,6 +91,14 @@ func New(deps Deps) Model {
 // SelectedPage exposes the active sub-page (for tests).
 func (m Model) SelectedPage() SubPage { return m.current }
 
+// subPageOwnsArrows reports whether ↑/↓ should be delegated to the sub-page
+// (because it has its own list navigation) rather than used at the parent
+// level to switch between sub-pages. Add new sub-pages with internal nav
+// here.
+func subPageOwnsArrows(p SubPage) bool {
+	return p == SubExtensions
+}
+
 // LogsModel exposes the embedded Logs model so the parent app can route LogLine into it.
 func (m *Model) LogsModel() *logs.Model { return &m.logs }
 
@@ -98,12 +106,17 @@ func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
-		// PgUp / PgDown switch between Settings sub-pages.
-		// ↑ / ↓ used to be hijacked here, which made sub-pages with their
-		// own list navigation (Extensions chains/groups) impossible to use
-		// — the parent stole the arrow keys before delegating. Now the
-		// arrow keys pass through to the active sub-page, and sub-page
-		// switching lives on PgUp/PgDown.
+		// Smart ↑/↓ dispatch:
+		//   - PgUp / PgDown always switch sub-page (force-exit a sub-page
+		//     that owns its arrow keys).
+		//   - ↑ / ↓:
+		//       * On a sub-page that owns its own list navigation
+		//         (currently only SubExtensions) → delegate to the sub-page.
+		//       * On a sub-page with no internal list → switch sub-page
+		//         (the user's intuition).
+		// Previous attempts at "always intercept ↑/↓" broke Extensions; at
+		// "never intercept ↑/↓" broke every other sub-page (they didn't
+		// react at all because they don't consume the key).
 		switch km.Type {
 		case tea.KeyPgDown:
 			if m.current < NumSubPages-1 {
@@ -115,6 +128,20 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 				m.current--
 			}
 			return m, nil
+		case tea.KeyDown:
+			if !subPageOwnsArrows(m.current) {
+				if m.current < NumSubPages-1 {
+					m.current++
+				}
+				return m, nil
+			}
+		case tea.KeyUp:
+			if !subPageOwnsArrows(m.current) {
+				if m.current > 0 {
+					m.current--
+				}
+				return m, nil
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -178,7 +205,7 @@ func renderSubSidebar(active SubPage, height int) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	rows = append(rows, "", "[PgUp/PgDn] page")
+	rows = append(rows, "", "[↑↓ / PgUp/PgDn]")
 	return lipgloss.NewStyle().Width(22).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))

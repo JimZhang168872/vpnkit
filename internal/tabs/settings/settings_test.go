@@ -11,10 +11,15 @@ import (
 
 func TestSubMenuNavigation(t *testing.T) {
 	m := New(Deps{})
-	// PgDown moves to next sub-page; ↑/↓ no longer hijacked.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	// On Mihomo Core (no internal nav), ↓ should switch sub-page.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.SelectedPage() != SubService {
-		t.Errorf("expected SubService after one PgDown, got %v", m.SelectedPage())
+		t.Errorf("expected SubService after one ↓ on SubCore, got %v", m.SelectedPage())
+	}
+	// PgDown also switches.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.SelectedPage() != SubController {
+		t.Errorf("expected SubController after one PgDown, got %v", m.SelectedPage())
 	}
 	view := m.View(120, 24)
 	if !strings.Contains(view, "Service") || !strings.Contains(view, "Mihomo Core") {
@@ -38,7 +43,8 @@ func TestPageEnumNames(t *testing.T) {
 // Settings.Update used to intercept tea.KeyUp/Down at the parent level
 // and short-circuit, so any sub-page that wanted ↑/↓ for its own list
 // navigation (Extensions chains/groups) never received the key. After
-// the fix, ↑/↓ must pass through to the active sub-page.
+// the fix, ↑/↓ must pass through to sub-pages that own list navigation
+// (currently only SubExtensions).
 func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "extensions.toml")
@@ -50,22 +56,34 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 		},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	// Switch to Extensions sub-page via PgDown × 4 (SubCore=0 → SubExtensions=4).
+	// Switch to Extensions via PgDown × 4 (SubCore=0 → SubExtensions=4).
 	for i := 0; i < 4; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
 	if m.SelectedPage() != SubExtensions {
 		t.Fatalf("expected SubExtensions, got %v", m.SelectedPage())
 	}
-	// Initial row = 0. ↓ should move chains-list cursor to row 1.
+	// Initial row = 0. ↓ should move chains-list cursor, NOT switch sub-page.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.SelectedPage() != SubExtensions {
+		t.Errorf("↓ on Extensions should NOT switch sub-page, got %v", m.SelectedPage())
+	}
 	if m.extensions.row != 1 {
 		t.Errorf("Extensions row after ↓: want 1, got %d", m.extensions.row)
 	}
-	// ↑ should bring it back to 0.
+	// ↑ should bring it back to 0 without switching sub-page.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if m.extensions.row != 0 {
 		t.Errorf("Extensions row after ↑: want 0, got %d", m.extensions.row)
+	}
+	if m.SelectedPage() != SubExtensions {
+		t.Errorf("↑ on Extensions should NOT switch sub-page, got %v", m.SelectedPage())
+	}
+	// PgUp on Extensions is the "force exit" — switches sub-page even though
+	// the sub-page owns ↑/↓.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.SelectedPage() != SubRules {
+		t.Errorf("PgUp on Extensions should switch to SubRules, got %v", m.SelectedPage())
 	}
 }
 
