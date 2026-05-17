@@ -79,6 +79,11 @@ func (m *Manager) All() []Node {
 	return out
 }
 
+// Update mutates the named node atomically under the manager's lock. The
+// callback runs WITH THE MUTEX HELD, so it MUST NOT call back into other
+// Manager methods (Get/All/Add/Remove/Update/Load) — doing so will deadlock
+// because sync.Mutex is not reentrant. Use this method only for self-contained
+// mutations that read and write fields on the passed *Node.
 func (m *Manager) Update(name string, mut func(*Node) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

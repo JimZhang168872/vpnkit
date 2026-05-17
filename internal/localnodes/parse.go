@@ -124,7 +124,7 @@ func parseVmess(_ *url.URL, raw string) (Node, error) {
 	aid, _ := anyToInt(raw_.Aid)
 	fields := map[string]any{
 		"uuid":    raw_.ID,
-		"alterId": aid,
+		"alterId": aid, // mihomo uses camelCase for this vmess field (sole exception in this package; all other keys are kebab-case).
 		"cipher":  "auto",
 		"network": raw_.Net,
 	}
@@ -168,6 +168,9 @@ func anyToInt(v any) (int, error) {
 	}
 }
 
+// mihomo expects the TLS SNI field as "sni" for trojan/hysteria2 nodes (vs.
+// "servername" for vmess/vless). Both refer to the same value; the key name
+// differs by protocol.
 func parseTrojan(u *url.URL, raw string) (Node, error) {
 	password := u.User.Username()
 	if password == "" {
@@ -248,6 +251,9 @@ func parseVless(u *url.URL, raw string) (Node, error) {
 	}, nil
 }
 
+// mihomo expects the TLS SNI field as "sni" for trojan/hysteria2 nodes (vs.
+// "servername" for vmess/vless). Both refer to the same value; the key name
+// differs by protocol.
 func parseHy2(u *url.URL, raw string) (Node, error) {
 	password := u.User.Username()
 	if password == "" {
@@ -268,10 +274,10 @@ func parseHy2(u *url.URL, raw string) (Node, error) {
 		fields["skip-cert-verify"] = true
 	}
 	if up := q.Get("up"); up != "" {
-		fields["up"] = up + " Mbps"
+		fields["up"] = formatBandwidth(up)
 	}
 	if down := q.Get("down"); down != "" {
-		fields["down"] = down + " Mbps"
+		fields["down"] = formatBandwidth(down)
 	}
 	if obfs := q.Get("obfs"); obfs != "" {
 		fields["obfs"] = obfs
@@ -286,6 +292,16 @@ func parseHy2(u *url.URL, raw string) (Node, error) {
 		Port:   port,
 		Fields: fields,
 	}, nil
+}
+
+// formatBandwidth normalizes a hysteria2/tuic bandwidth value: bare numeric
+// strings get " Mbps" appended (the URI spec form); values that already
+// include a unit are returned verbatim so the URI's intent is preserved.
+func formatBandwidth(v string) string {
+	if _, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+		return v + " Mbps"
+	}
+	return v
 }
 
 func parseTuic(u *url.URL, raw string) (Node, error) {

@@ -262,6 +262,20 @@ func TestParseHy2_NoFragment(t *testing.T) {
 	}
 }
 
+func TestParseHy2WithExplicitUnit(t *testing.T) {
+	uri := "hysteria2://pw@1.2.3.4:443?up=100%20Mbps&down=200%20Gbps#HY2-unit"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Fields["up"] != "100 Mbps" {
+		t.Errorf("up should preserve explicit unit, got %v", n.Fields["up"])
+	}
+	if n.Fields["down"] != "200 Gbps" {
+		t.Errorf("down should preserve explicit unit, got %v", n.Fields["down"])
+	}
+}
+
 func TestToProxyMapSS(t *testing.T) {
 	n := Node{Name: "SS-1", Proto: "ss", Server: "1.1.1.1", Port: 8388, Fields: map[string]any{"cipher": "aes-256-gcm", "password": "pw"}}
 	m := ToProxyMap(n)
