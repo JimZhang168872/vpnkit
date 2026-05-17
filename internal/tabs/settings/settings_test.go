@@ -87,6 +87,24 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 	}
 }
 
+// TestLeftRightArrowsSwitchSubPage covers the user-reported Settings ←/→
+// "卡住" bug: with no handler for tea.KeyLeft/KeyRight the keys silently
+// no-op, which feels frozen. We mirror ↑/↓ semantics on ←/→ so the keys
+// always do something visible.
+func TestLeftRightArrowsSwitchSubPage(t *testing.T) {
+	m := New(Deps{})
+	// On SubCore (no internal nav), → should switch to SubService.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if m.SelectedPage() != SubService {
+		t.Errorf("expected SubService after →, got %v", m.SelectedPage())
+	}
+	// ← should go back to SubCore.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if m.SelectedPage() != SubCore {
+		t.Errorf("expected SubCore after ←, got %v", m.SelectedPage())
+	}
+}
+
 // TestPgUpDownInWrapAroundEnd asserts PgDown stops at last page and PgUp at first.
 func TestPgUpDownInWrapAroundEnd(t *testing.T) {
 	m := New(Deps{})

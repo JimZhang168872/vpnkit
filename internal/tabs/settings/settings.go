@@ -118,12 +118,17 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		// "never intercept ↑/↓" broke every other sub-page (they didn't
 		// react at all because they don't consume the key).
 		switch km.Type {
-		case tea.KeyPgDown:
+		case tea.KeyPgDown, tea.KeyRight:
+			// ← / → are alternates for ↑ / ↓ but ALWAYS switch sub-page
+			// (regardless of whether the active sub-page owns arrows),
+			// so the user has an unambiguous "next page" / "previous
+			// page" key even inside Extensions's list. Fixes Bug H —
+			// ←/→ used to silently no-op on Settings.
 			if m.current < NumSubPages-1 {
 				m.current++
 			}
 			return m, nil
-		case tea.KeyPgUp:
+		case tea.KeyPgUp, tea.KeyLeft:
 			if m.current > 0 {
 				m.current--
 			}
