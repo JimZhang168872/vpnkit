@@ -19,6 +19,39 @@ type Model struct {
 	filter      string
 	filterInput textinput.Model
 	filtering   bool
+	cursor      int // index into the filtered rules slice
+}
+
+// MoveDown advances the cursor by one filtered row, clamped to the last row.
+func (m *Model) MoveDown() {
+	max := len(m.filtered()) - 1
+	if m.cursor < max {
+		m.cursor++
+	}
+}
+
+// MoveUp moves the cursor up one filtered row, clamped at 0.
+func (m *Model) MoveUp() {
+	if m.cursor > 0 {
+		m.cursor--
+	}
+}
+
+// filtered returns the post-filter slice of rules; computed lazily on each
+// call so cursor + view always see the same data.
+func (m Model) filtered() []msg.RuleEntry {
+	if m.filter == "" {
+		return m.rules
+	}
+	out := make([]msg.RuleEntry, 0, len(m.rules))
+	for _, r := range m.rules {
+		if strings.Contains(r.Payload, m.filter) ||
+			strings.Contains(r.Type, m.filter) ||
+			strings.Contains(r.Proxy, m.filter) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func New() Model {
@@ -54,6 +87,15 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if ev, ok := message.(msg.RulesSnapshot); ok {
 		m.rules = ev.Rules
 		m.providers = ev.Providers
+		// Clamp cursor in case the rule count shrank.
+		max := len(m.filtered()) - 1
+		if m.cursor > max {
+			if max < 0 {
+				m.cursor = 0
+			} else {
+				m.cursor = max
+			}
+		}
 		return m, nil
 	}
 	if m.filtering {
@@ -94,17 +136,10 @@ func (m Model) View(width, height int) string {
 		rows = append(rows, "")
 	}
 
-	// Build filtered list first so we can window it.
-	filtered := make([]msg.RuleEntry, 0, len(m.rules))
-	for _, r := range m.rules {
-		if m.filter != "" && !strings.Contains(r.Payload, m.filter) && !strings.Contains(r.Type, m.filter) && !strings.Contains(r.Proxy, m.filter) {
-			continue
-		}
-		filtered = append(filtered, r)
-	}
+	filtered := m.filtered()
 
-	// Reserve rows: header(1) + blank + "Rules"(1) + blank + footer(1-2) + padding(2)
-	// + Rule Providers section (variable). Estimate provider rows used:
+	// Reserve rows: header(1) + blank + "Rules"(1) + filter-line(2) + footer(1)
+	// + padding(2) + provider block (variable).
 	providerRows := 0
 	if len(m.providers) > 0 {
 		providerRows = 1 + len(m.providers) + 1 // header + N rows + blank
@@ -113,22 +148,28 @@ func (m Model) View(width, height int) string {
 	if maxList < 3 {
 		maxList = 3
 	}
-	start, end := viewport.Window(len(filtered), 0, maxList)
-	indicator := viewport.Indicator(start, len(filtered), maxList, 0)
+	start, end := viewport.Window(len(filtered), m.cursor, maxList)
+	indicator := viewport.Indicator(start, len(filtered), maxList, m.cursor)
 
 	rulesHeader := lipgloss.NewStyle().Bold(true).Render("Rules")
 	if indicator != "" {
 		rulesHeader += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
 	}
 	rows = append(rows, rulesHeader)
+	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	for i := start; i < end; i++ {
 		r := filtered[i]
-		rows = append(rows, fmt.Sprintf("  %-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy))
+		line := fmt.Sprintf("%-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy)
+		if i == m.cursor {
+			rows = append(rows, cursorStyle.Render("▶ "+line))
+		} else {
+			rows = append(rows, "  "+line)
+		}
 	}
 	if m.filtering {
 		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
 	} else {
-		rows = append(rows, "", "[/] filter  [u] refresh providers")
+		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate")
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 }

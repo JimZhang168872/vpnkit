@@ -93,6 +93,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tabrules.RefreshAllProvidersCmd(m.apiClient, m.rulesTab.ProviderNames())
 				}
 				return m, nil
+			case "up", "k":
+				m.rulesTab.MoveUp()
+				return m, nil
+			case "down", "j":
+				m.rulesTab.MoveDown()
+				return m, nil
 			}
 		}
 		// Settings-tab-specific keys: forward to settingsTab unless it's a global tab/quit key.
