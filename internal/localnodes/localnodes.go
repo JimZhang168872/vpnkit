@@ -13,6 +13,8 @@ import (
 // both packages). Conversion helpers are in this package's converter.go.
 type Node struct {
 	Name   string
+	Group  string // belongs to which local-nodes-group; "" defaults to "local"
+	Via    string // dialer-proxy target (mihomo proxy/group name); "" = no chain
 	Proto  string // ss | vmess | vless | trojan | hysteria2 | tuic
 	Server string
 	Port   int

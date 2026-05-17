@@ -83,3 +83,29 @@ func TestManagerUpdateNotFound(t *testing.T) {
 		t.Error("expected error updating nonexistent node")
 	}
 }
+
+func TestNodeGroupAndViaFields(t *testing.T) {
+	m := New()
+	n := Node{
+		Name:   "HK-A",
+		Group:  "home",
+		Via:    "doge:JP-1",
+		Proto:  "hysteria2",
+		Server: "1.2.3.4",
+		Port:   443,
+		Fields: map[string]any{"password": "x"},
+	}
+	if err := m.Add(n); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	got, ok := m.Get("HK-A")
+	if !ok {
+		t.Fatal("Get HK-A: not found")
+	}
+	if got.Group != "home" {
+		t.Errorf("Group: got %q want \"home\"", got.Group)
+	}
+	if got.Via != "doge:JP-1" {
+		t.Errorf("Via: got %q want \"doge:JP-1\"", got.Via)
+	}
+}
