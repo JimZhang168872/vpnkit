@@ -1,5 +1,49 @@
 # Changelog
 
+## v1.0.0-rc.3 — 2026-05-18
+
+### Added
+
+- **Multi local-nodes groups**: hand-entered nodes now belong to user-named
+  groups (`home`, `office`, …) symmetric with subscriptions. Each enabled
+  local group emits its own `<group>` (select) + `<group>-auto` (url-test).
+  `vpnkit local-groups list/add/rm/enable/disable/rename` CLI.
+- **`Via` field on local nodes** (first-class `LocalNode.Via`): writes through
+  to mihomo's `dialer-proxy` so chains can be set inline at node creation
+  time, no extensions overlay needed. Editable via `vpnkit local-nodes edit
+  <node> via=<target>` or the TUI Add Node form.
+- **Proto-driven Add Node form**: Sources › Local Nodes → `a` opens a
+  multi-field form whose fields adapt to the chosen protocol (ss / vmess /
+  vless / trojan / hysteria2 / tuic), including hy2/tuic `up`/`down` QoS
+  limits. URI mode preserved as `[u]` from the list or `Ctrl+U` from the form.
+- **`vpnkit local-nodes` extensions**: `--group/--via` flags, `mv` verb,
+  `<group>:<name>` namespaced node references.
+- **tmux TUI integration tests** (`test/tui/`): harness builds the binary
+  once per run, drives a detached tmux session, captures pane output for
+  assertions. Skipped gracefully when tmux is unavailable. `make test-tui`
+  or `make test-all`.
+
+### Changed
+
+- TUI Local Nodes sub-page sprouts a group tab bar at the top with
+  `←/→` switch, `N` new group, `D` delete group, `E` rename, `T` toggle
+  enabled.
+- Groups tab now lists every enabled local group as its own row (previously
+  a single hardcoded `local`).
+
+### Migrated automatically
+
+- rc.2 stores with `[[local_nodes]]` but no `[[local_node_groups]]` are
+  lazy-backfilled at first launch: a default `local` group is created and
+  every node without an explicit `group` field is assigned to it. No
+  `vpnkit init --force` required.
+
+### Removed
+
+Nothing (additive release).
+
+---
+
 ## v1.0.0-rc.1 — 2026-05-17
 
 **Pre-release.** Major architecture change. v0.10.x store files are

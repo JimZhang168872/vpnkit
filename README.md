@@ -63,16 +63,22 @@ vpnkit subs update
 Or in the TUI: `3` (Sources) → `a` → form → `Enter`. `u` refreshes a
 subscription; `e` toggles enabled; `d` removes one.
 
-### Add a local node
+### Add a local node (now in multiple groups)
 
 ```bash
-vpnkit local-nodes add 'hysteria2://password@1.2.3.4:443?up=100&down=200#HK-manual'
-vpnkit local-nodes add 'ss://YWVz...@1.2.3.4:8388#JP-rented'
+vpnkit local-groups add home
+vpnkit local-groups add office
+vpnkit local-nodes add 'hysteria2://password@1.2.3.4:443?up=100&down=200#HK-manual' --group=home
+vpnkit local-nodes add 'ss://YWVz...@1.2.3.4:8388#JP-rented' --group=office --via=doge-auto
 ```
 
-Accepts `ss://` `vmess://` `vless://` `trojan://` `hysteria2://` (or `hy2://`)
-and `tuic://` URIs. In the TUI, `3` (Sources) → `↓` (Local Nodes) → `a` →
-paste URI → `Enter`.
+`--group` picks which local-nodes-group the node belongs to (auto-created if
+absent); `--via` chains the node's egress through any subscription/local
+node or group (mihomo `dialer-proxy` field).
+
+In the TUI: `3` (Sources) → `↓` Local Nodes → `N` create a group → switch
+between groups with `←/→` → `a` opens the form (Proto-driven fields including
+hy2/tuic up/down limits and a Via select).
 
 ### Add a local rule (always wins over subscription rules)
 
@@ -137,6 +143,14 @@ to whichever target the user picked. See
 [`docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md`](docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md)
 for the assembler algorithm in detail.
 
+v1.0.0-rc.3 generalizes the previous single `local` group into named
+user-managed groups (e.g. `home`, `office`). Each enabled local group emits
+its own `<group>` (select) + `<group>-auto` (url-test) pair — exactly
+symmetric with subscriptions. Hand-entered nodes carry a `Via` field that
+writes through to mihomo's `dialer-proxy`, so you can build per-node
+chains directly in the form (Shadowrocket-style) without touching the
+extensions overlay.
+
 ```
 proxies: each node renamed "<group>:<original-name>" so cross-group
          duplicates do not collide
@@ -191,7 +205,8 @@ In the TUI: Settings → Extensions. `c` toggles to Chains, `g` to Groups,
 | `vpnkit mode [rule\|global\|direct]` | show or change routing mode |
 | `vpnkit target [<group-or-node>]` | show or set GlobalTarget |
 | `vpnkit subs list/add/rm/enable/disable/update [<name>]` | manage subscriptions |
-| `vpnkit local-nodes list/add <uri>/rm/edit` | manage hand-entered nodes |
+| `vpnkit local-groups list/add/rm/enable/disable/rename` | manage local-nodes groups |
+| `vpnkit local-nodes list/add/rm/edit/mv` (with `--group/--via`) | manage hand-entered nodes |
 | `vpnkit local-rules list/add/rm/move` | manage local routing rules |
 | `vpnkit groups` | live proxy-group list (from mihomo controller) |
 | `vpnkit nodes '<group>'` | members + cached delay |

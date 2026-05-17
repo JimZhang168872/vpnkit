@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"vpnkit/internal/paths"
 	"vpnkit/internal/store"
 )
 
@@ -187,5 +188,132 @@ func TestLocalNodesListJSON(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"HK-A"`) {
 		t.Errorf("json missing HK-A: %s", out.String())
+	}
+}
+
+func TestLocalNodesAddWithGroupAndVia(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	dispatchLocalNodes([]string{
+		"add",
+		"ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A",
+		"--group=home",
+		"--via=doge-auto",
+	})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if len(st.Cfg.LocalNodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(st.Cfg.LocalNodes))
+	}
+	if st.Cfg.LocalNodes[0].Group != "home" {
+		t.Errorf("Group: got %q", st.Cfg.LocalNodes[0].Group)
+	}
+	if st.Cfg.LocalNodes[0].Via != "doge-auto" {
+		t.Errorf("Via: got %q", st.Cfg.LocalNodes[0].Via)
+	}
+}
+
+func TestLocalNodesMv(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	dispatchLocalGroups([]string{"add", "office"})
+	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A", "--group=home"})
+	dispatchLocalNodes([]string{"mv", "HK-A", "office"})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if st.Cfg.LocalNodes[0].Group != "office" {
+		t.Errorf("mv: Group not updated: %q", st.Cfg.LocalNodes[0].Group)
+	}
+}
+
+func TestLocalNodesAddFlagFirstOrder(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	// Flag BEFORE URI (the case the original implementation broke).
+	dispatchLocalNodes([]string{
+		"add",
+		"--group=home",
+		"--via=doge-auto",
+		"ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A",
+	})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if len(st.Cfg.LocalNodes) != 1 || st.Cfg.LocalNodes[0].Group != "home" || st.Cfg.LocalNodes[0].Via != "doge-auto" {
+		t.Errorf("flag-first add: %+v", st.Cfg.LocalNodes)
+	}
+}
+
+func TestLocalNodesMvAutoCreatesTargetGroup(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A", "--group=home"})
+	// mv to a group that does NOT exist yet.
+	dispatchLocalNodes([]string{"mv", "HK-A", "freshgroup"})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if st.Cfg.LocalNodes[0].Group != "freshgroup" {
+		t.Errorf("Group not set: %+v", st.Cfg.LocalNodes[0])
+	}
+	hasFresh := false
+	for _, g := range st.Cfg.LocalNodeGroups {
+		if g.Name == "freshgroup" {
+			hasFresh = true
+			break
+		}
+	}
+	if !hasFresh {
+		t.Errorf("expected auto-created 'freshgroup', got %+v", st.Cfg.LocalNodeGroups)
+	}
+}
+
+func TestLocalNodesRmNamespacedNonExistentFails(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	mustPanicWith(t, "not found", func() {
+		dispatchLocalNodes([]string{"rm", "home:NoSuchNode"})
+	})
+}
+
+func TestLocalNodesNamespacedRefRm(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	dispatchLocalGroups([]string{"add", "office"})
+	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#X", "--group=home"})
+	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@9.9.9.9:8388#X", "--group=office"})
+	restoreDie := panicOnDie(t)
+	mustPanicWith(t, "ambiguous", func() { dispatchLocalNodes([]string{"rm", "X"}) })
+	restoreDie()
+	dispatchLocalNodes([]string{"rm", "office:X"})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if len(st.Cfg.LocalNodes) != 1 || st.Cfg.LocalNodes[0].Group != "home" {
+		t.Errorf("expected only home:X to remain, got %+v", st.Cfg.LocalNodes)
 	}
 }

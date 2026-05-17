@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/localnodes"
 	"vpnkit/internal/store"
-	"vpnkit/internal/subscription/proto"
 	"vpnkit/internal/tabs/viewport"
 )
 
@@ -48,6 +47,12 @@ type PipelineFace interface {
 	RefreshSubscription(ctx context.Context, name string) (int, error)
 	LocalNodes() *localnodes.Manager
 	SaveLocal() error
+	// Local groups (new in rc.3).
+	LocalNodeGroups() []store.LocalNodeGroup
+	AddLocalGroup(name string) error
+	DeleteLocalGroup(name string, force bool) error
+	ToggleLocalGroupEnabled(name string) error
+	RenameLocalGroup(oldName, newName string) error
 }
 
 // Deps wires external dependencies.
@@ -108,6 +113,7 @@ func (m *Model) Refresh() {
 	if m.deps.Pipeline != nil {
 		m.subs.setData(m.deps.Pipeline.SubscriptionNames())
 		m.locals.setData(m.deps.Pipeline.LocalNodes().All())
+		m.locals.setGroups(m.deps.Pipeline.LocalNodeGroups())
 	}
 }
 
@@ -433,11 +439,13 @@ func renderSubsForm(f *subsForm) string {
 // ─── Local Nodes sub-page ─────────────────────────────────────────────────
 
 type localNodesModel struct {
-	deps   Deps
-	nodes  []localnodes.Node
-	cursor int
-	form   *localNodeForm
-	flash  string
+	deps         Deps
+	nodes        []localnodes.Node
+	groups       []store.LocalNodeGroup
+	currentGroup string
+	cursor       int
+	form         *localNodeForm
+	flash        string
 }
 
 func newLocalNodesModel(deps Deps) localNodesModel {
@@ -446,9 +454,44 @@ func newLocalNodesModel(deps Deps) localNodesModel {
 
 func (m *localNodesModel) setData(nodes []localnodes.Node) {
 	m.nodes = nodes
-	if m.cursor >= len(m.nodes) && len(m.nodes) > 0 {
-		m.cursor = len(m.nodes) - 1
+	if m.cursor >= len(m.filteredNodes()) && len(m.filteredNodes()) > 0 {
+		m.cursor = len(m.filteredNodes()) - 1
 	}
+}
+
+func (m *localNodesModel) setGroups(groups []store.LocalNodeGroup) {
+	m.groups = groups
+	// If the currently-selected group no longer exists (e.g., it was renamed
+	// out from under us, or deleted by a parallel CLI mutation), reset to
+	// the first available group — or to empty when no groups remain.
+	if m.currentGroup != "" {
+		stillExists := false
+		for _, g := range m.groups {
+			if g.Name == m.currentGroup {
+				stillExists = true
+				break
+			}
+		}
+		if !stillExists {
+			m.currentGroup = ""
+		}
+	}
+	if m.currentGroup == "" && len(m.groups) > 0 {
+		m.currentGroup = m.groups[0].Name
+	}
+}
+
+func (m *localNodesModel) filteredNodes() []localnodes.Node {
+	if m.currentGroup == "" {
+		return m.nodes
+	}
+	out := make([]localnodes.Node, 0, len(m.nodes))
+	for _, n := range m.nodes {
+		if n.Group == m.currentGroup {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func (m localNodesModel) formOpen() bool { return m.form != nil }
@@ -456,34 +499,151 @@ func (m localNodesModel) formOpen() bool { return m.form != nil }
 func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 	if m.form != nil {
 		if km, ok := message.(tea.KeyMsg); ok {
-			switch km.Type {
-			case tea.KeyEsc:
-				m.form = nil
-				return m, nil
-			case tea.KeyEnter:
-				uri := strings.TrimSpace(m.form.input.Value())
-				if uri == "" {
-					m.flash = "URI required"
+			switch m.form.mode {
+			case formModeNewGroup:
+				switch km.Type {
+				case tea.KeyEsc:
 					m.form = nil
 					return m, nil
-				}
-				if m.deps.Pipeline != nil {
-					pl := m.deps.Pipeline
-					if err := addNodeFromURI(pl, uri); err != nil {
-						m.flash = "add: " + err.Error()
+				case tea.KeyEnter:
+					name := strings.TrimSpace(m.form.input.Value())
+					if name == "" {
+						m.flash = "group name required"
 						m.form = nil
 						return m, nil
 					}
-					m.flash = "added node"
-					m.nodes = pl.LocalNodes().All()
-					_ = pl.SaveLocal()
+					if m.deps.Pipeline != nil {
+						if err := m.deps.Pipeline.AddLocalGroup(name); err != nil {
+							m.flash = "add group: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+					}
+					m.flash = "created group " + name
+					m.groups = m.deps.Pipeline.LocalNodeGroups()
+					m.currentGroup = name
+					m.cursor = 0
 					m.form = nil
 					return m, emitPipelineMutated()
 				}
-				m.form = nil
-				return m, nil
+			case formModeRenameGroup:
+				switch km.Type {
+				case tea.KeyEsc:
+					m.form = nil
+					return m, nil
+				case tea.KeyEnter:
+					newName := strings.TrimSpace(m.form.input.Value())
+					if newName == "" {
+						m.flash = "new name required"
+						m.form = nil
+						return m, nil
+					}
+					if m.deps.Pipeline != nil {
+						if err := m.deps.Pipeline.RenameLocalGroup(m.form.oldName, newName); err != nil {
+							m.flash = "rename: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+					}
+					m.flash = "renamed " + m.form.oldName + " → " + newName
+					m.groups = m.deps.Pipeline.LocalNodeGroups()
+					m.currentGroup = newName
+					m.form = nil
+					return m, emitPipelineMutated()
+				}
+			case formModeNodeFields:
+				switch km.Type {
+				case tea.KeyEsc:
+					m.form = nil
+					return m, nil
+				case tea.KeyEnter:
+					n, err := m.form.commitFieldForm()
+					if err != nil {
+						m.flash = "save: " + err.Error()
+						return m, nil
+					}
+					if m.deps.Pipeline != nil {
+						if err := m.deps.Pipeline.LocalNodes().Add(n); err != nil {
+							m.flash = "add: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+						_ = m.deps.Pipeline.SaveLocal()
+						m.flash = "added " + n.Group + ":" + n.Name
+						m.nodes = m.deps.Pipeline.LocalNodes().All()
+						m.form = nil
+						return m, emitPipelineMutated()
+					}
+					m.form = nil
+					return m, nil
+				case tea.KeyTab, tea.KeyDown:
+					if m.form.focused < len(m.form.inputs)-1 {
+						m.form.inputs[m.form.focused].Blur()
+						m.form.focused++
+						m.form.inputs[m.form.focused].Focus()
+					}
+					return m, nil
+				case tea.KeyShiftTab, tea.KeyUp:
+					if m.form.focused > 0 {
+						m.form.inputs[m.form.focused].Blur()
+						m.form.focused--
+						m.form.inputs[m.form.focused].Focus()
+					}
+					return m, nil
+				}
+				switch km.String() {
+				case "ctrl+p":
+					idx := 0
+					for i, p := range supportedProtos {
+						if p == m.form.proto {
+							idx = i
+							break
+						}
+					}
+					next := supportedProtos[(idx+1)%len(supportedProtos)]
+					m.form = newLocalNodeFieldForm(next, m.form.defaultGroup)
+					return m, nil
+				case "ctrl+u":
+					f := newLocalNodeURIForm()
+					f.defaultGroup = m.form.defaultGroup
+					m.form = f
+					return m, nil
+				}
+				var cmd tea.Cmd
+				m.form.inputs[m.form.focused], cmd = m.form.inputs[m.form.focused].Update(message)
+				return m, cmd
+			default: // URI form (existing behavior)
+				switch km.Type {
+				case tea.KeyEsc:
+					m.form = nil
+					return m, nil
+				case tea.KeyEnter:
+					uri := strings.TrimSpace(m.form.input.Value())
+					if uri == "" {
+						m.flash = "URI required"
+						m.form = nil
+						return m, nil
+					}
+					if m.deps.Pipeline != nil {
+						pl := m.deps.Pipeline
+						if err := addNodeFromURI(pl, uri, m.form.defaultGroup); err != nil {
+							m.flash = "add: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+						m.flash = "added node"
+						m.nodes = pl.LocalNodes().All()
+						_ = pl.SaveLocal()
+						m.form = nil
+						return m, emitPipelineMutated()
+					}
+					m.form = nil
+					return m, nil
+				}
 			}
 		}
+		// Single-input modes (URI / NewGroup / Rename) delegate remaining
+		// key events to the single textinput model.
 		var cmd tea.Cmd
 		m.form.input, cmd = m.form.input.Update(message)
 		return m, cmd
@@ -496,14 +656,21 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.nodes)-1 {
+			if m.cursor < len(m.filteredNodes())-1 {
 				m.cursor++
 			}
 		case "a":
-			m.form = newLocalNodeForm()
+			m.form = newLocalNodeFieldForm("hysteria2", m.currentGroup)
+			return m, nil
+		case "u":
+			// URI mode for one-shot paste.
+			f := newLocalNodeURIForm()
+			f.defaultGroup = m.currentGroup
+			m.form = f
 		case "d":
-			if m.cursor < len(m.nodes) && m.deps.Pipeline != nil {
-				name := m.nodes[m.cursor].Name
+			filtered := m.filteredNodes()
+			if m.cursor < len(filtered) && m.deps.Pipeline != nil {
+				name := filtered[m.cursor].Name
 				pl := m.deps.Pipeline
 				if err := pl.LocalNodes().Remove(name); err != nil {
 					m.flash = "delete: " + err.Error()
@@ -512,106 +679,137 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				} else {
 					m.flash = "deleted " + name
 					m.nodes = pl.LocalNodes().All()
-					if m.cursor > 0 && m.cursor >= len(m.nodes) {
-						m.cursor = len(m.nodes) - 1
+					if m.cursor > 0 && m.cursor >= len(m.filteredNodes()) {
+						m.cursor = len(m.filteredNodes()) - 1
 					}
 					return m, emitPipelineMutated()
 				}
 			}
+		case "N":
+			m.form = newGroupNameForm()
+			return m, nil
+		case "D":
+			if m.currentGroup == "" || m.deps.Pipeline == nil {
+				return m, nil
+			}
+			if err := m.deps.Pipeline.DeleteLocalGroup(m.currentGroup, false); err != nil {
+				msg := "delete group: " + err.Error()
+				if strings.Contains(err.Error(), "not empty") {
+					msg += "  (move or delete nodes first)"
+				}
+				m.flash = msg
+				return m, nil
+			}
+			m.flash = "deleted group " + m.currentGroup
+			m.groups = m.deps.Pipeline.LocalNodeGroups()
+			if len(m.groups) > 0 {
+				m.currentGroup = m.groups[0].Name
+			} else {
+				m.currentGroup = ""
+			}
+			m.cursor = 0
+			return m, emitPipelineMutated()
+		case "E":
+			if m.currentGroup == "" {
+				return m, nil
+			}
+			m.form = newGroupRenameForm(m.currentGroup)
+			return m, nil
+		case "T":
+			if m.currentGroup == "" || m.deps.Pipeline == nil {
+				return m, nil
+			}
+			if err := m.deps.Pipeline.ToggleLocalGroupEnabled(m.currentGroup); err != nil {
+				m.flash = "toggle: " + err.Error()
+				return m, nil
+			}
+			m.groups = m.deps.Pipeline.LocalNodeGroups()
+			return m, emitPipelineMutated()
+		case "left":
+			if len(m.groups) > 1 {
+				for i, g := range m.groups {
+					if g.Name == m.currentGroup {
+						m.currentGroup = m.groups[(i-1+len(m.groups))%len(m.groups)].Name
+						m.cursor = 0
+						break
+					}
+				}
+			}
+			return m, nil
+		case "right":
+			if len(m.groups) > 1 {
+				for i, g := range m.groups {
+					if g.Name == m.currentGroup {
+						m.currentGroup = m.groups[(i+1)%len(m.groups)].Name
+						m.cursor = 0
+						break
+					}
+				}
+			}
+			return m, nil
 		}
 	}
 	return m, nil
 }
 
-// addNodeFromURI parses a proxy URI and adds it to the local nodes manager.
-func addNodeFromURI(pl PipelineFace, uri string) error {
-	p, err := proto.Parse(uri)
-	if err != nil {
-		return err
-	}
-	node := localnodes.Node{}
-	if v, ok := p["name"].(string); ok {
-		node.Name = v
-	}
-	if v, ok := p["type"].(string); ok {
-		node.Proto = v
-	}
-	if v, ok := p["server"].(string); ok {
-		node.Server = v
-	}
-	switch pt := p["port"].(type) {
-	case int:
-		node.Port = pt
-	case float64:
-		node.Port = int(pt)
-	}
-	if node.Name == "" {
-		return fmt.Errorf("URI missing name field")
-	}
-	return pl.LocalNodes().Add(node)
-}
 
 func (m localNodesModel) View(width, height int, focused bool) string {
 	header := viewport.FocusDot(focused) +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Local Nodes")
-	rows := []string{header, ""}
+		lipgloss.NewStyle().Bold(true).Render("Local Nodes")
 
-	if m.flash != "" {
-		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(m.flash), "")
+	tabs := []string{}
+	for _, g := range m.groups {
+		label := g.Name
+		if !g.Enabled {
+			label = "(" + label + ")"
+		}
+		if g.Name == m.currentGroup {
+			tabs = append(tabs, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("▶ "+label))
+		} else {
+			tabs = append(tabs, "  "+label)
+		}
 	}
+	tabs = append(tabs, lipgloss.NewStyle().Faint(true).Render("[+ new group]"))
+	tabRow := strings.Join(tabs, "   ")
 
+	filtered := m.filteredNodes()
+	rows := []string{header, "", "  Group: " + tabRow, ""}
 	if m.form != nil {
-		rows = append(rows, renderLocalNodeForm(m.form))
-		return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).
-			Render(strings.Join(rows, "\n"))
-	}
-
-	if len(m.nodes) == 0 {
-		rows = append(rows, "  (no local nodes — press [a] to add via URI)")
+		rows = append(rows, "", renderLocalNodeForm(m.form))
 	} else {
-		innerW := width - 6
-		if innerW < 20 {
-			innerW = 20
-		}
-		curStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-		for i, n := range m.nodes {
-			portStr := ""
-			if n.Port > 0 {
-				portStr = fmt.Sprintf(":%d", n.Port)
-			}
-			line := fmt.Sprintf("%-24s  %-8s  %s%s", n.Name, n.Proto, n.Server, portStr)
-			line = viewport.TruncateDisplay(line, innerW)
-			if i == m.cursor {
-				rows = append(rows, curStyle.Render("▶ ")+line)
+		if len(filtered) == 0 {
+			if len(m.groups) == 0 {
+				rows = append(rows, "  (no local groups — press [N] to create one)")
 			} else {
-				rows = append(rows, "  "+line)
+				rows = append(rows, fmt.Sprintf("  (no nodes in %q — press [a] to add)", m.currentGroup))
+			}
+		} else {
+			for i, n := range filtered {
+				portStr := ""
+				if n.Port > 0 {
+					portStr = fmt.Sprintf(":%d", n.Port)
+				}
+				via := ""
+				if n.Via != "" {
+					via = lipgloss.NewStyle().Faint(true).Render("  via: " + n.Via)
+				}
+				line := fmt.Sprintf("%-22s  %-10s  %s%s", n.Name, n.Proto, n.Server, portStr)
+				if i == m.cursor {
+					rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("▶ ")+line+via)
+				} else {
+					rows = append(rows, "  "+line+via)
+				}
 			}
 		}
+		rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(
+			"[a] add  [d] delete  [e] edit  [u] paste URI"))
+		rows = append(rows, lipgloss.NewStyle().Faint(true).Render(
+			"[N] new group  [D] delete group  [E] rename  [T] toggle enabled  [←→] switch group"))
 	}
-	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[a] add URI  [d] delete  [↑↓] navigate"))
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).
-		Render(strings.Join(rows, "\n"))
-}
-
-type localNodeForm struct {
-	input textinput.Model
-}
-
-func newLocalNodeForm() *localNodeForm {
-	ti := newTextInput("proxy URI (e.g. vmess://...)", "")
-	ti.Focus()
-	return &localNodeForm{input: ti}
-}
-
-func renderLocalNodeForm(f *localNodeForm) string {
-	return strings.Join([]string{
-		lipgloss.NewStyle().Bold(true).Render("Add Local Node"),
-		"",
-		"  Enter proxy URI:",
-		"  " + f.input.View(),
-		"",
-		lipgloss.NewStyle().Faint(true).Render("[Enter] add  [Esc] cancel"),
-	}, "\n")
+	if m.flash != "" {
+		rows = append(rows, "", lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render(m.flash))
+	}
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func newTextInput(placeholder, value string) textinput.Model {

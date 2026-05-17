@@ -1,4 +1,4 @@
-.PHONY: build test lint install clean
+.PHONY: build test lint install clean test-tui test-all
 
 BIN_DIR := $(HOME)/.local/bin
 
@@ -17,3 +17,8 @@ lint:
 
 clean:
 	rm -rf ./bin
+
+test-tui:
+	go test ./test/tui -count=1 -timeout=120s
+
+test-all: test test-tui

@@ -235,11 +235,19 @@ func (m *Model) WirePipeline(pl *Pipeline) {
 			}
 			return out
 		},
-		GetLocalNodes: func() []tabgroups.SubNode {
-			nodes := pl.LocalNodes().All()
-			out := make([]tabgroups.SubNode, len(nodes))
-			for i, n := range nodes {
-				out[i] = tabgroups.SubNode{Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port}
+		GetLocalGroups: func() []store.LocalNodeGroup {
+			return pl.LocalNodeGroups()
+		},
+		GetLocalNodes: func(group string) []tabgroups.SubNode {
+			all := pl.LocalNodes().All()
+			out := []tabgroups.SubNode{}
+			for _, n := range all {
+				if n.Group != group {
+					continue
+				}
+				out = append(out, tabgroups.SubNode{
+					Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port,
+				})
 			}
 			return out
 		},

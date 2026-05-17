@@ -9,8 +9,9 @@ import (
 
 // emitProxies returns a flat slice of mihomo proxy maps with every node's
 // name rewritten to "<group>:<original-name>" so cross-group duplicates
-// don't collide in mihomo's flat namespace.
-func emitProxies(subs []groups.Group, local groups.Group) []any {
+// don't collide in mihomo's flat namespace. localGroups is one Group per
+// enabled local-nodes-group.
+func emitProxies(subs []groups.Group, localGroups []groups.Group) []any {
 	out := []any{}
 	for _, g := range subs {
 		if !g.Enabled() {
@@ -20,9 +21,12 @@ func emitProxies(subs []groups.Group, local groups.Group) []any {
 			out = append(out, namespaced(g.Name(), p))
 		}
 	}
-	if local != nil {
-		for _, p := range local.Proxies() {
-			out = append(out, namespaced(local.Name(), p))
+	for _, g := range localGroups {
+		if !g.Enabled() {
+			continue
+		}
+		for _, p := range g.Proxies() {
+			out = append(out, namespaced(g.Name(), p))
 		}
 	}
 	return out

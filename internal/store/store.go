@@ -34,9 +34,28 @@ type Subscription struct {
 	NodeCount   int       `toml:"node_count,omitempty"`
 }
 
+// LocalNodeGroup is a named collection of local nodes (v2 schema, rc.3+).
+type LocalNodeGroup struct {
+	Name    string `toml:"name"`
+	Enabled bool   `toml:"enabled"`
+}
+
 // LocalNode is a manually configured proxy node (v2 schema).
+//
+// Group is REQUIRED — callers that construct LocalNode values for Save must
+// populate Group with a name that exists in Config.LocalNodeGroups. The
+// `omitempty` tag is intentional: it keeps rc.2 stores (which had no Group
+// field) round-trippable, and it lets Load() detect un-migrated nodes by
+// the empty-Group sentinel. Leaving Group="" on Save is treated as
+// "needs migration to default 'local' group" and silently corrected on
+// next Load.
+//
+// Via is optional and writes mihomo's dialer-proxy field on this node at
+// assemble time.
 type LocalNode struct {
 	Name   string         `toml:"name"`
+	Group  string         `toml:"group,omitempty"`
+	Via    string         `toml:"via,omitempty"`
 	Proto  string         `toml:"proto"`
 	Server string         `toml:"server"`
 	Port   int            `toml:"port"`
@@ -65,9 +84,10 @@ type Config struct {
 	Mode         string `toml:"mode"`
 	GlobalTarget string `toml:"global_target"`
 
-	Subscriptions []Subscription `toml:"subscriptions"`
-	LocalNodes    []LocalNode    `toml:"local_nodes"`
-	LocalRules    []LocalRule    `toml:"local_rules"`
+	Subscriptions   []Subscription   `toml:"subscriptions"`
+	LocalNodes      []LocalNode      `toml:"local_nodes"`
+	LocalNodeGroups []LocalNodeGroup `toml:"local_node_groups"`
+	LocalRules      []LocalRule      `toml:"local_rules"`
 
 	// Legacy fields below are detection-only for LegacyActiveProfile and
 	// LegacyProfiles (read in Load to detect v1 stores; not consumed by any
@@ -170,6 +190,35 @@ func Load(path string) (*Store, error) {
 		s.Cfg.LocalRules = []LocalRule{}
 		changed = true
 	}
+	if s.Cfg.LocalNodeGroups == nil {
+		s.Cfg.LocalNodeGroups = []LocalNodeGroup{}
+		changed = true
+	}
+	defaultGroupName := "local"
+	needsDefaultGroup := false
+	for i := range s.Cfg.LocalNodes {
+		if s.Cfg.LocalNodes[i].Group == "" {
+			s.Cfg.LocalNodes[i].Group = defaultGroupName
+			needsDefaultGroup = true
+			changed = true
+		}
+	}
+	if needsDefaultGroup {
+		hasDefault := false
+		for _, g := range s.Cfg.LocalNodeGroups {
+			if g.Name == defaultGroupName {
+				hasDefault = true
+				break
+			}
+		}
+		if !hasDefault {
+			s.Cfg.LocalNodeGroups = append(s.Cfg.LocalNodeGroups, LocalNodeGroup{
+				Name:    defaultGroupName,
+				Enabled: true,
+			})
+			changed = true
+		}
+	}
 	if changed {
 		if err := s.Save(); err != nil {
 			return nil, err
@@ -226,9 +275,10 @@ func defaults() Config {
 		UITheme:          "default",
 		Mode:             "rule",
 		GlobalTarget:     "🚀 Proxy",
-		Subscriptions:    []Subscription{},
-		LocalNodes:       []LocalNode{},
-		LocalRules:       []LocalRule{},
+		Subscriptions:   []Subscription{},
+		LocalNodes:      []LocalNode{},
+		LocalNodeGroups: []LocalNodeGroup{},
+		LocalRules:      []LocalRule{},
 	}
 }
 

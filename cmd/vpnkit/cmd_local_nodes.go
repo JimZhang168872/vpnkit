@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +17,7 @@ import (
 
 func dispatchLocalNodes(args []string) {
 	if len(args) == 0 {
-		dieUserErr("vpnkit local-nodes: usage: vpnkit local-nodes <list|add|rm|edit>")
+		dieUserErr("vpnkit local-nodes: usage: vpnkit local-nodes <list|add|rm|edit|mv>")
 	}
 	sub, rest := args[0], args[1:]
 	p := paths.Resolve()
@@ -36,37 +37,206 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("%v", err)
 		}
 	case "add":
-		if len(rest) < 1 {
-			dieUserErr("usage: vpnkit local-nodes add <uri>")
+		fs := flag.NewFlagSet("local-nodes add", flag.ExitOnError)
+		groupFlag := fs.String("group", "", "target local-nodes-group (default: 'local')")
+		viaFlag := fs.String("via", "", "dialer-proxy target (proxy/group name)")
+
+		// flag.Parse stops at the first non-flag token. The URI may come
+		// before OR after the flags, so split args into flags and the URI
+		// manually based on the "--" or "://" sniff.
+		var uri string
+		var flagArgs []string
+		for _, a := range rest {
+			if strings.Contains(a, "://") {
+				if uri != "" {
+					dieUserErr("local-nodes add: multiple URIs in %v", rest)
+				}
+				uri = a
+				continue
+			}
+			flagArgs = append(flagArgs, a)
 		}
-		if err := runLocalNodesAdd(st, rest[0]); err != nil {
-			dieUserErr("%v", err)
+		if uri == "" {
+			dieUserErr("usage: vpnkit local-nodes add <uri> [--group=<name>] [--via=<target>]")
+		}
+		_ = fs.Parse(flagArgs)
+		node, err := localnodes.ParseURI(uri)
+		if err != nil {
+			dieUserErr("parse: %v", err)
+		}
+		if *groupFlag != "" {
+			node.Group = *groupFlag
+		} else {
+			node.Group = "local"
+		}
+		node.Via = *viaFlag
+		st.Cfg.LocalNodes = append(st.Cfg.LocalNodes, store.LocalNode{
+			Name: node.Name, Group: node.Group, Via: node.Via,
+			Proto: node.Proto, Server: node.Server, Port: node.Port, Fields: node.Fields,
+		})
+		hasGroup := false
+		for _, g := range st.Cfg.LocalNodeGroups {
+			if g.Name == node.Group {
+				hasGroup = true
+				break
+			}
+		}
+		if !hasGroup {
+			st.Cfg.LocalNodeGroups = append(st.Cfg.LocalNodeGroups, store.LocalNodeGroup{
+				Name: node.Group, Enabled: true,
+			})
 		}
 		if err := st.Save(); err != nil {
-			dieRuntime("%v", err)
+			dieRuntime("save: %v", err)
 		}
+		fmt.Printf("✅ added local node %s:%s\n", node.Group, node.Name)
 	case "rm", "remove":
 		if len(rest) < 1 {
-			dieUserErr("usage: vpnkit local-nodes rm <name>")
+			dieUserErr("usage: vpnkit local-nodes rm <node>")
 		}
-		if err := runLocalNodesRm(st, rest[0]); err != nil {
-			dieUserErr("%v", err)
+		group, name, ambig, ok := resolveLocalNode(st, rest[0])
+		if ambig {
+			dieUserErr("vpnkit: ambiguous %q — use \"<group>:<name>\"", rest[0])
+		}
+		if !ok {
+			dieUserErr("local node %q not found", rest[0])
+		}
+		out := st.Cfg.LocalNodes[:0]
+		for _, n := range st.Cfg.LocalNodes {
+			if n.Name == name && n.Group == group {
+				continue
+			}
+			out = append(out, n)
+		}
+		st.Cfg.LocalNodes = out
+		if err := st.Save(); err != nil {
+			dieRuntime("save: %v", err)
+		}
+		fmt.Printf("✅ removed %s:%s\n", group, name)
+	case "mv":
+		if len(rest) < 2 {
+			dieUserErr("usage: vpnkit local-nodes mv <node> <new-group>")
+		}
+		group, name, ambig, ok := resolveLocalNode(st, rest[0])
+		if ambig {
+			dieUserErr("vpnkit: ambiguous %q — use \"<group>:<name>\"", rest[0])
+		}
+		if !ok {
+			dieUserErr("local node %q not found", rest[0])
+		}
+		newGroup := rest[1]
+		for i := range st.Cfg.LocalNodes {
+			if st.Cfg.LocalNodes[i].Name == name && st.Cfg.LocalNodes[i].Group == group {
+				st.Cfg.LocalNodes[i].Group = newGroup
+				break
+			}
+		}
+		// Auto-create the target group if it doesn't exist, so the node
+		// doesn't end up orphaned (the assembler would skip a node whose
+		// Group has no matching LocalNodeGroup entry).
+		hasGroup := false
+		for _, g := range st.Cfg.LocalNodeGroups {
+			if g.Name == newGroup {
+				hasGroup = true
+				break
+			}
+		}
+		if !hasGroup {
+			st.Cfg.LocalNodeGroups = append(st.Cfg.LocalNodeGroups, store.LocalNodeGroup{
+				Name: newGroup, Enabled: true,
+			})
 		}
 		if err := st.Save(); err != nil {
-			dieRuntime("%v", err)
+			dieRuntime("save: %v", err)
 		}
+		fmt.Printf("✅ moved %s:%s → %s\n", group, name, newGroup)
 	case "edit":
 		if len(rest) < 2 {
-			dieUserErr("usage: vpnkit local-nodes edit <name> <key=val>...")
+			dieUserErr("usage: vpnkit local-nodes edit <node> key=val [...]")
 		}
-		if err := runLocalNodesEdit(st, rest[0], rest[1:]); err != nil {
-			dieUserErr("%v", err)
+		group, name, ambig, ok := resolveLocalNode(st, rest[0])
+		if ambig {
+			dieUserErr("vpnkit: ambiguous %q — use \"<group>:<name>\"", rest[0])
+		}
+		if !ok {
+			dieUserErr("local node %q not found", rest[0])
+		}
+		var target *store.LocalNode
+		for i := range st.Cfg.LocalNodes {
+			if st.Cfg.LocalNodes[i].Name == name && st.Cfg.LocalNodes[i].Group == group {
+				target = &st.Cfg.LocalNodes[i]
+				break
+			}
+		}
+		if target == nil {
+			dieUserErr("local node %q not found", rest[0])
+		}
+		for _, kv := range rest[1:] {
+			parts := strings.SplitN(kv, "=", 2)
+			if len(parts) != 2 {
+				dieUserErr("bad kv %q (want key=val)", kv)
+			}
+			k, v := parts[0], parts[1]
+			switch k {
+			case "name":
+				target.Name = v
+			case "group":
+				target.Group = v
+			case "via":
+				target.Via = v
+			case "proto":
+				target.Proto = v
+			case "server":
+				target.Server = v
+			case "port":
+				p, err := strconv.Atoi(v)
+				if err != nil {
+					dieUserErr("port must be int: %v", err)
+				}
+				target.Port = p
+			default:
+				if target.Fields == nil {
+					target.Fields = map[string]any{}
+				}
+				target.Fields[k] = v
+			}
 		}
 		if err := st.Save(); err != nil {
-			dieRuntime("%v", err)
+			dieRuntime("save: %v", err)
 		}
+		fmt.Printf("✅ edited %s:%s\n", group, target.Name)
 	default:
 		dieUserErr("vpnkit local-nodes: unknown verb %q", sub)
+	}
+}
+
+// resolveLocalNode finds a node by short name (e.g. "HK-A") or namespaced
+// form (e.g. "home:HK-A"). Returns the namespaced group/name pair, plus a
+// bool indicating ambiguity. Caller must dieUserErr on ambiguity.
+func resolveLocalNode(st *store.Store, ref string) (group, name string, ambiguous bool, found bool) {
+	if i := strings.Index(ref, ":"); i > 0 {
+		group, name := ref[:i], ref[i+1:]
+		for _, n := range st.Cfg.LocalNodes {
+			if n.Group == group && n.Name == name {
+				return group, name, false, true
+			}
+		}
+		return group, name, false, false
+	}
+	matches := 0
+	for _, n := range st.Cfg.LocalNodes {
+		if n.Name == ref {
+			matches++
+			group, name = n.Group, n.Name
+		}
+	}
+	switch matches {
+	case 0:
+		return "", "", false, false
+	case 1:
+		return group, name, false, true
+	default:
+		return "", "", true, true
 	}
 }
 

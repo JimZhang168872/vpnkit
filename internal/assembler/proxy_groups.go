@@ -12,12 +12,13 @@ const (
 )
 
 // emitProxyGroups builds the full proxy-groups slice: per-subscription
-// select+url-test pairs, a local-nodes select, and the three top-level
-// routing groups (🚀 Proxy / 🎯 Direct / 🛑 Reject).
-func emitProxyGroups(subs []groups.Group, local groups.Group, globalTarget string) []any {
+// select+url-test pairs, one select+url-test per local-nodes group, and the
+// three top-level routing groups (🚀 Proxy / 🎯 Direct / 🛑 Reject).
+func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarget string) []any {
 	out := []any{}
 	topProxies := []string{}
 
+	// Subscription groups (each → <name> select + <name>-auto url-test).
 	for _, g := range subs {
 		if !g.Enabled() {
 			continue
@@ -27,11 +28,10 @@ func emitProxyGroups(subs []groups.Group, local groups.Group, globalTarget strin
 			continue
 		}
 		autoName := g.Name() + "-auto"
-		selectProxies := append([]string{autoName}, nodes...)
 		out = append(out, map[string]any{
 			"name":    g.Name(),
 			"type":    "select",
-			"proxies": selectProxies,
+			"proxies": append([]string{autoName}, nodes...),
 		})
 		out = append(out, map[string]any{
 			"name":     autoName,
@@ -43,16 +43,29 @@ func emitProxyGroups(subs []groups.Group, local groups.Group, globalTarget strin
 		topProxies = append(topProxies, autoName, g.Name())
 	}
 
-	if local != nil {
-		localNodes := nodeNames(local)
-		if len(localNodes) > 0 {
-			out = append(out, map[string]any{
-				"name":    local.Name(),
-				"type":    "select",
-				"proxies": append(localNodes, "DIRECT"),
-			})
-			topProxies = append(topProxies, local.Name())
+	// Local-nodes groups (symmetric with subs: <name> select + <name>-auto url-test).
+	for _, lg := range localGroups {
+		if !lg.Enabled() {
+			continue
 		}
+		nodes := nodeNames(lg)
+		if len(nodes) == 0 {
+			continue
+		}
+		autoName := lg.Name() + "-auto"
+		out = append(out, map[string]any{
+			"name":    lg.Name(),
+			"type":    "select",
+			"proxies": append([]string{autoName}, nodes...),
+		})
+		out = append(out, map[string]any{
+			"name":     autoName,
+			"type":     "url-test",
+			"proxies":  nodes,
+			"url":      healthURL,
+			"interval": healthInterval,
+		})
+		topProxies = append(topProxies, autoName, lg.Name())
 	}
 
 	topProxies = append(topProxies, "DIRECT")

@@ -60,15 +60,20 @@ vpnkit subs update
 或 TUI：`3` (Sources) → `a` 弹表单 → `Enter`。`u` 拉单个订阅，`e` 启/禁，
 `d` 删除。
 
-### 加本地节点（手动）
+### 加本地节点（现在支持多组）
 
 ```bash
-vpnkit local-nodes add 'hysteria2://password@1.2.3.4:443?up=100&down=200#HK-manual'
-vpnkit local-nodes add 'ss://YWVz...@1.2.3.4:8388#JP-rented'
+vpnkit local-groups add home
+vpnkit local-groups add office
+vpnkit local-nodes add 'hysteria2://password@1.2.3.4:443?up=100&down=200#HK-manual' --group=home
+vpnkit local-nodes add 'ss://YWVz...@1.2.3.4:8388#JP-rented' --group=office --via=doge-auto
 ```
 
-支持 `ss://` `vmess://` `vless://` `trojan://` `hysteria2://`（或 `hy2://`）、
-`tuic://`。TUI 里：`3` (Sources) → `↓` Local Nodes → `a` 粘 URI → `Enter`。
+`--group` 选节点归属哪个本地组（不存在则自动创建）；`--via` 把节点出口
+链式经过某个订阅或本地节点/组（写入 mihomo `dialer-proxy`）。
+
+TUI 里：`3`（Sources）→ `↓` Local Nodes → `N` 创建组 → `←/→` 在组间切换
+→ `a` 打开表单（按协议动态字段，含 hy2/tuic up/down 限速 + Via 下拉）。
 
 ### 加本地规则（永远胜过订阅规则）
 
@@ -128,6 +133,12 @@ vpnkit update --mihomo-only              # 只升 mihomo
 兜底走用户挑的那个 target。详细 assembler 算法见
 [`docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md`](docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md)。
 
+v1.0.0-rc.3 把之前单一的 `local` 组泛化为用户命名的多组（如 `home`、
+`office`）。每个启用的本地组都生成自己的 `<group>` (select) + `<group>-auto`
+(url-test) — 跟订阅完全对称。手填节点带 `Via` 字段，直接写入 mihomo
+的 `dialer-proxy`，所以可以在表单里 inline 设置每节点链式代理
+（Shadowrocket 风格），不用额外动 extensions overlay。
+
 ```
 proxies: 每个节点重命名 "<group>:<original-name>"，跨组重名不冲突
 proxy-groups:
@@ -182,7 +193,8 @@ TUI：Settings → Extensions。`c` chains，`g` groups。`a/e/d` 增/改/删，
 | `vpnkit mode [rule\|global\|direct]` | 显示/切换路由模式 |
 | `vpnkit target [<组或节点名>]` | 显示/设置 GlobalTarget |
 | `vpnkit subs list/add/rm/enable/disable/update [<name>]` | 管理订阅 |
-| `vpnkit local-nodes list/add <uri>/rm/edit` | 管理手动节点 |
+| `vpnkit local-groups list/add/rm/enable/disable/rename` | 管理本地节点组 |
+| `vpnkit local-nodes list/add/rm/edit/mv`（含 `--group/--via`） | 管理手动节点 |
 | `vpnkit local-rules list/add/rm/move` | 管理本地规则 |
 | `vpnkit groups` | 实时 proxy-group 列表（从 mihomo controller 读） |
 | `vpnkit nodes '<组>'` | 列某组成员 + 缓存延迟 |
