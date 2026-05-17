@@ -121,6 +121,12 @@ func (m Model) shiftFocusLeft() Model {
 			return m
 		}
 	}
+	if m.activeTab == TabGroups && m.appFocus == FocusTabBody {
+		if m.groupsTab.SubFocus() == tabgroups.SubFocusRight {
+			m.groupsTab.SetSubFocus(tabgroups.SubFocusLeft)
+			return m
+		}
+	}
 	m.appFocus = FocusMainSidebar
 	return m
 }
@@ -139,6 +145,10 @@ func (m Model) shiftFocusRight() Model {
 	if m.activeTab == TabSources && m.sourcesTab.Focus() == tabsources.FocusSidebar {
 		// Sources sub-pages always have a navigable content panel (list).
 		m.sourcesTab.SetFocus(tabsources.FocusContent)
+	}
+	if m.activeTab == TabGroups && m.groupsTab.SubFocus() == tabgroups.SubFocusLeft {
+		// Drill into the selected group's node list.
+		m.groupsTab.SetSubFocus(tabgroups.SubFocusRight)
 	}
 	return m
 }

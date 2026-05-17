@@ -3,12 +3,21 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	tabgroups "vpnkit/internal/tabs/groups"
 	tabrules "vpnkit/internal/tabs/rules"
 	tabsources "vpnkit/internal/tabs/sources"
 )
+
+// groupSwitchMsg is the result of PutProxy launched from Groups tab Enter.
+type groupSwitchMsg struct {
+	group string
+	node  string
+	err   error
+}
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -140,9 +149,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.groupsTab.Refresh()
 				return m, nil
 			case "r":
-				// Refresh group data from pipeline.
 				m.groupsTab.Refresh()
 				return m, nil
+			case "enter":
+				// Switch the selected group's `now` to the highlighted node
+				// (only meaningful with right-pane focus, but allow from left
+				// too — it'll pick rightCursor=0). Calls mihomo controller
+				// PutProxy; flash reports outcome.
+				if m.groupsTab.SubFocus() != tabgroups.SubFocusRight {
+					m.flash = "press → to focus nodes, then Enter to switch"
+					return m, nil
+				}
+				group := m.groupsTab.SelectedGroup()
+				node := m.groupsTab.SelectedNode()
+				if group == "" || node == "" || m.apiClient == nil {
+					return m, nil
+				}
+				client := m.apiClient
+				return m, func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := client.PutProxy(ctx, group, node); err != nil {
+						return groupSwitchMsg{group: group, node: node, err: err}
+					}
+					return groupSwitchMsg{group: group, node: node}
+				}
 			}
 		}
 		// Sources-tab-specific keys: forward to sourcesTab unless global key.
@@ -210,7 +241,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProxiesSnapshot, DelayResults:
 		if snap, ok := msg.(ProxiesSnapshot); ok {
 			m.recordProxyNames(snap)
+			// Forward to groupsTab so it can mirror each group's `now` for
+			// the right-pane node highlight.
+			m.groupsTab, _ = m.groupsTab.Update(snap)
 		}
+	case groupSwitchMsg:
+		if v.err != nil {
+			m.flash = "❌ " + v.group + " → " + v.node + ": " + v.err.Error()
+		} else {
+			m.flash = "✓ " + v.group + " → " + v.node
+		}
+		return m, nil
 	case ConnectionsSnapshot:
 		m.connectionsTab, cmd = m.connectionsTab.Update(msg)
 	case RulesSnapshot:
