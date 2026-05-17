@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"vpnkit/internal/config"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/store"
@@ -18,8 +17,7 @@ const defaultRuleTemplate = "loyalsoldier"
 
 // runInitOpts groups the optional inputs to runInit.
 type runInitOpts struct {
-	RestorePath string // optional backup TOML to merge profiles from
-	Force       bool   // back up any existing store before regenerating (v1 → v2 recovery)
+	Force bool // back up any existing store before regenerating (v1 → v2 recovery)
 }
 
 // runInit creates ~/.config/vpnkit/config.toml and ~/.config/mihomo/config.yaml
@@ -56,31 +54,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 		fmt.Fprintf(out, "✅ %s (created)\n", p.VpnkitConfigFile())
 	}
 
-	// Step 2: restore profiles if a backup was passed AND store has none yet.
-	// We do not overwrite a user's existing profiles to avoid double-counting.
-	storeDirty := false
-	if opts.RestorePath != "" && len(st.Cfg.LegacyProfiles) == 0 {
-		var backup struct {
-			Profiles []store.Profile `toml:"profiles"`
-		}
-		data, rerr := os.ReadFile(opts.RestorePath)
-		if rerr != nil {
-			fmt.Fprintf(out, "⚠️  failed to read backup %s: %v\n", opts.RestorePath, rerr)
-		} else if err := toml.Unmarshal(data, &backup); err != nil {
-			fmt.Fprintf(out, "⚠️  failed to parse backup %s: %v\n", opts.RestorePath, err)
-		} else if len(backup.Profiles) > 0 {
-			st.Cfg.LegacyProfiles = backup.Profiles
-			storeDirty = true
-			fmt.Fprintf(out, "📋 restored %d profile(s) from %s\n", len(backup.Profiles), opts.RestorePath)
-		}
-	}
-	if storeDirty {
-		if err := st.Save(); err != nil {
-			return fmt.Errorf("save store: %w", err)
-		}
-	}
-
-	// Step 3: generate mihomo config.yaml skeleton if missing.
+	// Step 2: generate mihomo config.yaml skeleton if missing.
 	if !fileExists(p.MihomoConfigFile()) {
 		ruleTemplate := st.Cfg.LegacyRuleTemplate
 		if ruleTemplate == "" {

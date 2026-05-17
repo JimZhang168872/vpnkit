@@ -93,35 +93,12 @@ func TestInitIdempotent(t *testing.T) {
 	}
 }
 
-func TestInitRestoresProfiles(t *testing.T) {
-	p, restore := initEnv(t)
-	defer restore()
-
-	// Simulate a backup file with profiles.
-	backup := filepath.Join(t.TempDir(), "vpnkit-profiles-backup.toml")
-	backupContent := `[[profiles]]
-  name = "airport-A"
-  url = "https://example.com/sub"
-`
-	if err := os.WriteFile(backup, []byte(backupContent), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var out bytes.Buffer
-	if err := runInit(&out, runInitOpts{RestorePath: backup}); err != nil {
-		t.Fatalf("runInit: %v", err)
-	}
-
-	toml, _ := os.ReadFile(p.VpnkitConfigFile())
-	s := string(toml)
-	for _, want := range []string{"airport-A", "https://example.com/sub"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("profile not restored: missing %q in:\n%s", want, s)
-		}
-	}
-	if !strings.Contains(out.String(), "restored") {
-		t.Errorf("output should mention restoration:\n%s", out.String())
-	}
+// TestInitRestoreIsRemoved verifies that the v0.10 --restore option
+// no longer exists (profiles concept removed in v1.0.0).
+func TestInitRestoreIsRemoved(t *testing.T) {
+	// runInitOpts should not have a RestorePath field in v1.
+	opts := runInitOpts{Force: false}
+	_ = opts // compiles only if RestorePath is gone
 }
 
 func TestInitForceBacksUpV1Store(t *testing.T) {
