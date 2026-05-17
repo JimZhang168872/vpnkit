@@ -133,13 +133,20 @@ func (s *tuiSession) SendKeys(keys ...string) {
 	}
 }
 
+// SendLiteral types text character-by-character to avoid tmux misinterpreting
+// multi-character strings that happen to match tmux key names (e.g. "home",
+// "end", "up") even when the -l flag is used. Each character is sent as a
+// separate send-keys invocation with a short inter-character delay.
 func (s *tuiSession) SendLiteral(text string) {
 	s.t.Helper()
-	cmd := exec.Command("tmux", "send-keys", "-l", "-t", s.name, text)
-	if err := cmd.Run(); err != nil {
-		s.t.Fatalf("send-keys -l: %v", err)
+	for _, ch := range text {
+		cmd := exec.Command("tmux", "send-keys", "-l", "-t", s.name, string(ch))
+		if err := cmd.Run(); err != nil {
+			s.t.Fatalf("send-keys -l %q: %v", string(ch), err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 }
 
 func (s *tuiSession) Capture() string {
@@ -167,6 +174,22 @@ func (s *tuiSession) MustNotContain(want string) {
 	if strings.Contains(frame, want) {
 		s.t.Fatalf("frame should not contain %q:\n%s", want, frame)
 	}
+}
+
+// WaitFor polls until the pane contains want or deadline is reached.
+// It is useful after triggering an async action (e.g. opening a form) where
+// the 150 ms inter-key delay is not long enough for the TUI to re-render.
+func (s *tuiSession) WaitFor(want string, timeout time.Duration) {
+	s.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(s.Capture(), want) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	frame := s.Capture()
+	s.t.Fatalf("timed out waiting for %q:\n%s", want, frame)
 }
 
 func (s *tuiSession) Kill() {
