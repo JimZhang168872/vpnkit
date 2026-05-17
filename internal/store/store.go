@@ -34,9 +34,17 @@ type Subscription struct {
 	NodeCount   int       `toml:"node_count,omitempty"`
 }
 
+// LocalNodeGroup is a named collection of local nodes (v2 schema, rc.3+).
+type LocalNodeGroup struct {
+	Name    string `toml:"name"`
+	Enabled bool   `toml:"enabled"`
+}
+
 // LocalNode is a manually configured proxy node (v2 schema).
 type LocalNode struct {
 	Name   string         `toml:"name"`
+	Group  string         `toml:"group,omitempty"`
+	Via    string         `toml:"via,omitempty"`
 	Proto  string         `toml:"proto"`
 	Server string         `toml:"server"`
 	Port   int            `toml:"port"`
@@ -65,9 +73,10 @@ type Config struct {
 	Mode         string `toml:"mode"`
 	GlobalTarget string `toml:"global_target"`
 
-	Subscriptions []Subscription `toml:"subscriptions"`
-	LocalNodes    []LocalNode    `toml:"local_nodes"`
-	LocalRules    []LocalRule    `toml:"local_rules"`
+	Subscriptions   []Subscription   `toml:"subscriptions"`
+	LocalNodes      []LocalNode      `toml:"local_nodes"`
+	LocalNodeGroups []LocalNodeGroup `toml:"local_node_groups"`
+	LocalRules      []LocalRule      `toml:"local_rules"`
 
 	// Legacy fields below are detection-only for LegacyActiveProfile and
 	// LegacyProfiles (read in Load to detect v1 stores; not consumed by any
@@ -170,6 +179,10 @@ func Load(path string) (*Store, error) {
 		s.Cfg.LocalRules = []LocalRule{}
 		changed = true
 	}
+	if s.Cfg.LocalNodeGroups == nil {
+		s.Cfg.LocalNodeGroups = []LocalNodeGroup{}
+		changed = true
+	}
 	if changed {
 		if err := s.Save(); err != nil {
 			return nil, err
@@ -226,9 +239,10 @@ func defaults() Config {
 		UITheme:          "default",
 		Mode:             "rule",
 		GlobalTarget:     "🚀 Proxy",
-		Subscriptions:    []Subscription{},
-		LocalNodes:       []LocalNode{},
-		LocalRules:       []LocalRule{},
+		Subscriptions:   []Subscription{},
+		LocalNodes:      []LocalNode{},
+		LocalNodeGroups: []LocalNodeGroup{},
+		LocalRules:      []LocalRule{},
 	}
 }
 

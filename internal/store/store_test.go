@@ -193,6 +193,20 @@ func TestSaveAndReload(t *testing.T) {
 	}
 }
 
+func TestSchemaV2HasLocalNodeGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.Cfg.LocalNodeGroups == nil {
+		t.Error("LocalNodeGroups must be initialized to empty slice, not nil")
+	}
+	if len(s.Cfg.LocalNodeGroups) != 0 {
+		t.Errorf("fresh store should have 0 local groups, got %d", len(s.Cfg.LocalNodeGroups))
+	}
+}
+
 func TestLoadRejectsV1Store(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	v1 := `controller_secret = "deadbeef"
