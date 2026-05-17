@@ -113,3 +113,28 @@ func TestSubscriptionGroupDisabled(t *testing.T) {
 		t.Error("Enabled should be false")
 	}
 }
+
+func TestNewLocalNodesGroupForGroupFiltersByGroup(t *testing.T) {
+	m := localnodes.New()
+	_ = m.Add(localnodes.Node{Name: "HK-1", Group: "home", Proto: "ss", Server: "1.2.3.4", Port: 8388})
+	_ = m.Add(localnodes.Node{Name: "JP-1", Group: "office", Proto: "vmess", Server: "5.6.7.8", Port: 443})
+	_ = m.Add(localnodes.Node{Name: "TR-1", Group: "home", Proto: "trojan", Server: "9.9.9.9", Port: 443})
+
+	homeGrp := NewLocalNodesGroupForGroup("home", m)
+	if homeGrp.Name() != "home" || homeGrp.Kind() != KindLocalNodes || !homeGrp.Enabled() {
+		t.Errorf("home group fields: name=%v kind=%v enabled=%v", homeGrp.Name(), homeGrp.Kind(), homeGrp.Enabled())
+	}
+	homeProxies := homeGrp.Proxies()
+	if len(homeProxies) != 2 {
+		t.Fatalf("home group: expected 2 nodes, got %d (%v)", len(homeProxies), homeProxies)
+	}
+
+	officeGrp := NewLocalNodesGroupForGroup("office", m)
+	if len(officeGrp.Proxies()) != 1 || officeGrp.Proxies()[0]["name"] != "JP-1" {
+		t.Errorf("office group: expected only JP-1, got %v", officeGrp.Proxies())
+	}
+
+	if homeGrp.Rules() != nil {
+		t.Error("LocalNodesGroup.Rules() must always return nil")
+	}
+}
