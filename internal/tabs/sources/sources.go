@@ -48,6 +48,12 @@ type PipelineFace interface {
 	RefreshSubscription(ctx context.Context, name string) (int, error)
 	LocalNodes() *localnodes.Manager
 	SaveLocal() error
+	// Local groups (new in rc.3).
+	LocalNodeGroups() []store.LocalNodeGroup
+	AddLocalGroup(name string) error
+	DeleteLocalGroup(name string, force bool) error
+	ToggleLocalGroupEnabled(name string) error
+	RenameLocalGroup(oldName, newName string) error
 }
 
 // Deps wires external dependencies.
@@ -108,6 +114,7 @@ func (m *Model) Refresh() {
 	if m.deps.Pipeline != nil {
 		m.subs.setData(m.deps.Pipeline.SubscriptionNames())
 		m.locals.setData(m.deps.Pipeline.LocalNodes().All())
+		m.locals.setGroups(m.deps.Pipeline.LocalNodeGroups())
 	}
 }
 
@@ -433,11 +440,13 @@ func renderSubsForm(f *subsForm) string {
 // ─── Local Nodes sub-page ─────────────────────────────────────────────────
 
 type localNodesModel struct {
-	deps   Deps
-	nodes  []localnodes.Node
-	cursor int
-	form   *localNodeForm
-	flash  string
+	deps         Deps
+	nodes        []localnodes.Node
+	groups       []store.LocalNodeGroup
+	currentGroup string
+	cursor       int
+	form         *localNodeForm
+	flash        string
 }
 
 func newLocalNodesModel(deps Deps) localNodesModel {
@@ -446,9 +455,29 @@ func newLocalNodesModel(deps Deps) localNodesModel {
 
 func (m *localNodesModel) setData(nodes []localnodes.Node) {
 	m.nodes = nodes
-	if m.cursor >= len(m.nodes) && len(m.nodes) > 0 {
-		m.cursor = len(m.nodes) - 1
+	if m.cursor >= len(m.filteredNodes()) && len(m.filteredNodes()) > 0 {
+		m.cursor = len(m.filteredNodes()) - 1
 	}
+}
+
+func (m *localNodesModel) setGroups(groups []store.LocalNodeGroup) {
+	m.groups = groups
+	if m.currentGroup == "" && len(m.groups) > 0 {
+		m.currentGroup = m.groups[0].Name
+	}
+}
+
+func (m *localNodesModel) filteredNodes() []localnodes.Node {
+	if m.currentGroup == "" {
+		return m.nodes
+	}
+	out := make([]localnodes.Node, 0, len(m.nodes))
+	for _, n := range m.nodes {
+		if n.Group == m.currentGroup {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func (m localNodesModel) formOpen() bool { return m.form != nil }
