@@ -48,34 +48,29 @@ func runStatus(out io.Writer, c *api.Client, st *store.Store, jsonOut bool) erro
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
 
-	type profileSummary struct {
-		Name        string `json:"name"`
-		NodeCount   int    `json:"node_count"`
-		LastUpdated string `json:"last_updated,omitempty"`
-	}
-	var profile *profileSummary
-	if st != nil && st.Cfg.LegacyActiveProfile != "" {
-		for _, p := range st.Cfg.LegacyProfiles {
-			if p.Name == st.Cfg.LegacyActiveProfile {
-				profile = &profileSummary{
-					Name:        p.Name,
-					NodeCount:   0,
-					LastUpdated: p.LastUpdated.Format(time.RFC3339),
-				}
-				break
-			}
-		}
+	var (
+		subCount       int
+		localNodeCount int
+		storeMode      string
+		globalTarget   string
+	)
+	if st != nil {
+		subCount = len(st.Cfg.Subscriptions)
+		localNodeCount = len(st.Cfg.LocalNodes)
+		storeMode = st.Cfg.Mode
+		globalTarget = st.Cfg.GlobalTarget
 	}
 
 	if jsonOut {
 		payload := map[string]any{
-			"mihomo": map[string]any{"version": v.Version, "running": true},
-			"mode":   cfg.Mode,
-			"ports":  map[string]int{"mixed": cfg.MixedPort, "controller": controllerPortFromClient(c)},
-			"groups": groups,
-		}
-		if profile != nil {
-			payload["active_profile"] = profile
+			"mihomo":       map[string]any{"version": v.Version, "running": true},
+			"mode":         cfg.Mode,
+			"ports":        map[string]int{"mixed": cfg.MixedPort, "controller": controllerPortFromClient(c)},
+			"groups":       groups,
+			"subscriptions": subCount,
+			"local_nodes":  localNodeCount,
+			"store_mode":   storeMode,
+			"global_target": globalTarget,
 		}
 		return writeJSON(out, payload)
 	}
@@ -97,8 +92,9 @@ func runStatus(out io.Writer, c *api.Client, st *store.Store, jsonOut bool) erro
 		fmt.Fprintf(out, "🚀 groups  %d selectable (%s)\n", len(groups), summary)
 	}
 
-	if profile != nil {
-		fmt.Fprintf(out, "📋 profile %s\n", profile.Name)
+	if st != nil {
+		fmt.Fprintf(out, "📚 sources   %d subs + %d local nodes\n", subCount, localNodeCount)
+		fmt.Fprintf(out, "🔀 routing   mode=%s  target=%s\n", storeMode, globalTarget)
 	}
 	return nil
 }
