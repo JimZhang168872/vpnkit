@@ -40,10 +40,8 @@ func TestPageEnumNames(t *testing.T) {
 }
 
 // TestArrowKeysDelegateToActiveSubPage covers the case where the user has
-// explicitly focused the Extensions content panel via → and then uses ↑/↓
-// for list navigation. The focus model means ↑/↓ only reaches the
-// sub-page's list when FocusContent is active; pressing ↑/↓ in
-// FocusSidebar still switches sub-page.
+// focused the Extensions content panel (via SetFocus from app-level →) and
+// then uses ↑/↓ for list navigation.
 func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "extensions.toml")
@@ -55,15 +53,10 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 		},
 	})
 	m := New(Deps{ExtensionsPath: path})
-	// Switch to Extensions via PgDown × 4 (SubCore=0 → SubExtensions=4).
 	for i := 0; i < 4; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
-	// Switch focus into content via →.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if m.Focus() != FocusContent {
-		t.Fatalf("setup: focus should be Content")
-	}
+	m.SetFocus(FocusContent)
 	// ↓ should now move chains-list cursor (not switch sub-page).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.SelectedPage() != SubExtensions {
@@ -77,36 +70,17 @@ func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
 	if m.extensions.row != 0 {
 		t.Errorf("Extensions row after ↑: want 0, got %d", m.extensions.row)
 	}
-	// PgUp on Extensions is the "force exit" — switches sub-page even when
-	// content is focused.
+	// PgUp force-switches sub-page even when content is focused.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 	if m.SelectedPage() != SubRules {
 		t.Errorf("PgUp on Extensions should switch to SubRules, got %v", m.SelectedPage())
 	}
 }
 
-// TestLeftRightArrowsSwitchSubPage covers the user-reported Settings ←/→
-// "卡住" bug: with no handler for tea.KeyLeft/KeyRight the keys silently
-// no-op, which feels frozen. On sub-pages without internal panels, ←/→
-// still switch sub-page (mirrors ↑/↓).
-func TestLeftRightArrowsSwitchSubPage(t *testing.T) {
-	m := New(Deps{})
-	// On SubCore (no internal nav), → should switch to SubService.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if m.SelectedPage() != SubService {
-		t.Errorf("expected SubService after →, got %v", m.SelectedPage())
-	}
-	// ← should go back to SubCore.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if m.SelectedPage() != SubCore {
-		t.Errorf("expected SubCore after ←, got %v", m.SelectedPage())
-	}
-}
-
-// TestFocusToggleInExtensions: on the Extensions sub-page, →/← shift focus
-// between the sub-sidebar and the content panel (so the user knows which
-// panel ↑/↓ will affect). PgUp/PgDn always switches sub-page even when
-// content is focused (force exit).
+// TestFocusToggleInExtensions covers the focus-state model. ←/→ at app
+// level translate to SetFocus calls; here we test the model contract: when
+// FocusContent is set and the user presses ↓, the extensions list cursor
+// moves; when FocusSidebar is set, ↓ switches sub-page.
 func TestFocusToggleInExtensions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "extensions.toml")
@@ -124,27 +98,21 @@ func TestFocusToggleInExtensions(t *testing.T) {
 	if m.Focus() != FocusSidebar {
 		t.Errorf("default focus on entering Extensions should be Sidebar, got %v", m.Focus())
 	}
-	// → moves focus to content (does NOT switch sub-page).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	// App-level handler shifts focus → content.
+	m.SetFocus(FocusContent)
 	if m.Focus() != FocusContent {
-		t.Errorf("after → on Extensions, focus should be Content, got %v", m.Focus())
+		t.Fatalf("SetFocus(Content) failed, got %v", m.Focus())
 	}
-	if m.SelectedPage() != SubExtensions {
-		t.Errorf("→ on Extensions should NOT switch sub-page, got %v", m.SelectedPage())
-	}
-	// ↓ now navigates extensions list (not sub-page).
+	// ↓ now navigates extensions list (because focus = content).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.extensions.row != 1 {
 		t.Errorf("↓ on Extensions+FocusContent should move list cursor to 1, got %d", m.extensions.row)
 	}
-	// ← returns focus to sidebar (does NOT switch sub-page).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if m.Focus() != FocusSidebar {
-		t.Errorf("after ← on Extensions+FocusContent, focus should be Sidebar, got %v", m.Focus())
-	}
 	if m.SelectedPage() != SubExtensions {
-		t.Errorf("← on Extensions+FocusContent should NOT switch sub-page, got %v", m.SelectedPage())
+		t.Errorf("↓ on Extensions+FocusContent should NOT switch sub-page, got %v", m.SelectedPage())
 	}
+	// Shift back to sidebar.
+	m.SetFocus(FocusSidebar)
 	// ↓ on Extensions+FocusSidebar switches sub-page (sidebar nav).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.SelectedPage() != SubLogs {
@@ -165,10 +133,7 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	}
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight}) // focus content
-	if m.Focus() != FocusContent {
-		t.Fatalf("setup: focus should be Content")
-	}
+	m.SetFocus(FocusContent)
 	// PgDown forces sub-page change → focus should reset to Sidebar.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	if m.SelectedPage() != SubLogs {
@@ -176,6 +141,21 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 	}
 	if m.Focus() != FocusSidebar {
 		t.Errorf("focus should reset to Sidebar on sub-page change, got %v", m.Focus())
+	}
+}
+
+// TestSubPageOwnsContent reports whether the active sub-page can accept
+// FocusContent (used by app-level → handler).
+func TestSubPageOwnsContent(t *testing.T) {
+	m := New(Deps{})
+	if m.SubPageOwnsContent() {
+		t.Errorf("default sub-page (Core) should NOT own content")
+	}
+	for i := 0; i < 4; i++ {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	if !m.SubPageOwnsContent() {
+		t.Errorf("Extensions sub-page should own content")
 	}
 }
 

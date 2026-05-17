@@ -84,6 +84,17 @@ type Model struct {
 // Focus exposes the active focus state (for tests / rendering).
 func (m Model) Focus() SettingsFocus { return m.focus }
 
+// SetFocus updates the inner focus state. Called by the app-level ←/→
+// handler when it wants to shift focus between this tab's sub-sidebar and
+// the active sub-page's content panel.
+func (m *Model) SetFocus(f SettingsFocus) { m.focus = f }
+
+// SubPageOwnsContent reports whether the active sub-page has a navigable
+// content panel that the user can shift focus into (currently Extensions
+// is the only one). App-level →/← uses this to decide whether to advance
+// inner focus or to bounce focus all the way to MainSidebar.
+func (m Model) SubPageOwnsContent() bool { return subPageOwnsArrows(m.current) }
+
 // New constructs the Settings tab Model with all sub-pages instantiated.
 func New(deps Deps) Model {
 	extPath := deps.ExtensionsPath
@@ -132,26 +143,10 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		// Any sub-page change resets focus to sidebar so the user doesn't
 		// land on a non-Extensions page with stale FocusContent.
 		switch km.Type {
-		case tea.KeyRight:
-			if subPageOwnsArrows(m.current) && m.focus == FocusSidebar {
-				m.focus = FocusContent
-				return m, nil
-			}
-			if m.current < NumSubPages-1 {
-				m.current++
-			}
-			m.focus = FocusSidebar
-			return m, nil
-		case tea.KeyLeft:
-			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
-				m.focus = FocusSidebar
-				return m, nil
-			}
-			if m.current > 0 {
-				m.current--
-			}
-			m.focus = FocusSidebar
-			return m, nil
+		// ←/→ are owned by the app-level handler now (Bug N): they shift
+		// focus between MainSidebar / Settings sidebar / Settings content
+		// in one consistent model across the whole app. Settings.Update
+		// no longer consumes them — the app intercepts before delegating.
 		case tea.KeyPgDown:
 			if m.current < NumSubPages-1 {
 				m.current++

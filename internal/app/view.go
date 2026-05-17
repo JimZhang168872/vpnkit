@@ -8,7 +8,7 @@ func (m Model) View() string {
 		return "loading…"
 	}
 	bodyHeight := m.height - 1 // reserve a line for status bar
-	sidebar := renderSidebar(m.activeTab, bodyHeight)
+	sidebar := renderSidebar(m.activeTab, bodyHeight, m.appFocus == FocusMainSidebar)
 	bodyWidth := m.width - sidebarWidth
 
 	var body string
