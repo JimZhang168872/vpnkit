@@ -28,7 +28,7 @@ func TestSubMenuNavigation(t *testing.T) {
 }
 
 func TestPageEnumNames(t *testing.T) {
-	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubExtensions, SubLogs, SubCache, SubAbout}
+	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubExtensions, SubCache, SubAbout}
 	if len(SubPageNames) != len(expected) {
 		t.Fatalf("len(SubPageNames)=%d, want %d", len(SubPageNames), len(expected))
 	}
@@ -116,8 +116,8 @@ func TestFocusToggleInExtensions(t *testing.T) {
 	m.SetFocus(FocusSidebar)
 	// ↓ on Extensions+FocusSidebar switches sub-page (sidebar nav).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubLogs {
-		t.Errorf("↓ on Extensions+FocusSidebar should switch sub-page to SubLogs, got %v", m.SelectedPage())
+	if m.SelectedPage() != SubCache {
+		t.Errorf("↓ on Extensions+FocusSidebar should switch sub-page to SubCache, got %v", m.SelectedPage())
 	}
 }
 
@@ -138,8 +138,8 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 	m.SetFocus(FocusContent)
 	// PgDown forces sub-page change → focus should reset to Sidebar.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
-	if m.SelectedPage() != SubLogs {
-		t.Errorf("expected SubLogs, got %v", m.SelectedPage())
+	if m.SelectedPage() != SubCache {
+		t.Errorf("expected SubCache, got %v", m.SelectedPage())
 	}
 	if m.Focus() != FocusSidebar {
 		t.Errorf("focus should reset to Sidebar on sub-page change, got %v", m.Focus())

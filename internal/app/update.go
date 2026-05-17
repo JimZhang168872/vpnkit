@@ -203,8 +203,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
 		m.logsTab, _ = m.logsTab.Update(msg)
-		lm := m.settingsTab.LogsModel()
-		*lm, _ = lm.Update(msg)
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":

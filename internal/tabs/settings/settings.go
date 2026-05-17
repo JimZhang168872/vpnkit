@@ -11,7 +11,6 @@ import (
 	"vpnkit/internal/paths"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
-	"vpnkit/internal/tabs/logs"
 	"vpnkit/internal/tabs/viewport"
 )
 
@@ -25,7 +24,6 @@ const (
 	SubRouting
 	SubRules
 	SubExtensions
-	SubLogs
 	SubCache
 	SubAbout
 	NumSubPages
@@ -53,7 +51,6 @@ var SubPageNames = [NumSubPages]string{
 	"Routing",
 	"Default Rules",
 	"Extensions",
-	"Logs",
 	"Cache",
 	"About",
 }
@@ -92,7 +89,6 @@ type Model struct {
 	service    serviceModel
 	core       coreModel
 	extensions extensionsModel
-	logs       logs.Model
 	routing    routingModel
 }
 
@@ -135,7 +131,6 @@ func New(deps Deps) Model {
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
 		extensions: ex,
-		logs:       logs.New(),
 		routing:    newRouting(deps.Store, deps.ApplyFunc),
 	}
 }
@@ -150,9 +145,6 @@ func (m Model) SelectedPage() SubPage { return m.current }
 func subPageOwnsArrows(p SubPage) bool {
 	return p == SubExtensions
 }
-
-// LogsModel exposes the embedded Logs model so the parent app can route LogLine into it.
-func (m *Model) LogsModel() *logs.Model { return &m.logs }
 
 func (Model) Init() tea.Cmd { return nil }
 
@@ -219,8 +211,6 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.core, cmd = m.core.Update(message)
 	case SubExtensions:
 		m.extensions, cmd = m.extensions.Update(message)
-	case SubLogs:
-		m.logs, cmd = m.logs.Update(message)
 	case SubRouting:
 		m.routing, cmd = m.routing.Update(message)
 	}
@@ -260,8 +250,6 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 		body = m.core.View(bodyWidth, height)
 	case SubExtensions:
 		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
-	case SubLogs:
-		body = m.logs.ViewFocused(bodyWidth, height, false)
 	case SubRouting:
 		body = m.routing.View(bodyWidth, height)
 	}
