@@ -23,6 +23,17 @@ jobs:
         run: go test -race -cover ./...
         env:
           GOARCH: ${{ matrix.arch }}
+  test-tui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Verify tmux available
+        run: tmux -V
+      - name: Run TUI integration tests
+        run: make test-tui
   lint:
     runs-on: ubuntu-latest
     steps:
