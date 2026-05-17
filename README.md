@@ -8,7 +8,7 @@
   <a href="https://github.com/JimZhang168872/vpnkit/releases"><img alt="Tag" src="https://img.shields.io/github/v/tag/JimZhang168872/vpnkit"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <a href="https://github.com/JimZhang168872/vpnkit/actions"><img alt="CI" src="https://github.com/JimZhang168872/vpnkit/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.22%2B-00ADD8.svg"></a>
+  <a href="https://go.dev/"><img alt="Go" src="https://img.shields.io/badge/go-1.23%2B-00ADD8.svg"></a>
 </p>
 
 <p align="center">中文 → <a href="README_zh.md">README_zh.md</a></p>
@@ -16,8 +16,12 @@
 ---
 
 vpnkit runs mihomo (the maintained Clash.Meta core) entirely in user space — no
-root, no TUN. The TUI gives you proxy switching, delay testing, connection
-inspection, and rule management from a terminal that fits an SSH session.
+root, no TUN. v1.0.0 adds **multi-source subscriptions, hand-entered local
+nodes, and structured local rules**, all editable from a 7-tab TUI or a
+matching `vpnkit subs / local-nodes / local-rules / target` CLI surface.
+
+> **v0.10.x → v1.0.0 is a breaking change.** Store schema bumped v1 → v2.
+> See [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md) for the migration path.
 
 ## Install
 
@@ -28,14 +32,15 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 Auto-detects amd64/arm64, verifies SHA256, installs to `~/.local/bin/vpnkit`,
 generates a default config skeleton, and (on subsequent runs) cleans up the
 old version before installing the new one. Pin a version with
-`VERSION=v0.9.0 ./install.sh`. Make sure `~/.local/bin` is on your `PATH`.
+`VERSION=v1.0.0-rc.1 ./install.sh`. Make sure `~/.local/bin` is on your `PATH`.
 
-From source: `git clone … && cd vpnkit && make install` (needs Go 1.22+).
+From source: `git clone … && cd vpnkit && make install` (needs Go 1.23+).
 
 > **Network:** vpnkit reaches `github.com` directly — no mirror fallback.
 > Behind a restrictive network? Configure `HTTPS_PROXY` in your shell
-> *before* installing (and before `vpnkit update` runs). SmartClient will
-> probe the env proxy at request time and route through it when reachable.
+> *before* installing. The systemd-user unit and bootstrap also pick up your
+> shell-level proxy and pre-download the GeoIP/GeoSite data files so
+> mihomo's first launch doesn't deadlock waiting on GitHub.
 
 ## First run
 
@@ -44,42 +49,68 @@ vpnkit
 ```
 
 First launch downloads mihomo, writes `~/.config/mihomo/config.yaml`, installs
-`~/.config/systemd/user/mihomo.service`, starts it, and opens the TUI.
+`~/.config/systemd/user/mihomo.service`, pre-seeds GeoIP/GeoSite data, starts
+the service, and opens the TUI.
 
-Add a subscription:
+### Add a subscription
 
-1. `3` (Profiles) → `a` opens the form
-2. Name + paste subscription URL → `Enter`
-3. `u` → fetch + parse + write config + reload mihomo
+```bash
+vpnkit subs add doge       https://example.invalid/sub/doge --ua=clash.meta
+vpnkit subs add boost-net  https://example.invalid/sub/boost
+vpnkit subs update
+```
 
-Pick a node:
+Or in the TUI: `3` (Sources) → `a` → form → `Enter`. `u` refreshes a
+subscription; `e` toggles enabled; `d` removes one.
 
-1. `2` (Proxies) → highlight `🚀 Proxy` → `t` delay-tests the whole group
-2. `Enter` to expand → `↓` to a specific node → `Enter` switches to it
+### Add a local node
 
-Subscription URLs accepted: Clash YAML links, base64-encoded text lists, or a
-single protocol URI (`vmess://`, `hysteria2://`, `trojan://`, `vless://`,
-`ss://`, `tuic://`).
+```bash
+vpnkit local-nodes add 'hysteria2://password@1.2.3.4:443?up=100&down=200#HK-manual'
+vpnkit local-nodes add 'ss://YWVz...@1.2.3.4:8388#JP-rented'
+```
+
+Accepts `ss://` `vmess://` `vless://` `trojan://` `hysteria2://` (or `hy2://`)
+and `tuic://` URIs. In the TUI, `3` (Sources) → `↓` (Local Nodes) → `a` →
+paste URI → `Enter`.
+
+### Add a local rule (always wins over subscription rules)
+
+```bash
+vpnkit local-rules add DOMAIN-SUFFIX baidu.com '🎯 Direct'
+vpnkit local-rules add DOMAIN-KEYWORD internal '🎯 Direct'
+vpnkit local-rules list
+```
+
+Local rules render before any subscription's own rules so user intent always
+takes precedence.
+
+### Routing knobs
+
+```bash
+vpnkit mode rule              # default — follow rules
+vpnkit mode global            # all traffic → global target
+vpnkit mode direct            # all traffic bypasses proxy
+vpnkit target doge-auto       # set global target (group or node name)
+```
 
 ### Use the proxy from your shell
 
 ```bash
-eval "$(vpnkit env --shell zsh)"        # or bash / fish
-curl https://www.google.com              # routed through mihomo
-eval "$(vpnkit env --unset)"             # turn off
+eval "$(vpnkit env --shell zsh)"
+curl https://www.google.com
+eval "$(vpnkit env --unset)"
 ```
 
 `vpnkit env` sets both lower- and upper-case variants (`http_proxy`,
-`HTTP_PROXY`, …) so Go programs and uppercase-only readers also see it. It
-also writes a `~/.netrc` entry at mode 0600 for tools that prefer netrc
-(`--no-netrc` to skip).
+`HTTP_PROXY`, …). It also writes a `~/.netrc` entry at mode 0600 for tools
+that prefer netrc (`--no-netrc` to skip).
 
 For a permanent setup, drop named functions into your rc file once:
 
 ```bash
 vpnkit env --shell zsh --functions >> ~/.zshrc
 exec zsh
-# any shell after that:
 proxy_on    # 🟢 proxy on
 proxy_off   # 🔴 proxy off
 ```
@@ -87,7 +118,7 @@ proxy_off   # 🔴 proxy off
 ## Update
 
 vpnkit checks for new releases 2 s after launch and shows a dim `⚡` badge
-in the status bar when one is available. To install:
+in the status bar when one is available.
 
 ```bash
 vpnkit update                            # check + plan + interactive confirm
@@ -97,11 +128,42 @@ vpnkit update --vpnkit-only              # leave mihomo alone
 vpnkit update --mihomo-only              # leave vpnkit alone
 ```
 
-`vpnkit update` upgrades vpnkit and mihomo via direct downloads from
-GitHub Releases (through `HTTPS_PROXY` if you have one set), swaps the
-binaries atomically (POSIX rename over a running executable is safe),
-and `syscall.Exec`'s the new vpnkit so the TUI relaunches with the new
-version. Mihomo restarts during the swap, so the proxy is down for ~1 s.
+## Multi-source architecture
+
+Every subscription becomes its own mihomo `<name>` (select) + `<name>-auto`
+(url-test) group. The top-level `🚀 Proxy` group lists all subscription
+groups + the synthetic `local` group + `DIRECT`; routing's MATCH falls back
+to whichever target the user picked. See
+[`docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md`](docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md)
+for the assembler algorithm in detail.
+
+```
+proxies: each node renamed "<group>:<original-name>" so cross-group
+         duplicates do not collide
+proxy-groups:
+  - {name: doge,        type: select,   proxies: [doge-auto, doge:HK-A, ...]}
+  - {name: doge-auto,   type: url-test, proxies: [doge:HK-A, ...], interval: 300}
+  - {name: boost,       type: select,   ...}
+  - {name: local,       type: select,   proxies: [local:HK-manual, DIRECT]}
+  - {name: 🚀 Proxy,    type: select,   proxies: [<global-target>, ...rest]}
+rules:
+  - <local rules first — always win>
+  - <each enabled subscription's own rules, with targets rewritten>
+  - MATCH,🚀 Proxy
+```
+
+## Multi-user / multi-instance safety
+
+Default ports are randomized into the IANA dynamic range (30000–60000) on
+first install via `crypto/rand` rejection sampling, so two users on the same
+host almost never collide. `portutil.FindFree` scans the next 100 slots as a
+safety net.
+
+Mihomo is configured with `allow-lan: false` + `bind-address: 127.0.0.1` +
+`authentication: [user:pass]`. The user/pass is generated on first launch
+and stored at mode 0600 in `~/.config/vpnkit/config.toml`. The systemd-user
+unit is also mode 0600 to keep proxy credentials in `Environment=` lines off
+world-readable disk.
 
 ## Extensions: chains & custom groups
 
@@ -109,65 +171,34 @@ Chain one subscription node through another (multi-hop egress, `dialer-proxy`)
 and add your own proxy-groups. Edits persist in
 `~/.config/vpnkit/extensions.toml` and survive subscription updates.
 
-### CLI
-
 ```bash
-vpnkit chain ls
 vpnkit chain set "US-1" "JP-Relay"        # US-1 egress now hops through JP-Relay
 vpnkit chain unset "US-1"
-
-vpnkit group ls
 vpnkit group add "Stream" --type select --proxies "US-1,JP-1,DIRECT"
-vpnkit group add "Auto-US" --type url-test \
-    --proxies "US-1,US-2" \
-    --url https://www.gstatic.com/generate_204 \
-    --interval 300 --tolerance 50
-vpnkit group rm "Stream"
-
-vpnkit ext apply                          # reassemble active profile + reload mihomo
+vpnkit ext apply                          # reassemble + reload mihomo
 ```
 
-### TUI
-
-Settings → Extensions. `c` toggles to Chains, `g` to Groups, `a/e/d`
-add/edit/delete the highlighted row, `r` reassembles + reloads. Form has
-inline autocomplete hints from the live `/proxies` snapshot.
-
-### Migration from `patch.yaml`
-
-vpnkit no longer reads `~/.config/mihomo/patch.yaml`. The Settings → Patch
-Editor sub-page has been replaced by Settings → Extensions. For chain /
-proxy-group tweaks, the new structured format is friendlier than free-form
-YAML; for arbitrary mihomo config overrides not covered by chains/groups,
-edit `~/.config/mihomo/config.yaml` after each subscription update
-(or keep an existing `patch.yaml` and merge it manually).
-
-## Multi-user / multi-instance safety
-
-vpnkit picks a free port automatically. If `7890`/`9090` are already taken
-(another user, another tool), it scans upward and persists the chosen ports
-to `~/.config/vpnkit/config.toml`.
-
-Mihomo is configured with `allow-lan: false` + `bind-address: 127.0.0.1` +
-`authentication: [user:pass]`. The user/pass is generated on first launch
-and stored at mode 0600 in `~/.config/vpnkit/config.toml`. Without those
-credentials, **other local users cannot use your proxy** even though it
-listens on the shared loopback.
+In the TUI: Settings → Extensions. `c` toggles to Chains, `g` to Groups,
+`a/e/d` add/edit/delete the highlighted row, `r` reassembles + reloads.
 
 ## CLI
 
 | Command | What it does |
 |---|---|
 | `vpnkit` | open the TUI |
-| `vpnkit status` | mihomo state, mode, ports, groups, active profile |
-| `vpnkit ip` | exit IP via the proxy (uses ipinfo.io) |
-| `vpnkit mode [rule\|global\|direct]` | show or change rule mode |
-| `vpnkit groups` | list user-selectable proxy groups |
-| `vpnkit nodes '<group>'` | list members + cached delay |
+| `vpnkit status` | mihomo state, ports, subscriptions count, local nodes count, mode, global target |
+| `vpnkit ip` | exit IP via the proxy |
+| `vpnkit mode [rule\|global\|direct]` | show or change routing mode |
+| `vpnkit target [<group-or-node>]` | show or set GlobalTarget |
+| `vpnkit subs list/add/rm/enable/disable/update [<name>]` | manage subscriptions |
+| `vpnkit local-nodes list/add <uri>/rm/edit` | manage hand-entered nodes |
+| `vpnkit local-rules list/add/rm/move` | manage local routing rules |
+| `vpnkit groups` | live proxy-group list (from mihomo controller) |
+| `vpnkit nodes '<group>'` | members + cached delay |
 | `vpnkit use '<group>' '<node>'` | switch a group's selection |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
-| `vpnkit init [--restore <path>]` | regenerate config skeleton |
+| `vpnkit init [--force]` | regenerate config skeleton (`--force` backs up existing) |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
 | `vpnkit chain ls/set/unset` | manage dialer-proxy chains |
 | `vpnkit group ls/add/rm` | manage custom proxy-groups |
@@ -176,16 +207,28 @@ listens on the shared loopback.
 All read commands accept `--json` for scripting. Exit codes: `0` ok,
 `1` user error, `2` runtime error.
 
-## TUI cheatsheet
+## TUI layout (v1)
 
-- `1`–`6` jump to tab · `Tab`/`Shift+Tab` cycle · `q` quit (mihomo keeps running)
-- `↑` `↓` `j` `k` navigate · `Enter` activate/expand
-- **Profiles**: `a` add · `u` update · `d` delete · `Enter` set active
-- **Proxies**: `Enter` on group expand/collapse · `Enter` on node switch · `t` delay-test
-- **Connections**: `x` close selected · `/` filter
-- **Rules**: `/` filter · `u` refresh providers
-- **Settings**: `↑`/`↓` cycle subpages (Mihomo Core, Service, External Controller, Default Rules, Extensions, Logs, Cache, About)
-- **Settings → Extensions**: `c` chains / `g` groups · `a` add · `e` edit · `d` delete · `r` apply (reassemble + reload)
+```
+[1] 🏠 Dashboard      live mihomo / traffic
+[2] 🌐 Groups         all groups + nodes (read-only + delay test)
+[3] 📚 Sources        Subscriptions / Local Nodes sub-pages (CRUD)
+[4] 📜 Rules          Live (mihomo view) / Local Rules (CRUD) sub-pages
+[5] 🔗 Connections    live connections (`x` close, `/` filter)
+[6] 📓 Logs           mihomo log tail
+[7] ⚙  Settings       Mihomo Core / Service / External Controller / Routing /
+                      Rule Template / Extensions / Cache / About sub-pages
+```
+
+Keys:
+- `↑↓` navigate · `←` back / sidebar focus · `→` content focus / drill-in · `Enter` activate · `q` quit
+- `1`–`7` jump to tab · `Tab`/`Shift+Tab` cycle
+- **Sources › Subscriptions**: `a` add · `d` delete · `u` update now · `e` toggle enabled
+- **Sources › Local Nodes**: `a` add URI · `d` delete
+- **Rules › Live**: `/` filter · `u` refresh providers · `Tab` switch to Local Rules
+- **Rules › Local Rules**: `d` delete · `K/J` move up/down · `Tab` back to Live
+- **Settings › Routing**: `↑↓ Enter` pick mode · global target editable via `vpnkit target`
+- **Settings → Extensions**: `c` chains / `g` groups · `a/e/d` add/edit/delete · `r` apply
 
 ## Layout
 
@@ -193,10 +236,11 @@ All read commands accept `--json` for scripting. Exit codes: `0` ok,
 |---|---|
 | `~/.local/bin/vpnkit` | this binary |
 | `~/.local/bin/mihomo` | managed mihomo core |
-| `~/.config/vpnkit/config.toml` | profiles, ports, proxy creds, controller secret |
+| `~/.config/vpnkit/config.toml` | subscriptions, local nodes, local rules, ports, creds (schema v2) |
 | `~/.config/vpnkit/extensions.toml` | chains + custom proxy-groups overlay |
-| `~/.config/mihomo/config.yaml` | generated mihomo config (regenerated on each subscription update) |
-| `~/.config/systemd/user/mihomo.service` | systemd-user unit |
+| `~/.config/mihomo/config.yaml` | assembled mihomo config (regenerated on each mutation) |
+| `~/.config/mihomo/*.mmdb / *.dat` | GeoIP / GeoSite data files (pre-seeded by bootstrap) |
+| `~/.config/systemd/user/mihomo.service` | systemd-user unit (mode 0600; forwards your HTTPS_PROXY) |
 | `~/.netrc` | proxy basic-auth entry (written by `vpnkit env`, mode 0600) |
 | `~/.local/state/vpnkit/` | logs, PID file (PID mode) |
 | `~/.cache/vpnkit/` | mihomo archives |
