@@ -551,6 +551,67 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 					m.form = nil
 					return m, emitPipelineMutated()
 				}
+			case formModeNodeFields:
+				switch km.Type {
+				case tea.KeyEsc:
+					m.form = nil
+					return m, nil
+				case tea.KeyEnter:
+					n, err := m.form.commitFieldForm()
+					if err != nil {
+						m.flash = "save: " + err.Error()
+						return m, nil
+					}
+					if m.deps.Pipeline != nil {
+						if err := m.deps.Pipeline.LocalNodes().Add(n); err != nil {
+							m.flash = "add: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+						_ = m.deps.Pipeline.SaveLocal()
+						m.flash = "added " + n.Group + ":" + n.Name
+						m.nodes = m.deps.Pipeline.LocalNodes().All()
+						m.form = nil
+						return m, emitPipelineMutated()
+					}
+					m.form = nil
+					return m, nil
+				case tea.KeyTab, tea.KeyDown:
+					if m.form.focused < len(m.form.inputs)-1 {
+						m.form.inputs[m.form.focused].Blur()
+						m.form.focused++
+						m.form.inputs[m.form.focused].Focus()
+					}
+					return m, nil
+				case tea.KeyShiftTab, tea.KeyUp:
+					if m.form.focused > 0 {
+						m.form.inputs[m.form.focused].Blur()
+						m.form.focused--
+						m.form.inputs[m.form.focused].Focus()
+					}
+					return m, nil
+				}
+				switch km.String() {
+				case "p":
+					idx := 0
+					for i, p := range supportedProtos {
+						if p == m.form.proto {
+							idx = i
+							break
+						}
+					}
+					next := supportedProtos[(idx+1)%len(supportedProtos)]
+					m.form = newLocalNodeFieldForm(next, m.form.defaultGroup)
+					return m, nil
+				case "u":
+					f := newLocalNodeURIForm()
+					f.defaultGroup = m.form.defaultGroup
+					m.form = f
+					return m, nil
+				}
+				var cmd tea.Cmd
+				m.form.inputs[m.form.focused], cmd = m.form.inputs[m.form.focused].Update(message)
+				return m, cmd
 			default: // URI form (existing behavior)
 				switch km.Type {
 				case tea.KeyEsc:
@@ -581,6 +642,8 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				}
 			}
 		}
+		// Single-input modes (URI / NewGroup / Rename) delegate remaining
+		// key events to the single textinput model.
 		var cmd tea.Cmd
 		m.form.input, cmd = m.form.input.Update(message)
 		return m, cmd
@@ -597,10 +660,10 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				m.cursor++
 			}
 		case "a":
-			f := newLocalNodeURIForm()
-			f.defaultGroup = m.currentGroup
-			m.form = f
+			m.form = newLocalNodeFieldForm("hysteria2", m.currentGroup)
+			return m, nil
 		case "u":
+			// URI mode for one-shot paste.
 			f := newLocalNodeURIForm()
 			f.defaultGroup = m.currentGroup
 			m.form = f
