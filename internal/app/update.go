@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"vpnkit/internal/profiles"
 	tabprofiles "vpnkit/internal/tabs/profiles"
 	tabproxies "vpnkit/internal/tabs/proxies"
 	tabrules "vpnkit/internal/tabs/rules"
@@ -18,21 +17,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// When the add-form overlay is open, route all key input to it (except Enter/Esc).
+	// TODO(v1-phase8): add-form will be replaced by Sources sub-page in TUI restructure.
 	if m.showAddForm {
 		if km, ok := msg.(tea.KeyMsg); ok {
 			switch km.Type {
 			case tea.KeyEnter:
-				name := m.addForm.Name()
-				url := m.addForm.URL()
 				m.showAddForm = false
-				if name != "" && url != "" && m.profilesMgr != nil {
-					if err := m.profilesMgr.Add(profiles.Profile{Name: name, URL: url}); err != nil {
-						m.flash = "❌ add: " + err.Error()
-					} else {
-						m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-						m.flash = "✅ added " + name
-					}
-				}
+				m.flash = "⚠️  Profiles add not available in v1 — use `vpnkit subs add` CLI"
 				return m, nil
 			case tea.KeyEsc:
 				m.showAddForm = false
@@ -195,6 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		// Profiles-tab-specific keys (only when not showing form).
+		// TODO(v1-phase8): this tab will be replaced by Groups/Sources in Phase 8.
+		// Until then, navigation works but add/update/delete/activate are no-ops.
 		if m.activeTab == TabProfiles && !m.showAddForm {
 			switch v.String() {
 			case "a":
@@ -202,45 +195,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showAddForm = true
 				return m, nil
 			case "u":
-				sel := m.profilesTab.Selected()
-				if sel.Name != "" && m.profilesMgr != nil {
-					mgr := m.profilesMgr
-					pt := &m.profilesTab
-					applyCfg := m.applyCfg
-					cmd = func() tea.Msg {
-						n, err := mgr.Update(context.Background(), sel.Name)
-						if err != nil {
-							return ProfileError{Name: sel.Name, Err: err}
-						}
-						pt.SetProfiles(mgr.All(), mgr.Active())
-						if applyCfg != nil {
-							// Surface reload errors as ProfileError instead of
-							// silently swallowing them (the old `_ = Reload` bug
-							// left mihomo running stale config after secret drift).
-							if err := applyCfg(context.Background()); err != nil {
-								return ProfileError{Name: sel.Name, Err: err}
-							}
-						}
-						return ProfileUpdated{Name: sel.Name, NodeCount: n}
-					}
-					return m, cmd
-				}
+				m.flash = "⚠️  Use `vpnkit subs update <name>` CLI — TODO(v1-phase8)"
 				return m, nil
 			case "d":
-				sel := m.profilesTab.Selected()
-				if sel.Name != "" && m.profilesMgr != nil {
-					m.profilesMgr.Remove(sel.Name)
-					m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-					m.flash = "🗑️  removed " + sel.Name
-				}
+				m.flash = "⚠️  Use `vpnkit subs rm <name>` CLI — TODO(v1-phase8)"
 				return m, nil
 			case "enter":
-				sel := m.profilesTab.Selected()
-				if sel.Name != "" && m.profilesMgr != nil {
-					m.profilesMgr.SetActive(sel.Name)
-					m.profilesTab.SetProfiles(m.profilesMgr.All(), m.profilesMgr.Active())
-					m.flash = "⭐ active = " + sel.Name
-				}
+				m.flash = "⚠️  Profile activation not available in v1 — TODO(v1-phase8)"
 				return m, nil
 			case "up", "k":
 				m.profilesTab.MoveUp()

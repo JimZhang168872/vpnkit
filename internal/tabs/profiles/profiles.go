@@ -1,4 +1,5 @@
 // Package profiles implements the Profiles tab (subscription CRUD).
+// TODO(v1-phase8): This tab will be replaced by the Groups/Sources tab in Phase 8 TUI restructure.
 package profiles
 
 import (
@@ -7,26 +8,32 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"vpnkit/internal/msg"
-	"vpnkit/internal/profiles"
 	"vpnkit/internal/tabs/viewport"
 )
 
+// Profile is a stub type used until Phase 8 replaces this tab.
+// TODO(v1-phase8): wire to store.Subscription after TUI restructure.
+type Profile struct {
+	Name        string
+	URL         string
+	NodeCount   int
+}
+
 // Model is the Profiles tab.
 type Model struct {
-	mgr    *profiles.Manager
-	list   []profiles.Profile
+	list   []Profile
 	active string
 	cursor int
 }
 
-// New builds an empty Profiles tab. The owner injects a *profiles.Manager.
-func New(mgr *profiles.Manager) Model {
-	return Model{mgr: mgr}
+// New builds an empty Profiles tab.
+// TODO(v1-phase8): mgr param removed; wire Pipeline.LocalNodes/Subscriptions after TUI restructure.
+func New(_ any) Model {
+	return Model{}
 }
 
 // SetProfiles refreshes the rendered list (called when manager state changes).
-func (m *Model) SetProfiles(list []profiles.Profile, active string) {
+func (m *Model) SetProfiles(list []Profile, active string) {
 	m.list = list
 	m.active = active
 	if m.cursor >= len(m.list) {
@@ -35,9 +42,9 @@ func (m *Model) SetProfiles(list []profiles.Profile, active string) {
 }
 
 // Selected returns the currently-highlighted profile.
-func (m Model) Selected() profiles.Profile {
+func (m Model) Selected() Profile {
 	if m.cursor >= len(m.list) {
-		return profiles.Profile{}
+		return Profile{}
 	}
 	return m.list[m.cursor]
 }
@@ -81,16 +88,7 @@ func (m *Model) MovePageUp() {
 func (Model) Init() tea.Cmd { return nil }
 
 // Update absorbs tea.Msg.
-func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
-	switch ev := message.(type) {
-	case msg.ProfileUpdated:
-		if m.mgr != nil {
-			m.list = m.mgr.All()
-			m.active = m.mgr.Active()
-		}
-	case msg.ProfileError:
-		_ = ev
-	}
+func (m Model) Update(_ tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
@@ -105,8 +103,10 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("📋 Profiles")
 	var rows []string
 	if len(m.list) == 0 {
-		rows = append(rows, header, "", "  No subscriptions yet — press 'a' to add",
-			"", "[a] add  [u] update  [Enter] activate  [d] delete  [↑↓] navigate")
+		rows = append(rows, header, "",
+			"  Subscriptions now managed via Settings → Sources",
+			"  TODO(v1-phase8): Groups/Sources tab coming in Phase 8",
+			"", "[↑↓] navigate")
 		return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 	}
 	// Reserve: header(1) + blank + footer(1) + padding(2) ≈ 5.
@@ -140,7 +140,7 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 		}
 		rows = append(rows, row)
 	}
-	rows = append(rows, "", "[a] add  [u] update  [Enter] activate  [d] delete  [↑↓] navigate")
+	rows = append(rows, "", "[↑↓] navigate")
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
 		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }

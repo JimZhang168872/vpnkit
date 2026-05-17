@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
-	"vpnkit/internal/profiles"
 	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/stub"
 	tabconnections "vpnkit/internal/tabs/connections"
@@ -60,7 +59,7 @@ type Model struct {
 	settingsTab    tabsettings.Model
 	stubs          [NumTabs]stub.Model // index 0 unused; entries for non-profiles tabs
 
-	profilesMgr *profiles.Manager
+	// profilesMgr removed — v1 uses Pipeline. TODO(v1-phase8): remove this tab entirely.
 	showAddForm bool
 	addForm     tabprofiles.Form
 
@@ -184,8 +183,9 @@ func (m *Model) recordProxyNames(snap ProxiesSnapshot) {
 	}
 }
 
-// NewModel constructs the initial model. client and mgr may be nil during tests.
-func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
+// NewModel constructs the initial model. client may be nil during tests.
+// TODO(v1-phase8): mgr param removed; second arg is now ignored (passes nil from run.go).
+func NewModel(client *api.Client, _ any, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
 	stubs := [NumTabs]stub.Model{}
 	for i := TabProxies; i < NumTabs; i++ {
 		if i == TabProfiles || i == TabProxies || i == TabConnections || i == TabRules || i == TabSettings {
@@ -193,16 +193,12 @@ func NewModel(client *api.Client, mgr *profiles.Manager, settingsDeps tabsetting
 		}
 		stubs[i] = stub.New(TabNames[i])
 	}
-	pt := tabprofiles.New(mgr)
-	if mgr != nil {
-		pt.SetProfiles(mgr.All(), mgr.Active())
-	}
+	pt := tabprofiles.New(nil)
 	return Model{
 		keys:           DefaultKeys(),
 		activeTab:      TabDashboard,
 		dashboard:      dashboard.New(),
 		profilesTab:    pt,
-		profilesMgr:    mgr,
 		proxiesTab:     tabproxies.New(),
 		connectionsTab: tabconnections.New(),
 		rulesTab:       tabrules.New(),

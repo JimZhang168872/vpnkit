@@ -14,7 +14,6 @@ import (
 	"vpnkit/internal/msg"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/portutil"
-	"vpnkit/internal/profiles"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 	tabsettings "vpnkit/internal/tabs/settings"
@@ -58,37 +57,16 @@ func Run(version string) error {
 	// absent, bootstrap will create it from scratch.
 	configChanged, _ := ensureConfigSecurity(st, p.MihomoConfigFile())
 
-	profMgr := profiles.New(profiles.Config{
-		ConfigYAMLPath:   p.MihomoConfigFile(),
-		ExtensionsPath:   filepath.Join(p.VpnkitConfig, "extensions.toml"),
-		ControllerPort:   st.Cfg.ControllerPort,
-		ControllerSecret: st.Cfg.ControllerSecret,
-		MixedPort:        st.Cfg.MixedPort,
-		RuleTemplate:     st.Cfg.LegacyRuleTemplate,
-		ProxyUser:        st.Cfg.ProxyUser,
-		ProxyPass:        st.Cfg.ProxyPass,
-	})
-	profMgr.Load(toProfilesProfiles(st.Cfg.LegacyProfiles), st.Cfg.LegacyActiveProfile)
-	profMgr.SetOnChange(func() {
-		persisted := make([]store.Profile, 0)
-		for _, p := range profMgr.All() {
-			persisted = append(persisted, store.Profile{
-				Name:        p.Name,
-				URL:         p.URL,
-				UserAgent:   p.UserAgent,
-				LastUpdated: p.LastUpdated,
-			})
-		}
-		st.Cfg.LegacyProfiles = persisted
-		st.Cfg.LegacyActiveProfile = profMgr.Active()
-		_ = st.Save()
-	})
+	pl := NewPipeline(st, p.MihomoConfigFile(), filepath.Join(p.VpnkitConfig, "extensions.toml"))
 
-	// Closure that profile-update + startup-reload paths use to push config
+	// Closure that subscription-update + startup-reload paths use to push config
 	// changes into the live mihomo. Tries hot reload first, restarts the
 	// service on any error (e.g. controller-secret drift between store.toml
 	// and mihomo's in-memory boot state — silently fatal in v0.7.1).
 	applyCfg := func(ctx context.Context) error {
+		if err := pl.Assemble(); err != nil {
+			return err
+		}
 		return applyConfig(ctx, client, svc)
 	}
 
@@ -108,19 +86,12 @@ func Run(version string) error {
 			return modelRef.CurrentProxyNames()
 		},
 		ApplyFunc: func() error {
-			active := profMgr.Active()
-			if active == "" {
-				return fmt.Errorf("no active profile — set one first via Profiles tab")
-			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if _, err := profMgr.Update(ctx, active); err != nil {
-				return err
-			}
 			return applyCfg(ctx)
 		},
 	}
-	model := NewModel(client, profMgr, settingsDeps, applyCfg)
+	model := NewModel(client, nil, settingsDeps, applyCfg)
 	modelRef = &model
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
@@ -357,11 +328,3 @@ func reconcilePorts(svc service.Manager, st *store.Store, configFile string) err
 	return nil
 }
 
-// toProfilesProfiles converts store.Profile slice to profiles.Profile slice.
-func toProfilesProfiles(in []store.Profile) []profiles.Profile {
-	out := make([]profiles.Profile, len(in))
-	for i, x := range in {
-		out[i] = profiles.Profile{Name: x.Name, URL: x.URL, UserAgent: x.UserAgent, LastUpdated: x.LastUpdated}
-	}
-	return out
-}
