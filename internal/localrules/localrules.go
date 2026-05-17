@@ -128,6 +128,9 @@ func (m *Manager) Move(from, to int) error {
 	if from < 0 || from >= len(m.rules) || to < 0 || to >= len(m.rules) {
 		return fmt.Errorf("localrules: bad indices %d→%d", from, to)
 	}
+	if from == to {
+		return nil
+	}
 	r := m.rules[from]
 	m.rules = append(m.rules[:from], m.rules[from+1:]...)
 	m.rules = append(m.rules[:to], append([]Rule{r}, m.rules[to:]...)...)

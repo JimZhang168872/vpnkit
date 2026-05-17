@@ -110,3 +110,48 @@ func TestMoveOutOfRange(t *testing.T) {
 		t.Error("expected out-of-range error for from")
 	}
 }
+
+func TestMoveDirections(t *testing.T) {
+	mkManager := func() *Manager {
+		m := New()
+		_ = m.Add(Rule{"DOMAIN-SUFFIX", "a.com", "🎯 Direct"})
+		_ = m.Add(Rule{"DOMAIN-SUFFIX", "b.com", "🚀 Proxy"})
+		_ = m.Add(Rule{"DOMAIN-SUFFIX", "c.com", "🛑 Reject"})
+		return m
+	}
+	tests := []struct {
+		name     string
+		from, to int
+		want     []string // payloads in order
+	}{
+		{"from<to start to mid", 0, 1, []string{"b.com", "a.com", "c.com"}},
+		{"from<to start to end", 0, 2, []string{"b.com", "c.com", "a.com"}},
+		{"from>to end to start", 2, 0, []string{"c.com", "a.com", "b.com"}},
+		{"from>to end to mid", 2, 1, []string{"a.com", "c.com", "b.com"}},
+		{"from==to identity at start", 0, 0, []string{"a.com", "b.com", "c.com"}},
+		{"from==to identity at end", 2, 2, []string{"a.com", "b.com", "c.com"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := mkManager()
+			if err := m.Move(tc.from, tc.to); err != nil {
+				t.Fatalf("Move(%d,%d): %v", tc.from, tc.to, err)
+			}
+			all := m.All()
+			for i, want := range tc.want {
+				if all[i].Payload != want {
+					t.Errorf("after Move(%d,%d) idx %d = %q, want %q (full=%v)",
+						tc.from, tc.to, i, all[i].Payload, want, payloads(all))
+				}
+			}
+		})
+	}
+}
+
+func payloads(rs []Rule) []string {
+	out := make([]string, len(rs))
+	for i, r := range rs {
+		out[i] = r.Payload
+	}
+	return out
+}
