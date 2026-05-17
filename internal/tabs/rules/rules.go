@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // Model is the Rules tab.
@@ -93,11 +94,35 @@ func (m Model) View(width, height int) string {
 		rows = append(rows, "")
 	}
 
-	rows = append(rows, lipgloss.NewStyle().Bold(true).Render("Rules"))
+	// Build filtered list first so we can window it.
+	filtered := make([]msg.RuleEntry, 0, len(m.rules))
 	for _, r := range m.rules {
 		if m.filter != "" && !strings.Contains(r.Payload, m.filter) && !strings.Contains(r.Type, m.filter) && !strings.Contains(r.Proxy, m.filter) {
 			continue
 		}
+		filtered = append(filtered, r)
+	}
+
+	// Reserve rows: header(1) + blank + "Rules"(1) + blank + footer(1-2) + padding(2)
+	// + Rule Providers section (variable). Estimate provider rows used:
+	providerRows := 0
+	if len(m.providers) > 0 {
+		providerRows = 1 + len(m.providers) + 1 // header + N rows + blank
+	}
+	maxList := height - providerRows - 8
+	if maxList < 3 {
+		maxList = 3
+	}
+	start, end := viewport.Window(len(filtered), 0, maxList)
+	indicator := viewport.Indicator(start, len(filtered), maxList, 0)
+
+	rulesHeader := lipgloss.NewStyle().Bold(true).Render("Rules")
+	if indicator != "" {
+		rulesHeader += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	rows = append(rows, rulesHeader)
+	for i := start; i < end; i++ {
+		r := filtered[i]
 		rows = append(rows, fmt.Sprintf("  %-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy))
 	}
 	if m.filtering {

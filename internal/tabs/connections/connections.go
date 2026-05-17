@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // Model is the Connections tab.
@@ -119,10 +120,22 @@ func (m Model) visible() []msg.ConnectionItem {
 func (m Model) View(width, height int) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Connections")
 	stats := fmt.Sprintf("  ↑ %s    ↓ %s    %d active", human(m.totalUp), human(m.totalDn), len(m.items))
-	rows := []string{header, stats, ""}
-	rows = append(rows, fmt.Sprintf("  %-30s  %-6s  %-12s  %-12s  %s", "HOST", "PORT", "UP", "DOWN", "RULE"))
 	visible := m.visible()
-	for i, it := range visible {
+	// Reserve: header(1) + stats(1) + blank + colhead(1) + blank + footer(1) + padding(2) ≈ 7.
+	maxRows := height - 7
+	if maxRows < 3 {
+		maxRows = 3
+	}
+	start, end := viewport.Window(len(visible), m.cursor, maxRows)
+	indicator := viewport.Indicator(start, len(visible), maxRows, m.cursor)
+
+	colHead := fmt.Sprintf("  %-30s  %-6s  %-12s  %-12s  %s", "HOST", "PORT", "UP", "DOWN", "RULE")
+	if indicator != "" {
+		colHead += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	rows := []string{header, stats, "", colHead}
+	for i := start; i < end; i++ {
+		it := visible[i]
 		prefix := "  "
 		if i == m.cursor {
 			prefix = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("▶ ")

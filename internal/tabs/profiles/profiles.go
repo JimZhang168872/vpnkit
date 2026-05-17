@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/msg"
 	"vpnkit/internal/profiles"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // Model is the Profiles tab.
@@ -74,11 +75,25 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 func (m Model) View(width, height int) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("📋 Profiles")
 	var rows []string
-	rows = append(rows, header, "")
 	if len(m.list) == 0 {
-		rows = append(rows, "  No subscriptions yet — press 'a' to add")
+		rows = append(rows, header, "", "  No subscriptions yet — press 'a' to add",
+			"", "[a] add  [u] update  [Enter] activate  [d] delete  [↑↓] navigate")
+		return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 	}
-	for i, p := range m.list {
+	// Reserve: header(1) + blank + footer(1) + padding(2) ≈ 5.
+	maxRows := height - 5
+	if maxRows < 3 {
+		maxRows = 3
+	}
+	start, end := viewport.Window(len(m.list), m.cursor, maxRows)
+	indicator := viewport.Indicator(start, len(m.list), maxRows, m.cursor)
+	titleLine := header
+	if indicator != "" {
+		titleLine += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	rows = append(rows, titleLine, "")
+	for i := start; i < end; i++ {
+		p := m.list[i]
 		marker := "  "
 		if p.Name == m.active {
 			marker = "⭐ "
@@ -92,8 +107,7 @@ func (m Model) View(width, height int) string {
 		rows = append(rows, row)
 	}
 	rows = append(rows, "", "[a] add  [u] update  [Enter] activate  [d] delete  [↑↓] navigate")
-	body := strings.Join(rows, "\n")
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(body)
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func truncate(s string, n int) string {

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/extensions"
+	"vpnkit/internal/tabs/viewport"
 )
 
 // ProxyNamesFunc returns the current set of mihomo proxy names + group names
@@ -90,6 +91,7 @@ type extensionsModel struct {
 	ext       extensions.Extensions
 	pane      extPane
 	row       int
+	height    int // last known body height, set on each View call
 	flash     string
 	names     ProxyNamesFunc
 	form      *extForm
@@ -247,16 +249,28 @@ func (m extensionsModel) commitForm() extensionsModel {
 }
 
 func (m extensionsModel) View(width, height int) string {
+	m.height = height
 	if m.form != nil {
 		return m.renderForm(width, height)
 	}
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Extensions")
 	tabs := m.renderTabs()
-	body := m.renderList()
+	// Reserve rows: header(1) + blank + tabs(1) + blank + blank + footer(1) +
+	// flash(1 if present) + blank + file:(1) + padding(2) ≈ 10. The
+	// viewport gets whatever's left.
+	maxList := height - 11
+	if maxList < 3 {
+		maxList = 3
+	}
+	body, indicator := m.renderList(maxList)
 	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
 		"[c]hains [g]roups   [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply",
 	)
-	out := header + "\n\n" + tabs + "\n\n" + body + "\n\n" + footer
+	out := header + "\n\n" + tabs
+	if indicator != "" {
+		out += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
+	}
+	out += "\n\n" + body + "\n\n" + footer
 	if m.flash != "" {
 		out += "\n  → " + m.flash
 	}
@@ -276,31 +290,37 @@ func (m extensionsModel) renderTabs() string {
 		style(m.pane == paneGroups).Render(fmt.Sprintf("[g] Groups (%d)", len(m.ext.Groups)))
 }
 
-func (m extensionsModel) renderList() string {
-	lines := []string{}
+func (m extensionsModel) renderList(maxRows int) (body, indicator string) {
+	total := m.activeLen()
+	if total == 0 {
+		switch m.pane {
+		case paneChains:
+			return "  (no chains)", ""
+		case paneGroups:
+			return "  (no groups)", ""
+		}
+	}
+	start, end := viewport.Window(total, m.row, maxRows)
 	cursor := func(i int) string {
 		if i == m.row {
 			return "▶ "
 		}
 		return "  "
 	}
+	lines := []string{}
 	switch m.pane {
 	case paneChains:
-		for i, c := range m.ext.Chains {
+		for i := start; i < end; i++ {
+			c := m.ext.Chains[i]
 			lines = append(lines, cursor(i)+fmt.Sprintf("%-30s → %s", c.Node, c.Via))
 		}
-		if len(lines) == 0 {
-			lines = append(lines, "  (no chains)")
-		}
 	case paneGroups:
-		for i, g := range m.ext.Groups {
+		for i := start; i < end; i++ {
+			g := m.ext.Groups[i]
 			lines = append(lines, cursor(i)+fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ",")))
 		}
-		if len(lines) == 0 {
-			lines = append(lines, "  (no groups)")
-		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), viewport.Indicator(start, total, maxRows, m.row)
 }
 
 func (m extensionsModel) renderForm(width, height int) string {
