@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,8 +74,8 @@ func TestZeroPortBackfillUsesHighRange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	// Construct a TOML deliberately missing both port keys so Load's
 	// zero-port backfill branch fires.
-	if err := os.WriteFile(path, []byte(`controller_secret = "deadbeef"
-rule_template = "loyalsoldier"
+	if err := os.WriteFile(path, []byte(`schema_version = 2
+controller_secret = "deadbeef"
 proxy_user = "vpnkit-abcd"
 proxy_pass = "0123456789abcdef"
 ui_theme = "default"
@@ -100,10 +101,10 @@ ui_theme = "default"
 // would clobber a working user's hand-edited / pre-existing port choice.
 func TestExistingPortsArePreserved(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte(`controller_secret = "deadbeef"
+	if err := os.WriteFile(path, []byte(`schema_version = 2
+controller_secret = "deadbeef"
 controller_port = 7890
 mixed_port = 7891
-rule_template = "loyalsoldier"
 proxy_user = "vpnkit-abcd"
 proxy_pass = "0123456789abcdef"
 ui_theme = "default"
@@ -189,5 +190,28 @@ func TestSaveAndReload(t *testing.T) {
 	}
 	if len(s2.Cfg.LegacyProfiles) != 1 || s2.Cfg.LegacyProfiles[0].Name != "airport-A" {
 		t.Errorf("profiles not persisted: %+v", s2.Cfg.LegacyProfiles)
+	}
+}
+
+func TestLoadRejectsV1Store(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	v1 := `controller_secret = "deadbeef"
+controller_port = 9090
+mixed_port = 7890
+rule_template = "loyalsoldier"
+active_profile = "doge"
+[[profiles]]
+name = "doge"
+url = "https://example.invalid/sub"
+`
+	if err := os.WriteFile(path, []byte(v1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected v1 store rejection, got nil")
+	}
+	if !strings.Contains(err.Error(), "schema") || !strings.Contains(err.Error(), "vpnkit init --force") {
+		t.Errorf("error should mention schema upgrade + remedy command, got: %v", err)
 	}
 }

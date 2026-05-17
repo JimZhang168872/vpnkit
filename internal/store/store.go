@@ -102,6 +102,15 @@ func Load(path string) (*Store, error) {
 	// the result so generated creds survive across launches (otherwise users
 	// upgrading from a pre-auth version would see fresh creds every run).
 	changed := false
+	if s.Cfg.SchemaVersion == 0 && (s.Cfg.LegacyActiveProfile != "" || len(s.Cfg.LegacyProfiles) > 0 || s.Cfg.LegacyRuleTemplate != "") {
+		return nil, fmt.Errorf("store at %s uses schema v1 (vpnkit ≤ v0.10.x); "+
+			"v1.0.0 changed the data model. Back up the file, then run "+
+			"`vpnkit init --force` to regenerate", path)
+	}
+	if s.Cfg.SchemaVersion == 0 {
+		s.Cfg.SchemaVersion = 2
+		changed = true
+	}
 	if s.Cfg.ControllerPort == 0 {
 		s.Cfg.ControllerPort = randomHighPort()
 		changed = true
