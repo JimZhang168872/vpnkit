@@ -248,7 +248,16 @@ func (m extensionsModel) commitForm() extensionsModel {
 	return m
 }
 
+// View renders the Extensions sub-page assuming this panel has the input
+// focus (tests + standalone callers go here). Settings.View prefers
+// ViewFocused so it can dim the cursor when the sub-sidebar is focused.
 func (m extensionsModel) View(width, height int) string {
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused is View + an explicit focused-state flag controlling the
+// cursor color (212 bright when focused, 240 dim when sidebar is focused).
+func (m extensionsModel) ViewFocused(width, height int, focused bool) string {
 	m.height = height
 	if m.form != nil {
 		return m.renderForm(width, height)
@@ -266,11 +275,18 @@ func (m extensionsModel) View(width, height int) string {
 	if innerWidth < 20 {
 		innerWidth = 20
 	}
-	body, indicator := m.renderList(maxList, innerWidth)
+	body, indicator := m.renderList(maxList, innerWidth, focused)
+	hint := "[← →] panels  [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply  [c]hains [g]roups"
 	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
-		viewport.TruncateDisplay("[c]hains [g]roups   [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply", innerWidth),
+		viewport.TruncateDisplay(hint, innerWidth),
 	)
-	out := header + "\n\n" + tabs
+	// Header gets a focus dot (● bright when this panel owns input, ○ dim
+	// otherwise) so the user can see at a glance which panel ↑/↓ will hit.
+	dot := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○ ")
+	if focused {
+		dot = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("● ")
+	}
+	out := dot + header + "\n\n" + tabs
 	if indicator != "" {
 		out += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
 	}
@@ -295,7 +311,7 @@ func (m extensionsModel) renderTabs() string {
 		style(m.pane == paneGroups).Render(fmt.Sprintf("[g] Groups (%d)", len(m.ext.Groups)))
 }
 
-func (m extensionsModel) renderList(maxRows, innerWidth int) (body, indicator string) {
+func (m extensionsModel) renderList(maxRows, innerWidth int, focused bool) (body, indicator string) {
 	total := m.activeLen()
 	if total == 0 {
 		switch m.pane {
@@ -306,9 +322,16 @@ func (m extensionsModel) renderList(maxRows, innerWidth int) (body, indicator st
 		}
 	}
 	start, end := viewport.Window(total, m.row, maxRows)
-	cursor := func(i int) string {
+	// Cursor color: bright pink when this panel is focused, gray when not —
+	// the user can see at a glance whether ↑/↓ will move this cursor.
+	cursorColor := lipgloss.Color("240")
+	if focused {
+		cursorColor = lipgloss.Color("212")
+	}
+	cursorStyle := lipgloss.NewStyle().Foreground(cursorColor)
+	mark := func(i int) string {
 		if i == m.row {
-			return "▶ "
+			return cursorStyle.Render("▶ ")
 		}
 		return "  "
 	}
@@ -318,13 +341,13 @@ func (m extensionsModel) renderList(maxRows, innerWidth int) (body, indicator st
 		for i := start; i < end; i++ {
 			c := m.ext.Chains[i]
 			line := fmt.Sprintf("%-30s → %s", c.Node, c.Via)
-			lines = append(lines, cursor(i)+viewport.TruncateDisplay(line, innerWidth-2))
+			lines = append(lines, mark(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	case paneGroups:
 		for i := start; i < end; i++ {
 			g := m.ext.Groups[i]
 			line := fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ","))
-			lines = append(lines, cursor(i)+viewport.TruncateDisplay(line, innerWidth-2))
+			lines = append(lines, mark(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	}
 	return strings.Join(lines, "\n"), viewport.Indicator(start, total, maxRows, m.row)

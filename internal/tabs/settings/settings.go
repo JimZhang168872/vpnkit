@@ -28,6 +28,20 @@ const (
 	NumSubPages
 )
 
+// SettingsFocus is the two-state focus the user toggles with ←/→ inside
+// Settings to indicate which panel ↑/↓ should affect. Without this, ↑/↓
+// behavior depended on which sub-page was active and the user couldn't
+// tell what they were navigating.
+type SettingsFocus int
+
+const (
+	// FocusSidebar = ↑/↓ moves between sub-pages.
+	FocusSidebar SettingsFocus = iota
+	// FocusContent = ↑/↓ goes to the sub-page's internal list (only
+	// meaningful on sub-pages that own arrows, currently SubExtensions).
+	FocusContent
+)
+
 // SubPageNames is human labels for the sidebar.
 var SubPageNames = [NumSubPages]string{
 	"Mihomo Core",
@@ -55,6 +69,7 @@ type Deps struct {
 type Model struct {
 	deps    Deps
 	current SubPage
+	focus   SettingsFocus
 
 	about      aboutModel
 	cache      cacheModel
@@ -65,6 +80,9 @@ type Model struct {
 	extensions extensionsModel
 	logs       logs.Model
 }
+
+// Focus exposes the active focus state (for tests / rendering).
+func (m Model) Focus() SettingsFocus { return m.focus }
 
 // New constructs the Settings tab Model with all sub-pages instantiated.
 func New(deps Deps) Model {
@@ -106,47 +124,65 @@ func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
-		// Smart ↑/↓ dispatch:
-		//   - PgUp / PgDown always switch sub-page (force-exit a sub-page
-		//     that owns its arrow keys).
-		//   - ↑ / ↓:
-		//       * On a sub-page that owns its own list navigation
-		//         (currently only SubExtensions) → delegate to the sub-page.
-		//       * On a sub-page with no internal list → switch sub-page
-		//         (the user's intuition).
-		// Previous attempts at "always intercept ↑/↓" broke Extensions; at
-		// "never intercept ↑/↓" broke every other sub-page (they didn't
-		// react at all because they don't consume the key).
+		// Focus-based navigation model (Bug M):
+		//   ←  : if Extensions+FocusContent → focus sidebar; else prev sub-page
+		//   →  : if Extensions+FocusSidebar → focus content; else next sub-page
+		//   ↑↓ : on FocusContent → delegate to sub-page; else switch sub-page
+		//   PgUp/PgDn: ALWAYS switch sub-page (force exit from content)
+		// Any sub-page change resets focus to sidebar so the user doesn't
+		// land on a non-Extensions page with stale FocusContent.
 		switch km.Type {
-		case tea.KeyPgDown, tea.KeyRight:
-			// ← / → are alternates for ↑ / ↓ but ALWAYS switch sub-page
-			// (regardless of whether the active sub-page owns arrows),
-			// so the user has an unambiguous "next page" / "previous
-			// page" key even inside Extensions's list. Fixes Bug H —
-			// ←/→ used to silently no-op on Settings.
+		case tea.KeyRight:
+			if subPageOwnsArrows(m.current) && m.focus == FocusSidebar {
+				m.focus = FocusContent
+				return m, nil
+			}
 			if m.current < NumSubPages-1 {
 				m.current++
 			}
+			m.focus = FocusSidebar
 			return m, nil
-		case tea.KeyPgUp, tea.KeyLeft:
+		case tea.KeyLeft:
+			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
+				m.focus = FocusSidebar
+				return m, nil
+			}
 			if m.current > 0 {
 				m.current--
 			}
+			m.focus = FocusSidebar
+			return m, nil
+		case tea.KeyPgDown:
+			if m.current < NumSubPages-1 {
+				m.current++
+			}
+			m.focus = FocusSidebar
+			return m, nil
+		case tea.KeyPgUp:
+			if m.current > 0 {
+				m.current--
+			}
+			m.focus = FocusSidebar
 			return m, nil
 		case tea.KeyDown:
-			if !subPageOwnsArrows(m.current) {
-				if m.current < NumSubPages-1 {
-					m.current++
-				}
-				return m, nil
+			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
+				// fall through to sub-page delegation below
+				break
 			}
+			if m.current < NumSubPages-1 {
+				m.current++
+			}
+			m.focus = FocusSidebar
+			return m, nil
 		case tea.KeyUp:
-			if !subPageOwnsArrows(m.current) {
-				if m.current > 0 {
-					m.current--
-				}
-				return m, nil
+			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
+				break
 			}
+			if m.current > 0 {
+				m.current--
+			}
+			m.focus = FocusSidebar
+			return m, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -174,7 +210,8 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 func (m Model) View(width, height int) string {
 	subWidth := 22
 	bodyWidth := width - subWidth - 1
-	side := renderSubSidebar(m.current, height)
+	side := renderSubSidebar(m.current, height, m.focus == FocusSidebar)
+	contentFocused := m.focus == FocusContent
 	var body string
 	switch m.current {
 	case SubAbout:
@@ -190,17 +227,25 @@ func (m Model) View(width, height int) string {
 	case SubCore:
 		body = m.core.View(bodyWidth, height)
 	case SubExtensions:
-		body = m.extensions.View(bodyWidth, height)
+		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubLogs:
 		body = m.logs.View(bodyWidth, height)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }
 
-func renderSubSidebar(active SubPage, height int) string {
+func renderSubSidebar(active SubPage, height int, focused bool) string {
+	// Color cue (Bug M): when this sidebar has the input focus the active
+	// row is bright 212; when the user has shifted focus to the content
+	// panel the active row dims to 240 so they can see "I'm still on this
+	// sub-page, but ↑/↓ won't move me here anymore."
 	header := lipgloss.NewStyle().Bold(true).Render("Settings")
 	rows := []string{header, ""}
-	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	activeColor := lipgloss.Color("240") // dim when not focused
+	if focused {
+		activeColor = lipgloss.Color("212")
+	}
+	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(activeColor)
 	inactiveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	for i := SubPage(0); i < NumSubPages; i++ {
 		line := SubPageNames[i]
@@ -210,7 +255,13 @@ func renderSubSidebar(active SubPage, height int) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	rows = append(rows, "", "[↑↓ / PgUp/PgDn]")
+	footer := "[↑↓ / ← →]"
+	if focused {
+		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("● ") + footer
+	} else {
+		footer = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○ ") + footer
+	}
+	rows = append(rows, "", footer)
 	return lipgloss.NewStyle().Width(22).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))
