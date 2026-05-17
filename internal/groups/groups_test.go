@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"vpnkit/internal/localrules"
+	"vpnkit/internal/localnodes"
 	"vpnkit/internal/subscription"
 	"vpnkit/internal/subscription/proto"
 )
@@ -41,5 +42,24 @@ func TestSubscriptionGroupContract(t *testing.T) {
 	}
 	if rules[0] != (localrules.Rule{Type: "DOMAIN-SUFFIX", Payload: "youtube.com", Target: "🚀 Proxy"}) {
 		t.Errorf("Rules[0]: %+v", rules[0])
+	}
+}
+
+func TestLocalNodesGroupContract(t *testing.T) {
+	m := localnodes.New()
+	_ = m.Add(localnodes.Node{Name: "HK-Manual", Proto: "hysteria2", Server: "1.2.3.4", Port: 443, Fields: map[string]any{"password": "x"}})
+	g := NewLocalNodesGroup("local", m)
+	if g.Kind() != KindLocalNodes {
+		t.Errorf("Kind: %v", g.Kind())
+	}
+	if !g.Enabled() {
+		t.Error("Enabled should be true (always for local)")
+	}
+	prox := g.Proxies()
+	if len(prox) != 1 || prox[0]["name"] != "HK-Manual" {
+		t.Errorf("Proxies: %v", prox)
+	}
+	if g.Rules() != nil {
+		t.Errorf("LocalNodesGroup should expose nil Rules: %v", g.Rules())
 	}
 }
