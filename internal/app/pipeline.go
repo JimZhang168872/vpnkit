@@ -182,6 +182,107 @@ func (p *Pipeline) LocalNodes() *localnodes.Manager { return p.localNodes }
 // LocalRules returns the local rules manager for the TUI tabs.
 func (p *Pipeline) LocalRules() *localrules.Manager { return p.localRules }
 
+// SubscriptionNodes returns the cached proxy list for a named subscription as
+// a slice of (name, proto, server, port) tuples. Returns nil when no fetch
+// result exists yet (subscription not yet refreshed this session).
+// Safe for concurrent reads.
+func (p *Pipeline) SubscriptionNodes(name string) []SubNode {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	res := p.subResults[name]
+	if res == nil {
+		return nil
+	}
+	out := make([]SubNode, 0, len(res.Proxies))
+	for _, proxy := range res.Proxies {
+		var n SubNode
+		if v, ok := proxy["name"].(string); ok {
+			n.Name = v
+		}
+		if v, ok := proxy["type"].(string); ok {
+			n.Proto = v
+		}
+		if v, ok := proxy["server"].(string); ok {
+			n.Server = v
+		}
+		switch pt := proxy["port"].(type) {
+		case int:
+			n.Port = pt
+		case float64:
+			n.Port = int(pt)
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// SubNode is a compact view of one proxy entry extracted from a subscription
+// result. Used by TUI tabs that display node lists.
+type SubNode struct {
+	Name   string
+	Proto  string
+	Server string
+	Port   int
+}
+
+// SubscriptionNames returns a snapshot of the current subscription names in
+// store order.
+func (p *Pipeline) SubscriptionNames() []store.Subscription {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]store.Subscription, len(p.store.Cfg.Subscriptions))
+	copy(out, p.store.Cfg.Subscriptions)
+	return out
+}
+
+// AddSubscription appends a new subscription to the store and persists.
+func (p *Pipeline) AddSubscription(sub store.Subscription) error {
+	p.mu.Lock()
+	for _, s := range p.store.Cfg.Subscriptions {
+		if s.Name == sub.Name {
+			p.mu.Unlock()
+			return fmt.Errorf("subscription %q already exists", sub.Name)
+		}
+	}
+	p.store.Cfg.Subscriptions = append(p.store.Cfg.Subscriptions, sub)
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// DeleteSubscription removes a subscription by name and persists.
+func (p *Pipeline) DeleteSubscription(name string) error {
+	p.mu.Lock()
+	idx := -1
+	for i, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		p.mu.Unlock()
+		return fmt.Errorf("subscription %q not found", name)
+	}
+	p.store.Cfg.Subscriptions = append(p.store.Cfg.Subscriptions[:idx], p.store.Cfg.Subscriptions[idx+1:]...)
+	delete(p.subResults, name)
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// ToggleSubscriptionEnabled flips the Enabled flag for a named subscription.
+func (p *Pipeline) ToggleSubscriptionEnabled(name string) error {
+	p.mu.Lock()
+	for i, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			p.store.Cfg.Subscriptions[i].Enabled = !s.Enabled
+			p.mu.Unlock()
+			return p.store.Save()
+		}
+	}
+	p.mu.Unlock()
+	return fmt.Errorf("subscription %q not found", name)
+}
+
 // SaveLocal persists localNodes + localRules back into the Store.
 func (p *Pipeline) SaveLocal() error {
 	p.mu.Lock()
