@@ -150,30 +150,15 @@ func (Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
-		// Focus-based navigation model (Bug M):
-		//   ←  : if Extensions+FocusContent → focus sidebar; else prev sub-page
-		//   →  : if Extensions+FocusSidebar → focus content; else next sub-page
-		//   ↑↓ : on FocusContent → delegate to sub-page; else switch sub-page
-		//   PgUp/PgDn: ALWAYS switch sub-page (force exit from content)
+		// Focus-based navigation model:
+		//   ←/→ : owned by app-level handler — shifts focus
+		//         (MainSidebar ↔ Settings sidebar ↔ Settings content) in one
+		//         consistent pattern across the whole app.
+		//   ↑↓  : on FocusContent + sub-page-owns-arrows → delegate to sub-page;
+		//         else switch sub-page (and reset focus to sidebar).
 		// Any sub-page change resets focus to sidebar so the user doesn't
-		// land on a non-Extensions page with stale FocusContent.
+		// land on a non-arrow-owning page with stale FocusContent.
 		switch km.Type {
-		// ←/→ are owned by the app-level handler now (Bug N): they shift
-		// focus between MainSidebar / Settings sidebar / Settings content
-		// in one consistent model across the whole app. Settings.Update
-		// no longer consumes them — the app intercepts before delegating.
-		case tea.KeyPgDown:
-			if m.current < NumSubPages-1 {
-				m.current++
-			}
-			m.focus = FocusSidebar
-			return m, nil
-		case tea.KeyPgUp:
-			if m.current > 0 {
-				m.current--
-			}
-			m.focus = FocusSidebar
-			return m, nil
 		case tea.KeyDown:
 			if subPageOwnsArrows(m.current) && m.focus == FocusContent {
 				// fall through to sub-page delegation below

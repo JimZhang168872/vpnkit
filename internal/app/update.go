@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	tabrules "vpnkit/internal/tabs/rules"
+	tabsources "vpnkit/internal/tabs/sources"
 )
 
 // Update implements tea.Model.
@@ -216,6 +217,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
 		m.logsTab, _ = m.logsTab.Update(msg)
+	case tabsources.PipelineMutatedMsg:
+		// Sources tab mutated the pipeline state (subscription/local-node
+		// added/removed/refreshed/toggled). Refresh Groups so its sub/node
+		// counts and node lists reflect the change. Other tabs read live
+		// from the pipeline closures and need no nudge.
+		m.groupsTab.Refresh()
+		return m, nil
 	case BootstrapProgressMsg:
 		switch v.Phase {
 		case "ready":

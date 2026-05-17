@@ -28,6 +28,17 @@ const (
 
 var subPageNames = [numSubPages]string{"Subscriptions", "Local Nodes"}
 
+// PipelineMutatedMsg is emitted after any Add/Delete/Toggle/Refresh mutation
+// inside Sources so other tabs (Groups in particular) can refresh their
+// derived views. App-level Update handles this by calling
+// m.groupsTab.Refresh() — Sources cannot reach across because it doesn't
+// know about other tabs.
+type PipelineMutatedMsg struct{}
+
+func emitPipelineMutated() tea.Cmd {
+	return func() tea.Msg { return PipelineMutatedMsg{} }
+}
+
 // PipelineFace is the minimal interface needed for mutations.
 type PipelineFace interface {
 	SubscriptionNames() []store.Subscription
@@ -104,20 +115,25 @@ func (m *Model) Refresh() {
 func (Model) Init() tea.Cmd { return nil }
 
 // Update handles keypresses.
+//
+// Focus model mirrors Settings:
+//   - FocusSidebar: ↑/↓ switches between sub-pages (Subscriptions / Local Nodes)
+//   - FocusContent: ↑/↓ are delegated to the active sub-page for list navigation
+//
+// ← / → for focus shifts (Sidebar ↔ Content) are intercepted by the app-level
+// handler before this Update fires.
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if km, ok := message.(tea.KeyMsg); ok {
-		if !m.InputOpen() {
+		if !m.InputOpen() && m.focus == FocusSidebar {
 			switch km.Type {
-			case tea.KeyPgDown:
+			case tea.KeyDown:
 				if m.current < numSubPages-1 {
 					m.current++
-					m.focus = FocusSidebar
 				}
 				return m, nil
-			case tea.KeyPgUp:
+			case tea.KeyUp:
 				if m.current > 0 {
 					m.current--
-					m.focus = FocusSidebar
 				}
 				return m, nil
 			}
@@ -174,7 +190,7 @@ func renderSubSidebar(active SubPage, height int, focused bool) string {
 			rows = append(rows, inactiveStyle.Render("  "+line))
 		}
 	}
-	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[PgUp/Dn] page"))
+	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] page"))
 	return lipgloss.NewStyle().Width(20).Height(height).
 		BorderRight(true).BorderStyle(lipgloss.NormalBorder()).
 		Padding(1, 1).Render(strings.Join(rows, "\n"))
@@ -234,10 +250,13 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 						Enabled:   true,
 					}); err != nil {
 						m.flash = "add: " + err.Error()
-					} else {
-						m.flash = "added " + name
-						m.list = m.deps.Pipeline.SubscriptionNames()
+						m.form = nil
+						return m, nil
 					}
+					m.flash = "added " + name
+					m.list = m.deps.Pipeline.SubscriptionNames()
+					m.form = nil
+					return m, emitPipelineMutated()
 				}
 				m.form = nil
 				return m, nil
@@ -285,6 +304,7 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 					if m.cursor > 0 && m.cursor >= len(m.list) {
 						m.cursor = len(m.list) - 1
 					}
+					return m, emitPipelineMutated()
 				}
 			}
 		case "u":
@@ -308,6 +328,7 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 					m.flash = "toggle: " + err.Error()
 				} else {
 					m.list = m.deps.Pipeline.SubscriptionNames()
+					return m, emitPipelineMutated()
 				}
 			}
 		}
@@ -318,6 +339,7 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 		if m.deps.Pipeline != nil {
 			m.list = m.deps.Pipeline.SubscriptionNames()
 		}
+		return m, emitPipelineMutated()
 	case refreshErrMsg:
 		if ev.err != nil {
 			m.flash = "❌ " + ev.name + ": " + ev.err.Error()
@@ -449,11 +471,14 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 					pl := m.deps.Pipeline
 					if err := addNodeFromURI(pl, uri); err != nil {
 						m.flash = "add: " + err.Error()
-					} else {
-						m.flash = "added node"
-						m.nodes = pl.LocalNodes().All()
-						_ = pl.SaveLocal()
+						m.form = nil
+						return m, nil
 					}
+					m.flash = "added node"
+					m.nodes = pl.LocalNodes().All()
+					_ = pl.SaveLocal()
+					m.form = nil
+					return m, emitPipelineMutated()
 				}
 				m.form = nil
 				return m, nil
@@ -482,16 +507,15 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				pl := m.deps.Pipeline
 				if err := pl.LocalNodes().Remove(name); err != nil {
 					m.flash = "delete: " + err.Error()
+				} else if err := pl.SaveLocal(); err != nil {
+					m.flash = "save: " + err.Error()
 				} else {
-					if err := pl.SaveLocal(); err != nil {
-						m.flash = "save: " + err.Error()
-					} else {
-						m.flash = "deleted " + name
-						m.nodes = pl.LocalNodes().All()
-						if m.cursor > 0 && m.cursor >= len(m.nodes) {
-							m.cursor = len(m.nodes) - 1
-						}
+					m.flash = "deleted " + name
+					m.nodes = pl.LocalNodes().All()
+					if m.cursor > 0 && m.cursor >= len(m.nodes) {
+						m.cursor = len(m.nodes) - 1
 					}
+					return m, emitPipelineMutated()
 				}
 			}
 		}
@@ -581,7 +605,7 @@ func newLocalNodeForm() *localNodeForm {
 
 func renderLocalNodeForm(f *localNodeForm) string {
 	return strings.Join([]string{
-		lipgloss.NewStyle().Bold(true).Render("Add Local Node via URI"),
+		lipgloss.NewStyle().Bold(true).Render("Add Local Node"),
 		"",
 		"  Enter proxy URI:",
 		"  " + f.input.View(),

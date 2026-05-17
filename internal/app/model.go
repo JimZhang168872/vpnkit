@@ -136,6 +136,10 @@ func (m Model) shiftFocusRight() Model {
 		m.settingsTab.SubPageOwnsContent() {
 		m.settingsTab.SetFocus(tabsettings.FocusContent)
 	}
+	if m.activeTab == TabSources && m.sourcesTab.Focus() == tabsources.FocusSidebar {
+		// Sources sub-pages always have a navigable content panel (list).
+		m.sourcesTab.SetFocus(tabsources.FocusContent)
+	}
 	return m
 }
 
