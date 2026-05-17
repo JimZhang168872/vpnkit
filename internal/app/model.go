@@ -234,6 +234,11 @@ func (m *Model) WirePipeline(pl *Pipeline) {
 	m.sourcesTab = tabsources.New(tabsources.Deps{Pipeline: pl})
 	// Rules tab — wire pipeline for Local Rules sub-page.
 	m.rulesTab.SetPipeline(pl)
+	// Pull initial data from store/pipeline into the just-constructed tab models.
+	// Without these, Groups shows "(none)" and Sources shows "(no subscriptions)"
+	// even when the store already has entries (e.g. from CLI subs add before launch).
+	m.groupsTab.Refresh()
+	m.sourcesTab.Refresh()
 }
 
 // Init returns startup commands.

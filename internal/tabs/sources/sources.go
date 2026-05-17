@@ -80,13 +80,16 @@ func (m Model) Focus() SubFocus { return m.focus }
 // SetFocus updates the sub-focus.
 func (m *Model) SetFocus(f SubFocus) { m.focus = f }
 
-// New returns an initialized Sources tab model.
+// New returns an initialized Sources tab model with data pulled from Pipeline.
+// Pipeline may be nil (tests) — Refresh handles that.
 func New(deps Deps) Model {
-	return Model{
-		deps:    deps,
-		subs:    newSubsModel(deps),
-		locals:  newLocalNodesModel(deps),
+	m := Model{
+		deps:   deps,
+		subs:   newSubsModel(deps),
+		locals: newLocalNodesModel(deps),
 	}
+	m.Refresh()
+	return m
 }
 
 // Refresh reloads data from pipeline.
