@@ -96,6 +96,8 @@ func runUninstall(out io.Writer, opts uninstallOptions) error {
 		PIDFilePath: p.PIDFile(),
 		LogFilePath: p.MihomoLog(),
 		UnitPath:    p.SystemdUnit(),
+		// MixedPort intentionally omitted: uninstall only Stop/Uninstalls,
+		// never renders a fresh unit, so the value is unused.
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

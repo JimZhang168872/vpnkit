@@ -50,4 +50,9 @@ type Config struct {
 	PIDFilePath string // for PID-mode only
 	LogFilePath string // for PID-mode only
 	UnitPath    string // for systemd-user only
+	// MixedPort, when nonzero, lets the systemd backend suppress any
+	// HTTP(S)_PROXY/ALL_PROXY env var that points at our own loopback port —
+	// injecting such a value into the unit would deadlock mihomo, which
+	// would try to download MMDB through itself before it had bound the port.
+	MixedPort int
 }

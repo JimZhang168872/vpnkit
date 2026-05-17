@@ -65,6 +65,17 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 				return BootstrapProgressMsg{Phase: "error", Err: err}
 			}
 		}
+		// 3.5. Pre-seed GeoIP / GeoSite data files. mihomo's built-in
+		// downloader hardcodes a 90s deadline and does NOT honor HTTP(S)_PROXY,
+		// so on China-network hosts the first launch deadlocks. Fetching the
+		// files ourselves with netx.SmartClient (which uses a live env proxy
+		// when reachable) sidesteps both problems. Failure here is non-fatal:
+		// mihomo will still try the download on its own at startup, and even
+		// if that also fails the user can fix it manually without reinstalling.
+		if _, err := installer.EnsureGeo(d.Paths.MihomoConfig, nil); err != nil {
+			fmt.Fprintf(os.Stderr, "vpnkit: geo pre-seed had errors (non-fatal): %v\n", err)
+		}
+
 		// 4. Install + start the service.
 		ctx := context.Background()
 		if err := d.Service.Install(ctx); err != nil {

@@ -129,6 +129,7 @@ func upgradeMihomo(out io.Writer, p paths.XDG, st *store.Store, version string) 
 		PIDFilePath: p.PIDFile(),
 		LogFilePath: p.MihomoLog(),
 		UnitPath:    p.SystemdUnit(),
+		MixedPort:   st.Cfg.MixedPort,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

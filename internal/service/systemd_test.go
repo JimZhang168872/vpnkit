@@ -7,8 +7,12 @@ import (
 )
 
 func TestRenderUnit(t *testing.T) {
+	// Isolate from the host's real proxy env so this test only asserts the
+	// invariant skeleton bits. Proxy injection has its own dedicated cases.
+	unsetAllProxyEnv(t)
+
 	var buf bytes.Buffer
-	err := renderUnit(&buf, "/home/u/.local/bin/mihomo", "/home/u/.config/mihomo")
+	err := renderUnit(&buf, "/home/u/.local/bin/mihomo", "/home/u/.config/mihomo", 0)
 	if err != nil {
 		t.Fatalf("renderUnit: %v", err)
 	}
@@ -24,6 +28,141 @@ func TestRenderUnit(t *testing.T) {
 	}
 	if !strings.Contains(s, "StartLimitIntervalSec=30") {
 		t.Error("missing StartLimitIntervalSec")
+	}
+	if strings.Contains(s, "Environment=") {
+		t.Errorf("no proxy env set but Environment= appeared: %s", s)
+	}
+}
+
+// proxyEnvKeys are the variables systemd should forward to mihomo so that
+// mihomo's geox-url downloads (and any other outbound HTTP) honor the user's
+// shell-level proxy setup. Both casings exist because clients vary.
+var proxyEnvKeys = []string{
+	"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY",
+	"https_proxy", "http_proxy", "all_proxy", "no_proxy",
+}
+
+func unsetAllProxyEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range proxyEnvKeys {
+		t.Setenv(k, "")
+	}
+}
+
+func TestRenderUnitInjectsProxyEnv(t *testing.T) {
+	unsetAllProxyEnv(t)
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+	t.Setenv("NO_PROXY", "localhost,127.0.0.1,::1")
+
+	var buf bytes.Buffer
+	if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	for _, want := range []string{
+		`Environment="HTTPS_PROXY=http://127.0.0.1:7897"`,
+		`Environment="HTTP_PROXY=http://127.0.0.1:7897"`,
+		`Environment="NO_PROXY=localhost,127.0.0.1,::1"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("unit missing %q\n--- unit ---\n%s", want, s)
+		}
+	}
+}
+
+func TestRenderUnitSkipsSelfReferentialProxy(t *testing.T) {
+	// HTTPS_PROXY points at vpnkit's own mixed-port (50595). Injecting this
+	// would deadlock mihomo on startup: it tries to download MMDB through
+	// itself, but is not yet listening.
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"loopback v4", "http://127.0.0.1:50595"},
+		{"localhost", "http://localhost:50595"},
+		{"loopback v6", "http://[::1]:50595"},
+		{"socks5 v4", "socks5://127.0.0.1:50595"},
+		{"with creds", "http://user:pass@127.0.0.1:50595"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unsetAllProxyEnv(t)
+			t.Setenv("HTTPS_PROXY", tt.value)
+
+			var buf bytes.Buffer
+			if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+				t.Fatal(err)
+			}
+			s := buf.String()
+			if strings.Contains(s, "Environment=") && strings.Contains(s, "HTTPS_PROXY") {
+				t.Errorf("self-referential HTTPS_PROXY=%q was injected; would deadlock\n--- unit ---\n%s", tt.value, s)
+			}
+		})
+	}
+}
+
+func TestRenderUnitDetectsSchemeRelativeSelfRef(t *testing.T) {
+	// Rare but legal form: "//host:port" without a scheme. The guard must
+	// still catch it, otherwise it slips into the unit and deadlocks mihomo.
+	unsetAllProxyEnv(t)
+	t.Setenv("HTTPS_PROXY", "//127.0.0.1:50595")
+
+	var buf bytes.Buffer
+	if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "HTTPS_PROXY") {
+		t.Errorf("scheme-relative self-ref leaked into unit:\n%s", buf.String())
+	}
+}
+
+func TestRenderUnitInjectsForeignLoopbackProxy(t *testing.T) {
+	// HTTPS_PROXY points at 127.0.0.1 but a *different* port — another
+	// proxy on the same host (e.g. clash-verge). Safe to inject.
+	unsetAllProxyEnv(t)
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
+
+	var buf bytes.Buffer
+	if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	if !strings.Contains(s, `Environment="HTTPS_PROXY=http://127.0.0.1:7897"`) {
+		t.Errorf("foreign loopback HTTPS_PROXY was incorrectly suppressed\n--- unit ---\n%s", s)
+	}
+}
+
+func TestRenderUnitNoProxyAlwaysInjected(t *testing.T) {
+	// NO_PROXY is not a proxy target — it's a bypass list — so the self-ref
+	// guard must not apply, even if the user typed odd values.
+	unsetAllProxyEnv(t)
+	t.Setenv("NO_PROXY", "127.0.0.1:50595,example.com")
+
+	var buf bytes.Buffer
+	if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	if !strings.Contains(s, `Environment="NO_PROXY=127.0.0.1:50595,example.com"`) {
+		t.Errorf("NO_PROXY should always be injected verbatim\n--- unit ---\n%s", s)
+	}
+}
+
+func TestRenderUnitQuotesValuesWithSpaces(t *testing.T) {
+	// systemd's Environment= directive requires quoting around values that
+	// contain whitespace or special characters. Our quoting wraps every
+	// KEY=VALUE pair so this is robust.
+	unsetAllProxyEnv(t)
+	t.Setenv("HTTPS_PROXY", "http://proxy with space:80")
+
+	var buf bytes.Buffer
+	if err := renderUnit(&buf, "/x/mihomo", "/c", 50595); err != nil {
+		t.Fatal(err)
+	}
+	s := buf.String()
+	if !strings.Contains(s, `Environment="HTTPS_PROXY=http://proxy with space:80"`) {
+		t.Errorf("value with space not quoted as a single token\n--- unit ---\n%s", s)
 	}
 }
 

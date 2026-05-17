@@ -44,6 +44,7 @@ func Run(version string) error {
 		PIDFilePath: p.PIDFile(),
 		LogFilePath: p.MihomoLog(),
 		UnitPath:    p.SystemdUnit(),
+		MixedPort:   st.Cfg.MixedPort,
 	})
 	// Reconcile ports against the local OS before profMgr captures them. Skip
 	// when our mihomo is already running (its bound ports are presumably the saved ones).
