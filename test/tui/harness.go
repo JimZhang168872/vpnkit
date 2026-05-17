@@ -19,10 +19,15 @@ import (
 )
 
 var (
-	buildOnce  sync.Once
-	binaryPath string
-	buildErr   error
+	buildOnce   sync.Once
+	binaryPath  string
+	buildErr    error
+	originalEnv []string // captured at init, before any test mutates HOME
 )
+
+func init() {
+	originalEnv = os.Environ()
+}
 
 func vpnkitBinary(t *testing.T) string {
 	buildOnce.Do(func() {
@@ -34,6 +39,10 @@ func vpnkitBinary(t *testing.T) string {
 		out := filepath.Join(os.TempDir(), "vpnkit-tui-harness")
 		cmd := exec.Command("go", "build", "-o", out, "./cmd/vpnkit")
 		cmd.Dir = repoRoot
+		// Use the original environment (captured before any test mutates HOME)
+		// so the Go module cache is not placed inside a test TempDir, which
+		// would contain read-only files that fail TempDir cleanup.
+		cmd.Env = originalEnv
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
