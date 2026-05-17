@@ -150,7 +150,14 @@ func (p *Pipeline) Assemble() error {
 		}
 		subs = append(subs, groups.NewSubscriptionGroup(s.Name, true, res))
 	}
-	localGroup := groups.NewLocalNodesGroup("local", p.localNodes)
+	// Build one Group per enabled local-nodes-group.
+	var localGroups []groups.Group
+	for _, g := range p.store.Cfg.LocalNodeGroups {
+		if !g.Enabled {
+			continue
+		}
+		localGroups = append(localGroups, groups.NewLocalNodesGroupForGroup(g.Name, p.localNodes))
+	}
 	// extensions.Load returns (Extensions{}, nil) for a missing file, so the
 	// blank identifier is safe for that case. Non-nil errors indicate parse
 	// failures (corrupt TOML), which we surface to stderr rather than silently
@@ -166,7 +173,7 @@ func (p *Pipeline) Assemble() error {
 		Mode:             assembler.Mode(cfg.Mode),
 		GlobalTarget:     cfg.GlobalTarget,
 		Subscriptions:    subs,
-		LocalNodes:       localGroup,
+		LocalGroups:      localGroups,
 		LocalRules:       p.localRules.All(),
 		Extensions:       ext,
 		MixedPort:        cfg.MixedPort,
