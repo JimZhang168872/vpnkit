@@ -251,7 +251,7 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 	case SubExtensions:
 		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubRouting:
-		body = m.routing.View(bodyWidth, height)
+		body = m.routing.ViewFocused(bodyWidth, height, contentFocused)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }

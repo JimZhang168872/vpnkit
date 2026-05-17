@@ -63,7 +63,14 @@ func (m routingModel) Update(message tea.Msg) (routingModel, tea.Cmd) {
 }
 
 func (m routingModel) View(width, height int) string {
-	header := viewport.FocusDot(false) +
+	return m.ViewFocused(width, height, true)
+}
+
+// ViewFocused renders Routing; focused = parent Settings has FocusContent
+// on this sub-page (so the top ●/○ should reflect that state, and the
+// cursor color/bold flags can intensify when content owns input).
+func (m routingModel) ViewFocused(width, height int, focused bool) string {
+	header := viewport.FocusDot(focused) +
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Routing")
 
 	rows := []string{header, ""}
@@ -83,18 +90,22 @@ func (m routingModel) View(width, height int) string {
 		"global": "Global  — all traffic routes to Global Target",
 		"direct": "Direct  — all traffic bypasses the proxy",
 	}
+	// Use [x]/[ ] radio style for mode selection so the active-mode marker is
+	// visually distinct from the panel's top-level ●/○ focus dot (which uses
+	// filled/empty circle).
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
 	for i, opt := range m.modeOpts {
 		label := modeLabels[opt]
 		if label == "" {
 			label = opt
 		}
-		selected := "○"
+		marker := "[ ]"
 		if opt == activeMode {
-			selected = "●"
+			marker = selectedStyle.Render("[x]")
 		}
-		line := selected + " " + label
+		line := marker + " " + label
 		if i == m.cursor {
-			rows = append(rows, curStyle.Render("▶ "+line))
+			rows = append(rows, curStyle.Render("▶ ")+line)
 		} else {
 			rows = append(rows, "  "+line)
 		}
