@@ -49,7 +49,7 @@ var SubPageNames = [NumSubPages]string{
 	"Service",
 	"External Controller",
 	"Routing",
-	"Default Rules",
+	"Rule Template",
 	"Extensions",
 	"Cache",
 	"About",
@@ -143,7 +143,7 @@ func (m Model) SelectedPage() SubPage { return m.current }
 // level to switch between sub-pages. Add new sub-pages with internal nav
 // here.
 func subPageOwnsArrows(p SubPage) bool {
-	return p == SubExtensions || p == SubRouting
+	return p == SubExtensions || p == SubRouting || p == SubRules
 }
 
 func (Model) Init() tea.Cmd { return nil }
@@ -241,7 +241,7 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 	case SubCache:
 		body = m.cache.View(bodyWidth, height)
 	case SubRules:
-		body = m.rules.View(bodyWidth, height)
+		body = m.rules.ViewFocused(bodyWidth, height, contentFocused)
 	case SubController:
 		body = m.controller.View(bodyWidth, height)
 	case SubService:
