@@ -37,17 +37,28 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("%v", err)
 		}
 	case "add":
-		// URI is positional arg 0; flags (--group, --via) may follow it.
-		// Go's flag package stops at the first non-flag token, so we split
-		// the positional URI from the remaining flag-bearing args manually.
-		if len(rest) < 1 {
-			dieUserErr("usage: vpnkit local-nodes add <uri> [--group=<name>] [--via=<target>]")
-		}
-		uri := rest[0]
-		flagArgs := rest[1:]
 		fs := flag.NewFlagSet("local-nodes add", flag.ExitOnError)
 		groupFlag := fs.String("group", "", "target local-nodes-group (default: 'local')")
 		viaFlag := fs.String("via", "", "dialer-proxy target (proxy/group name)")
+
+		// flag.Parse stops at the first non-flag token. The URI may come
+		// before OR after the flags, so split args into flags and the URI
+		// manually based on the "--" or "://" sniff.
+		var uri string
+		var flagArgs []string
+		for _, a := range rest {
+			if strings.Contains(a, "://") {
+				if uri != "" {
+					dieUserErr("local-nodes add: multiple URIs in %v", rest)
+				}
+				uri = a
+				continue
+			}
+			flagArgs = append(flagArgs, a)
+		}
+		if uri == "" {
+			dieUserErr("usage: vpnkit local-nodes add <uri> [--group=<name>] [--via=<target>]")
+		}
 		_ = fs.Parse(flagArgs)
 		node, err := localnodes.ParseURI(uri)
 		if err != nil {
@@ -113,16 +124,32 @@ func dispatchLocalNodes(args []string) {
 		if !ok {
 			dieUserErr("local node %q not found", rest[0])
 		}
+		newGroup := rest[1]
 		for i := range st.Cfg.LocalNodes {
 			if st.Cfg.LocalNodes[i].Name == name && st.Cfg.LocalNodes[i].Group == group {
-				st.Cfg.LocalNodes[i].Group = rest[1]
+				st.Cfg.LocalNodes[i].Group = newGroup
 				break
 			}
+		}
+		// Auto-create the target group if it doesn't exist, so the node
+		// doesn't end up orphaned (the assembler would skip a node whose
+		// Group has no matching LocalNodeGroup entry).
+		hasGroup := false
+		for _, g := range st.Cfg.LocalNodeGroups {
+			if g.Name == newGroup {
+				hasGroup = true
+				break
+			}
+		}
+		if !hasGroup {
+			st.Cfg.LocalNodeGroups = append(st.Cfg.LocalNodeGroups, store.LocalNodeGroup{
+				Name: newGroup, Enabled: true,
+			})
 		}
 		if err := st.Save(); err != nil {
 			dieRuntime("save: %v", err)
 		}
-		fmt.Printf("✅ moved %s:%s → %s\n", group, name, rest[1])
+		fmt.Printf("✅ moved %s:%s → %s\n", group, name, newGroup)
 	case "edit":
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-nodes edit <node> key=val [...]")
@@ -188,7 +215,13 @@ func dispatchLocalNodes(args []string) {
 // bool indicating ambiguity. Caller must dieUserErr on ambiguity.
 func resolveLocalNode(st *store.Store, ref string) (group, name string, ambiguous bool, found bool) {
 	if i := strings.Index(ref, ":"); i > 0 {
-		return ref[:i], ref[i+1:], false, true
+		group, name := ref[:i], ref[i+1:]
+		for _, n := range st.Cfg.LocalNodes {
+			if n.Group == group && n.Name == name {
+				return group, name, false, true
+			}
+		}
+		return group, name, false, false
 	}
 	matches := 0
 	for _, n := range st.Cfg.LocalNodes {

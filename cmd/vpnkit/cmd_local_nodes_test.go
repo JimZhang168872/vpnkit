@@ -234,6 +234,69 @@ func TestLocalNodesMv(t *testing.T) {
 	}
 }
 
+func TestLocalNodesAddFlagFirstOrder(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	// Flag BEFORE URI (the case the original implementation broke).
+	dispatchLocalNodes([]string{
+		"add",
+		"--group=home",
+		"--via=doge-auto",
+		"ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A",
+	})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if len(st.Cfg.LocalNodes) != 1 || st.Cfg.LocalNodes[0].Group != "home" || st.Cfg.LocalNodes[0].Via != "doge-auto" {
+		t.Errorf("flag-first add: %+v", st.Cfg.LocalNodes)
+	}
+}
+
+func TestLocalNodesMvAutoCreatesTargetGroup(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A", "--group=home"})
+	// mv to a group that does NOT exist yet.
+	dispatchLocalNodes([]string{"mv", "HK-A", "freshgroup"})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	if st.Cfg.LocalNodes[0].Group != "freshgroup" {
+		t.Errorf("Group not set: %+v", st.Cfg.LocalNodes[0])
+	}
+	hasFresh := false
+	for _, g := range st.Cfg.LocalNodeGroups {
+		if g.Name == "freshgroup" {
+			hasFresh = true
+			break
+		}
+	}
+	if !hasFresh {
+		t.Errorf("expected auto-created 'freshgroup', got %+v", st.Cfg.LocalNodeGroups)
+	}
+}
+
+func TestLocalNodesRmNamespacedNonExistentFails(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "home"})
+	mustPanicWith(t, "not found", func() {
+		dispatchLocalNodes([]string{"rm", "home:NoSuchNode"})
+	})
+}
+
 func TestLocalNodesNamespacedRefRm(t *testing.T) {
 	_, restore := initEnv(t)
 	defer restore()
