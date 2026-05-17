@@ -42,7 +42,7 @@ func dispatchExt(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit ext apply: %v", err)
 	}
-	if st.Cfg.ActiveProfile == "" {
+	if st.Cfg.LegacyActiveProfile == "" {
 		dieUserErr("vpnkit ext apply: no active profile — set one first")
 	}
 	mgr := profiles.New(profiles.Config{
@@ -51,11 +51,11 @@ func dispatchExt(args []string) {
 		ControllerPort:   st.Cfg.ControllerPort,
 		ControllerSecret: st.Cfg.ControllerSecret,
 		MixedPort:        st.Cfg.MixedPort,
-		RuleTemplate:     st.Cfg.RuleTemplate,
+		RuleTemplate:     st.Cfg.LegacyRuleTemplate,
 		ProxyUser:        st.Cfg.ProxyUser,
 		ProxyPass:        st.Cfg.ProxyPass,
 	})
-	mgr.Load(toProfilesProfilesCLI(st.Cfg.Profiles), st.Cfg.ActiveProfile)
+	mgr.Load(toProfilesProfilesCLI(st.Cfg.LegacyProfiles), st.Cfg.LegacyActiveProfile)
 
 	client, _, err := loadClient()
 	if err != nil {
@@ -64,11 +64,11 @@ func dispatchExt(args []string) {
 
 	deps := runExtApplyDeps{
 		ExtensionsPath: extensionsPath(),
-		ActiveProfile:  st.Cfg.ActiveProfile,
+		ActiveProfile:  st.Cfg.LegacyActiveProfile,
 		Reassemble: func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			_, err := mgr.Update(ctx, st.Cfg.ActiveProfile)
+			_, err := mgr.Update(ctx, st.Cfg.LegacyActiveProfile)
 			return err
 		},
 		Reload: func() error {

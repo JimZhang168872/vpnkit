@@ -18,7 +18,7 @@ func newRules(s *store.Store) rulesModel {
 	idx := 0
 	if s != nil {
 		for i, name := range list {
-			if name == s.Cfg.RuleTemplate {
+			if name == s.Cfg.LegacyRuleTemplate {
 				idx = i
 				break
 			}
@@ -43,7 +43,7 @@ func (m rulesModel) Update(message tea.Msg) (rulesModel, tea.Cmd) {
 		}
 	case "enter":
 		if m.store != nil && m.idx < len(m.list) {
-			m.store.Cfg.RuleTemplate = m.list[m.idx]
+			m.store.Cfg.LegacyRuleTemplate = m.list[m.idx]
 			_ = m.store.Save()
 		}
 	}
@@ -55,7 +55,7 @@ func (m rulesModel) View(width, height int) string {
 	rows := []string{header, "", "  Pick a template (Enter to save):", ""}
 	current := ""
 	if m.store != nil {
-		current = m.store.Cfg.RuleTemplate
+		current = m.store.Cfg.LegacyRuleTemplate
 	}
 	for i, name := range m.list {
 		marker := "( )"

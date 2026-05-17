@@ -64,11 +64,11 @@ func Run(version string) error {
 		ControllerPort:   st.Cfg.ControllerPort,
 		ControllerSecret: st.Cfg.ControllerSecret,
 		MixedPort:        st.Cfg.MixedPort,
-		RuleTemplate:     st.Cfg.RuleTemplate,
+		RuleTemplate:     st.Cfg.LegacyRuleTemplate,
 		ProxyUser:        st.Cfg.ProxyUser,
 		ProxyPass:        st.Cfg.ProxyPass,
 	})
-	profMgr.Load(toProfilesProfiles(st.Cfg.Profiles), st.Cfg.ActiveProfile)
+	profMgr.Load(toProfilesProfiles(st.Cfg.LegacyProfiles), st.Cfg.LegacyActiveProfile)
 	profMgr.SetOnChange(func() {
 		persisted := make([]store.Profile, 0)
 		for _, p := range profMgr.All() {
@@ -79,8 +79,8 @@ func Run(version string) error {
 				LastUpdated: p.LastUpdated,
 			})
 		}
-		st.Cfg.Profiles = persisted
-		st.Cfg.ActiveProfile = profMgr.Active()
+		st.Cfg.LegacyProfiles = persisted
+		st.Cfg.LegacyActiveProfile = profMgr.Active()
 		_ = st.Save()
 	})
 

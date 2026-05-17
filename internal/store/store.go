@@ -16,7 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Profile records one subscription entry.
+// Profile records one subscription entry (legacy v1 schema).
 type Profile struct {
 	Name        string    `toml:"name"`
 	URL         string    `toml:"url"`
@@ -24,18 +24,54 @@ type Profile struct {
 	LastUpdated time.Time `toml:"last_updated,omitempty"`
 }
 
+// Subscription is a remote proxy subscription feed (v2 schema).
+type Subscription struct {
+	Name        string    `toml:"name"`
+	URL         string    `toml:"url"`
+	UserAgent   string    `toml:"user_agent,omitempty"`
+	Enabled     bool      `toml:"enabled"`
+	LastUpdated time.Time `toml:"last_updated,omitempty"`
+	NodeCount   int       `toml:"node_count,omitempty"`
+}
+
+// LocalNode is a manually configured proxy node (v2 schema).
+type LocalNode struct {
+	Name   string         `toml:"name"`
+	Proto  string         `toml:"proto"`
+	Server string         `toml:"server"`
+	Port   int            `toml:"port"`
+	Fields map[string]any `toml:"fields,omitempty"`
+}
+
+// LocalRule is a manually configured routing rule (v2 schema).
+type LocalRule struct {
+	Type    string `toml:"type"`
+	Payload string `toml:"payload"`
+	Target  string `toml:"target"`
+}
+
 // Config is vpnkit's persisted configuration.
 type Config struct {
-	ControllerSecret string    `toml:"controller_secret"`
-	ControllerPort   int       `toml:"controller_port"`
-	MixedPort        int       `toml:"mixed_port"`
-	ProxyUser        string    `toml:"proxy_user"`
-	ProxyPass        string    `toml:"proxy_pass"`
-	ActiveProfile    string    `toml:"active_profile,omitempty"`
-	RuleTemplate     string    `toml:"rule_template"`
-	ServiceMode      string    `toml:"service_mode,omitempty"`
-	UITheme          string    `toml:"ui_theme"`
-	Profiles         []Profile `toml:"profiles"`
+	SchemaVersion int `toml:"schema_version"`
+
+	ControllerSecret string `toml:"controller_secret"`
+	ControllerPort   int    `toml:"controller_port"`
+	MixedPort        int    `toml:"mixed_port"`
+	ProxyUser        string `toml:"proxy_user"`
+	ProxyPass        string `toml:"proxy_pass"`
+	UITheme          string `toml:"ui_theme"`
+	ServiceMode      string `toml:"service_mode,omitempty"`
+
+	Mode         string `toml:"mode"`
+	GlobalTarget string `toml:"global_target"`
+
+	Subscriptions []Subscription `toml:"subscriptions"`
+	LocalNodes    []LocalNode    `toml:"local_nodes"`
+	LocalRules    []LocalRule    `toml:"local_rules"`
+
+	LegacyActiveProfile string    `toml:"active_profile,omitempty"`
+	LegacyProfiles      []Profile `toml:"profiles,omitempty"`
+	LegacyRuleTemplate  string    `toml:"rule_template,omitempty"`
 }
 
 // Store wraps a Config and its on-disk location.
@@ -80,10 +116,6 @@ func Load(path string) (*Store, error) {
 		}
 		changed = true
 	}
-	if s.Cfg.RuleTemplate == "" {
-		s.Cfg.RuleTemplate = "loyalsoldier"
-		changed = true
-	}
 	if s.Cfg.UITheme == "" {
 		s.Cfg.UITheme = "default"
 		changed = true
@@ -98,6 +130,26 @@ func Load(path string) (*Store, error) {
 	}
 	if s.Cfg.ProxyPass == "" {
 		s.Cfg.ProxyPass = randHex(16)
+		changed = true
+	}
+	if s.Cfg.Mode == "" {
+		s.Cfg.Mode = "rule"
+		changed = true
+	}
+	if s.Cfg.GlobalTarget == "" {
+		s.Cfg.GlobalTarget = "🚀 Proxy"
+		changed = true
+	}
+	if s.Cfg.Subscriptions == nil {
+		s.Cfg.Subscriptions = []Subscription{}
+		changed = true
+	}
+	if s.Cfg.LocalNodes == nil {
+		s.Cfg.LocalNodes = []LocalNode{}
+		changed = true
+	}
+	if s.Cfg.LocalRules == nil {
+		s.Cfg.LocalRules = []LocalRule{}
 		changed = true
 	}
 	if changed {
@@ -147,13 +199,18 @@ func defaults() Config {
 		mp = randomHighPort()
 	}
 	return Config{
+		SchemaVersion:    2,
 		ControllerSecret: randHex(16),
 		ControllerPort:   cp,
 		MixedPort:        mp,
 		ProxyUser:        "vpnkit-" + randHex(4),
 		ProxyPass:        randHex(16),
-		RuleTemplate:     "loyalsoldier",
 		UITheme:          "default",
+		Mode:             "rule",
+		GlobalTarget:     "🚀 Proxy",
+		Subscriptions:    []Subscription{},
+		LocalNodes:       []LocalNode{},
+		LocalRules:       []LocalRule{},
 	}
 }
 

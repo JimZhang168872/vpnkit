@@ -23,8 +23,8 @@ func TestLoadCreatesDefaultsWhenMissing(t *testing.T) {
 	if s.Cfg.MixedPort == s.Cfg.ControllerPort {
 		t.Errorf("mixed and controller collided on same port: %d", s.Cfg.MixedPort)
 	}
-	if s.Cfg.RuleTemplate != "loyalsoldier" {
-		t.Errorf("default rule template: %s", s.Cfg.RuleTemplate)
+	if s.Cfg.LegacyRuleTemplate != "" {
+		t.Errorf("legacy_rule_template should be empty on new store: %s", s.Cfg.LegacyRuleTemplate)
 	}
 	if s.Cfg.ServiceMode != "" {
 		t.Errorf("service_mode must remain empty until detected: %s", s.Cfg.ServiceMode)
@@ -122,6 +122,32 @@ ui_theme = "default"
 
 func inHighRange(p int) bool { return p >= 30000 && p <= 60000 }
 
+func TestSchemaV2Roundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.Cfg.SchemaVersion != 2 {
+		t.Errorf("new store schema_version: got %d, want 2", s.Cfg.SchemaVersion)
+	}
+	if s.Cfg.Mode != "rule" {
+		t.Errorf("default mode: got %q, want \"rule\"", s.Cfg.Mode)
+	}
+	if s.Cfg.GlobalTarget != "🚀 Proxy" {
+		t.Errorf("default global_target: got %q, want \"🚀 Proxy\"", s.Cfg.GlobalTarget)
+	}
+	if s.Cfg.Subscriptions == nil {
+		t.Error("Subscriptions must be empty slice, not nil")
+	}
+	if s.Cfg.LocalNodes == nil {
+		t.Error("LocalNodes must be empty slice, not nil")
+	}
+	if s.Cfg.LocalRules == nil {
+		t.Error("LocalRules must be empty slice, not nil")
+	}
+}
+
 func TestProxyCredsPersist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	s, err := Load(path)
@@ -148,8 +174,8 @@ func TestSaveAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	s.Cfg.ActiveProfile = "airport-A"
-	s.Cfg.Profiles = []Profile{{Name: "airport-A", URL: "https://example.com/sub"}}
+	s.Cfg.LegacyActiveProfile = "airport-A"
+	s.Cfg.LegacyProfiles = []Profile{{Name: "airport-A", URL: "https://example.com/sub"}}
 	if err := s.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -158,10 +184,10 @@ func TestSaveAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if s2.Cfg.ActiveProfile != "airport-A" {
-		t.Errorf("active not persisted: %s", s2.Cfg.ActiveProfile)
+	if s2.Cfg.LegacyActiveProfile != "airport-A" {
+		t.Errorf("active not persisted: %s", s2.Cfg.LegacyActiveProfile)
 	}
-	if len(s2.Cfg.Profiles) != 1 || s2.Cfg.Profiles[0].Name != "airport-A" {
-		t.Errorf("profiles not persisted: %+v", s2.Cfg.Profiles)
+	if len(s2.Cfg.LegacyProfiles) != 1 || s2.Cfg.LegacyProfiles[0].Name != "airport-A" {
+		t.Errorf("profiles not persisted: %+v", s2.Cfg.LegacyProfiles)
 	}
 }

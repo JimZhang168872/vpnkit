@@ -42,7 +42,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 	// Step 2: restore profiles if a backup was passed AND store has none yet.
 	// We do not overwrite a user's existing profiles to avoid double-counting.
 	storeDirty := false
-	if opts.RestorePath != "" && len(st.Cfg.Profiles) == 0 {
+	if opts.RestorePath != "" && len(st.Cfg.LegacyProfiles) == 0 {
 		var backup struct {
 			Profiles []store.Profile `toml:"profiles"`
 		}
@@ -52,7 +52,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 		} else if err := toml.Unmarshal(data, &backup); err != nil {
 			fmt.Fprintf(out, "⚠️  failed to parse backup %s: %v\n", opts.RestorePath, err)
 		} else if len(backup.Profiles) > 0 {
-			st.Cfg.Profiles = backup.Profiles
+			st.Cfg.LegacyProfiles = backup.Profiles
 			storeDirty = true
 			fmt.Fprintf(out, "📋 restored %d profile(s) from %s\n", len(backup.Profiles), opts.RestorePath)
 		}
@@ -69,7 +69,7 @@ func runInit(out io.Writer, opts runInitOpts) error {
 			MixedPort:        st.Cfg.MixedPort,
 			ControllerPort:   st.Cfg.ControllerPort,
 			ControllerSecret: st.Cfg.ControllerSecret,
-			RuleTemplate:     st.Cfg.RuleTemplate,
+			RuleTemplate:     st.Cfg.LegacyRuleTemplate,
 			ProxyUser:        st.Cfg.ProxyUser,
 			ProxyPass:        st.Cfg.ProxyPass,
 		})

@@ -54,9 +54,9 @@ func runStatus(out io.Writer, c *api.Client, st *store.Store, jsonOut bool) erro
 		LastUpdated string `json:"last_updated,omitempty"`
 	}
 	var profile *profileSummary
-	if st != nil && st.Cfg.ActiveProfile != "" {
-		for _, p := range st.Cfg.Profiles {
-			if p.Name == st.Cfg.ActiveProfile {
+	if st != nil && st.Cfg.LegacyActiveProfile != "" {
+		for _, p := range st.Cfg.LegacyProfiles {
+			if p.Name == st.Cfg.LegacyActiveProfile {
 				profile = &profileSummary{
 					Name:        p.Name,
 					NodeCount:   0,

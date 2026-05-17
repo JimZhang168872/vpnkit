@@ -54,7 +54,7 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 				MixedPort:        d.Store.Cfg.MixedPort,
 				ControllerPort:   d.Store.Cfg.ControllerPort,
 				ControllerSecret: d.Store.Cfg.ControllerSecret,
-				RuleTemplate:     d.Store.Cfg.RuleTemplate,
+				RuleTemplate:     d.Store.Cfg.LegacyRuleTemplate,
 				ProxyUser:        d.Store.Cfg.ProxyUser,
 				ProxyPass:        d.Store.Cfg.ProxyPass,
 			})
