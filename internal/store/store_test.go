@@ -207,6 +207,100 @@ func TestSchemaV2HasLocalNodeGroups(t *testing.T) {
 	}
 }
 
+func TestLoadLazyMigratesNoGroup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	rc2 := `schema_version = 2
+controller_secret = "deadbeef"
+controller_port = 32645
+mixed_port = 50595
+proxy_user = "vpnkit-x"
+proxy_pass = "p"
+ui_theme = "default"
+mode = "rule"
+global_target = "🚀 Proxy"
+
+[[local_nodes]]
+name = "HK-manual"
+proto = "hysteria2"
+server = "1.2.3.4"
+port = 443
+[local_nodes.fields]
+password = "x"
+`
+	if err := os.WriteFile(path, []byte(rc2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(s.Cfg.LocalNodeGroups) != 1 || s.Cfg.LocalNodeGroups[0].Name != "local" {
+		t.Errorf("expected lazy-migrated [local], got %+v", s.Cfg.LocalNodeGroups)
+	}
+	if !s.Cfg.LocalNodeGroups[0].Enabled {
+		t.Error("default local group should be enabled")
+	}
+	if s.Cfg.LocalNodes[0].Group != "local" {
+		t.Errorf("node without group should be migrated to \"local\", got %q", s.Cfg.LocalNodes[0].Group)
+	}
+}
+
+func TestLoadDoesNotBackfillEmptyStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(s.Cfg.LocalNodeGroups) != 0 {
+		t.Errorf("fresh store should NOT auto-create a local group, got %+v", s.Cfg.LocalNodeGroups)
+	}
+}
+
+func TestLoadPreservesExistingGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	rc3 := `schema_version = 2
+controller_secret = "deadbeef"
+controller_port = 32645
+mixed_port = 50595
+proxy_user = "vpnkit-x"
+proxy_pass = "p"
+ui_theme = "default"
+mode = "rule"
+global_target = "🚀 Proxy"
+
+[[local_node_groups]]
+name = "home"
+enabled = true
+
+[[local_node_groups]]
+name = "office"
+enabled = false
+
+[[local_nodes]]
+name = "HK-A"
+group = "home"
+proto = "ss"
+server = "1.2.3.4"
+port = 8388
+`
+	if err := os.WriteFile(path, []byte(rc3), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(s.Cfg.LocalNodeGroups) != 2 ||
+		s.Cfg.LocalNodeGroups[0].Name != "home" ||
+		s.Cfg.LocalNodeGroups[1].Name != "office" ||
+		s.Cfg.LocalNodeGroups[1].Enabled {
+		t.Errorf("groups not preserved: %+v", s.Cfg.LocalNodeGroups)
+	}
+	if s.Cfg.LocalNodes[0].Group != "home" {
+		t.Errorf("explicit Group not preserved: %q", s.Cfg.LocalNodes[0].Group)
+	}
+}
+
 func TestLoadRejectsV1Store(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	v1 := `controller_secret = "deadbeef"

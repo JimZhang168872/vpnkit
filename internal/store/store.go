@@ -183,6 +183,31 @@ func Load(path string) (*Store, error) {
 		s.Cfg.LocalNodeGroups = []LocalNodeGroup{}
 		changed = true
 	}
+	defaultGroupName := "local"
+	needsDefaultGroup := false
+	for i := range s.Cfg.LocalNodes {
+		if s.Cfg.LocalNodes[i].Group == "" {
+			s.Cfg.LocalNodes[i].Group = defaultGroupName
+			needsDefaultGroup = true
+			changed = true
+		}
+	}
+	if needsDefaultGroup {
+		hasDefault := false
+		for _, g := range s.Cfg.LocalNodeGroups {
+			if g.Name == defaultGroupName {
+				hasDefault = true
+				break
+			}
+		}
+		if !hasDefault {
+			s.Cfg.LocalNodeGroups = append(s.Cfg.LocalNodeGroups, LocalNodeGroup{
+				Name:    defaultGroupName,
+				Enabled: true,
+			})
+			changed = true
+		}
+	}
 	if changed {
 		if err := s.Save(); err != nil {
 			return nil, err
