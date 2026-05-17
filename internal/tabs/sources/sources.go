@@ -689,20 +689,6 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 	return m, nil
 }
 
-// addNodeFromURI parses a proxy URI and adds it to the local nodes manager.
-// defaultGroup sets node.Group when non-empty; falls back to "local".
-func addNodeFromURI(pl PipelineFace, uri, defaultGroup string) error {
-	n, err := localnodes.ParseURI(uri)
-	if err != nil {
-		return err
-	}
-	if defaultGroup != "" {
-		n.Group = defaultGroup
-	} else {
-		n.Group = "local"
-	}
-	return pl.LocalNodes().Add(n)
-}
 
 func (m localNodesModel) View(width, height int, focused bool) string {
 	header := viewport.FocusDot(focused) +
@@ -761,58 +747,6 @@ func (m localNodesModel) View(width, height int, focused bool) string {
 		rows = append(rows, "", lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render(m.flash))
 	}
 	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
-}
-
-type formMode int
-
-const (
-	formModeURI formMode = iota
-	formModeNewGroup
-	formModeRenameGroup
-)
-
-// localNodeForm is shared by URI / new-group / rename-group inputs.
-// For Phase 6 the multi-field form will reuse this struct via mode=formModeNodeFields.
-type localNodeForm struct {
-	mode         formMode
-	input        textinput.Model
-	defaultGroup string
-	oldName      string // rename
-}
-
-func newLocalNodeURIForm() *localNodeForm {
-	ti := newTextInput("proxy URI (e.g. vmess://...)", "")
-	ti.Focus()
-	return &localNodeForm{mode: formModeURI, input: ti}
-}
-
-func newGroupNameForm() *localNodeForm {
-	ti := newTextInput("group name (e.g. home, office)", "")
-	ti.Focus()
-	return &localNodeForm{mode: formModeNewGroup, input: ti}
-}
-
-func newGroupRenameForm(current string) *localNodeForm {
-	ti := newTextInput("new group name", current)
-	ti.Focus()
-	return &localNodeForm{mode: formModeRenameGroup, input: ti, oldName: current}
-}
-
-func renderLocalNodeForm(f *localNodeForm) string {
-	switch f.mode {
-	case formModeNewGroup:
-		return lipgloss.NewStyle().Bold(true).Render("New Local Group") + "\n\n" +
-			"  " + f.input.View() + "\n\n" +
-			lipgloss.NewStyle().Faint(true).Render("[Enter] create  [Esc] cancel")
-	case formModeRenameGroup:
-		return lipgloss.NewStyle().Bold(true).Render("Rename Local Group") + "\n\n" +
-			"  " + f.input.View() + "\n\n" +
-			lipgloss.NewStyle().Faint(true).Render("[Enter] rename  [Esc] cancel")
-	default: // URI form
-		return lipgloss.NewStyle().Bold(true).Render("Add Local Node") + "\n\n" +
-			"  Enter proxy URI:\n  " + f.input.View() + "\n\n" +
-			lipgloss.NewStyle().Faint(true).Render("[Enter] add  [Esc] cancel")
-	}
 }
 
 func newTextInput(placeholder, value string) textinput.Model {
