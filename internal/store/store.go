@@ -41,6 +41,17 @@ type LocalNodeGroup struct {
 }
 
 // LocalNode is a manually configured proxy node (v2 schema).
+//
+// Group is REQUIRED — callers that construct LocalNode values for Save must
+// populate Group with a name that exists in Config.LocalNodeGroups. The
+// `omitempty` tag is intentional: it keeps rc.2 stores (which had no Group
+// field) round-trippable, and it lets Load() detect un-migrated nodes by
+// the empty-Group sentinel. Leaving Group="" on Save is treated as
+// "needs migration to default 'local' group" and silently corrected on
+// next Load.
+//
+// Via is optional and writes mihomo's dialer-proxy field on this node at
+// assemble time.
 type LocalNode struct {
 	Name   string         `toml:"name"`
 	Group  string         `toml:"group,omitempty"`

@@ -301,6 +301,55 @@ port = 8388
 	}
 }
 
+func TestLoadIsIdempotentAfterMigration(t *testing.T) {
+	// Migrate an rc.2 store, then Load + Save it twice and assert the file
+	// content stops changing after the first migration. This guards the
+	// "lazy migrate doesn't perpetually re-save" invariant.
+	path := filepath.Join(t.TempDir(), "config.toml")
+	rc2 := `schema_version = 2
+controller_secret = "deadbeef"
+controller_port = 32645
+mixed_port = 50595
+proxy_user = "vpnkit-x"
+proxy_pass = "p"
+ui_theme = "default"
+mode = "rule"
+global_target = "🚀 Proxy"
+
+[[local_nodes]]
+name = "HK-manual"
+proto = "hysteria2"
+server = "1.2.3.4"
+port = 443
+[local_nodes.fields]
+password = "x"
+`
+	if err := os.WriteFile(path, []byte(rc2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// First Load → migrate + Save.
+	if _, err := Load(path); err != nil {
+		t.Fatalf("first Load: %v", err)
+	}
+	after1, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Second Load on the already-migrated file. Save should be a no-op
+	// (the in-memory state matches what's already on disk, so nothing
+	// changes — verified by byte-identical content).
+	if _, err := Load(path); err != nil {
+		t.Fatalf("second Load: %v", err)
+	}
+	after2, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after1) != string(after2) {
+		t.Errorf("second Load modified the file:\nfirst:\n%s\nsecond:\n%s", after1, after2)
+	}
+}
+
 func TestLoadRejectsV1Store(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	v1 := `controller_secret = "deadbeef"
