@@ -101,3 +101,38 @@ func TestParseURIVless(t *testing.T) {
 		t.Errorf("reality public-key: %v", n.Fields["reality-opts"])
 	}
 }
+
+func TestParseURIHysteria2(t *testing.T) {
+	uri := "hysteria2://password@1.2.3.4:443?sni=example.com&insecure=1&up=100&down=200&obfs=salamander&obfs-password=ofuscatekey#HY2-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "hysteria2" || n.Server != "1.2.3.4" || n.Port != 443 {
+		t.Errorf("basic: %+v", n)
+	}
+	if n.Fields["password"] != "password" {
+		t.Errorf("password: %v", n.Fields["password"])
+	}
+	if n.Fields["up"] != "100 Mbps" || n.Fields["down"] != "200 Mbps" {
+		t.Errorf("up/down: %v/%v", n.Fields["up"], n.Fields["down"])
+	}
+	if n.Fields["obfs"] != "salamander" || n.Fields["obfs-password"] != "ofuscatekey" {
+		t.Errorf("obfs: %v / %v", n.Fields["obfs"], n.Fields["obfs-password"])
+	}
+	if n.Fields["skip-cert-verify"] != true {
+		t.Errorf("skip-cert-verify: %v", n.Fields["skip-cert-verify"])
+	}
+}
+
+// Also support the hy2:// alias.
+func TestParseURIHy2Alias(t *testing.T) {
+	uri := "hy2://password@1.2.3.4:443"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "hysteria2" {
+		t.Errorf("proto should normalize to hysteria2, got %q", n.Proto)
+	}
+}

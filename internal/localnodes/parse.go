@@ -248,6 +248,45 @@ func parseVless(u *url.URL, raw string) (Node, error) {
 	}, nil
 }
 
-// stub the other parsers so the package compiles before we implement them.
-func parseHy2(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("hy2: not implemented yet") }
+func parseHy2(u *url.URL, raw string) (Node, error) {
+	password := u.User.Username()
+	if password == "" {
+		return Node{}, errors.New("parse(hy2): missing password (userinfo)")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(hy2): bad port: %w", err)
+	}
+	q := u.Query()
+	fields := map[string]any{
+		"password": password,
+	}
+	if sni := q.Get("sni"); sni != "" {
+		fields["sni"] = sni
+	}
+	if q.Get("insecure") == "1" || q.Get("skip-cert-verify") == "1" {
+		fields["skip-cert-verify"] = true
+	}
+	if up := q.Get("up"); up != "" {
+		fields["up"] = up + " Mbps"
+	}
+	if down := q.Get("down"); down != "" {
+		fields["down"] = down + " Mbps"
+	}
+	if obfs := q.Get("obfs"); obfs != "" {
+		fields["obfs"] = obfs
+		if pw := q.Get("obfs-password"); pw != "" {
+			fields["obfs-password"] = pw
+		}
+	}
+	return Node{
+		Name:   nameOrFallback(u),
+		Proto:  "hysteria2", // normalize hy2 alias
+		Server: u.Hostname(),
+		Port:   port,
+		Fields: fields,
+	}, nil
+}
+
+// stub the remaining parser so the package compiles before we implement it.
 func parseTuic(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("tuic: not implemented yet") }
