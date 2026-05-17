@@ -12,17 +12,18 @@ func TestTabSwitching(t *testing.T) {
 	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
+	// Key "3" → TabSources (index 2).
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
-	if m.activeTab != TabProfiles {
-		t.Errorf("expected Profiles, got %v", m.activeTab)
+	if m.activeTab != TabSources {
+		t.Errorf("expected TabSources after pressing 3, got %v", m.activeTab)
 	}
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != TabConnections {
-		t.Errorf("Tab cycle failed: %v", m.activeTab)
+	if m.activeTab != TabRules {
+		t.Errorf("Tab cycle failed: expected TabRules, got %v", m.activeTab)
 	}
 
 	view := m.View()
-	if !strings.Contains(view, "Profiles") || !strings.Contains(view, "vpnkit") {
+	if !strings.Contains(view, "Rules") || !strings.Contains(view, "vpnkit") {
 		t.Errorf("view missing chrome:\n%s", view)
 	}
 }
@@ -64,7 +65,7 @@ func TestRightArrowReturnsToTabBody(t *testing.T) {
 	}
 }
 
-// TestUpDownOnMainSidebarCyclesTabs — the core "user wants ↑↓ to navigate
+// TestUpDownOnMainSidebarCyclesTabs — the core "user wants ↑/↓ to navigate
 // top tabs" feature.
 func TestUpDownOnMainSidebarCyclesTabs(t *testing.T) {
 	m := NewModel(nil, tabsettings.Deps{}, nil)
@@ -74,8 +75,8 @@ func TestUpDownOnMainSidebarCyclesTabs(t *testing.T) {
 		t.Fatalf("setup: expected TabDashboard, got %v", m.activeTab)
 	}
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyDown})
-	if m.activeTab != TabProxies {
-		t.Errorf("↓ on MainSidebar should advance to TabProxies, got %v", m.activeTab)
+	if m.activeTab != TabGroups {
+		t.Errorf("↓ on MainSidebar should advance to TabGroups, got %v", m.activeTab)
 	}
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyUp})
 	if m.activeTab != TabDashboard {
@@ -95,15 +96,15 @@ func TestUpDownOnMainSidebarCyclesTabs(t *testing.T) {
 func TestUpDownOnTabBodyDelegates(t *testing.T) {
 	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
-	// default focus = TabBody; activeTab = Dashboard (no list to move).
-	// Use Profiles instead — its cursor is observable.
-	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
-	if m.activeTab != TabProfiles {
-		t.Fatalf("setup: expected TabProfiles, got %v", m.activeTab)
+	// default focus = TabBody; activeTab = Dashboard.
+	// Switch to Rules tab (has a cursor) and test that ↓ doesn't cycle tabs.
+	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	if m.activeTab != TabRules {
+		t.Fatalf("setup: expected TabRules (key 4), got %v", m.activeTab)
 	}
 	// ↓ should NOT change activeTab (since focus = TabBody).
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyDown})
-	if m.activeTab != TabProfiles {
+	if m.activeTab != TabRules {
 		t.Errorf("↓ on TabBody should NOT cycle tabs, got activeTab=%v", m.activeTab)
 	}
 }

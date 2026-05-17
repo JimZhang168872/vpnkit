@@ -93,6 +93,7 @@ func Run(version string) error {
 		},
 	}
 	model := NewModel(client, settingsDeps, applyCfg)
+	model.WirePipeline(pl)
 	modelRef = &model
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
