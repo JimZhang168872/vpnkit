@@ -199,7 +199,55 @@ func parseTrojan(u *url.URL, raw string) (Node, error) {
 	}, nil
 }
 
+func parseVless(u *url.URL, raw string) (Node, error) {
+	uuid := u.User.Username()
+	if uuid == "" {
+		return Node{}, errors.New("parse(vless): missing uuid (userinfo)")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(vless): bad port: %w", err)
+	}
+	q := u.Query()
+	fields := map[string]any{
+		"uuid":    uuid,
+		"network": q.Get("type"),
+	}
+	if fields["network"] == "" {
+		fields["network"] = "tcp"
+	}
+	if flow := q.Get("flow"); flow != "" {
+		fields["flow"] = flow
+	}
+	switch q.Get("security") {
+	case "tls":
+		fields["tls"] = true
+		if sni := q.Get("sni"); sni != "" {
+			fields["servername"] = sni
+		}
+	case "reality":
+		fields["tls"] = true
+		ro := map[string]any{}
+		if pbk := q.Get("pbk"); pbk != "" {
+			ro["public-key"] = pbk
+		}
+		if sid := q.Get("sid"); sid != "" {
+			ro["short-id"] = sid
+		}
+		if sni := q.Get("sni"); sni != "" {
+			fields["servername"] = sni
+		}
+		fields["reality-opts"] = ro
+	}
+	return Node{
+		Name:   nameOrFallback(u),
+		Proto:  "vless",
+		Server: u.Hostname(),
+		Port:   port,
+		Fields: fields,
+	}, nil
+}
+
 // stub the other parsers so the package compiles before we implement them.
-func parseVless(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("vless: not implemented yet") }
-func parseHy2(u *url.URL, raw string) (Node, error)   { return Node{}, errors.New("hy2: not implemented yet") }
-func parseTuic(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("tuic: not implemented yet") }
+func parseHy2(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("hy2: not implemented yet") }
+func parseTuic(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("tuic: not implemented yet") }

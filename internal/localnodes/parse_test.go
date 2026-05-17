@@ -77,3 +77,27 @@ func TestParseURITrojan(t *testing.T) {
 		t.Errorf("alpn: %v", n.Fields["alpn"])
 	}
 }
+
+func TestParseURIVless(t *testing.T) {
+	// vless://UUID@host:port?encryption=none&security=reality&pbk=KEY&sni=...&type=tcp#name
+	uri := "vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?encryption=none&security=reality&pbk=publicKeyBase64&sni=example.com&type=tcp&flow=xtls-rprx-vision#VL-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "vless" || n.Server != "1.2.3.4" || n.Port != 443 {
+		t.Errorf("basic: %+v", n)
+	}
+	if n.Fields["uuid"] != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("uuid: %v", n.Fields["uuid"])
+	}
+	if n.Fields["flow"] != "xtls-rprx-vision" {
+		t.Errorf("flow: %v", n.Fields["flow"])
+	}
+	if n.Fields["tls"] != true {
+		t.Errorf("tls: %v", n.Fields["tls"])
+	}
+	if r, _ := n.Fields["reality-opts"].(map[string]any); r["public-key"] != "publicKeyBase64" {
+		t.Errorf("reality public-key: %v", n.Fields["reality-opts"])
+	}
+}
