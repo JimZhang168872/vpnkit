@@ -55,7 +55,15 @@ func NewPipeline(st *store.Store, configYAMLPath, extensionsPath string) *Pipeli
 func toLocalNodes(in []store.LocalNode) []localnodes.Node {
 	out := make([]localnodes.Node, len(in))
 	for i, x := range in {
-		out[i] = localnodes.Node{Name: x.Name, Proto: x.Proto, Server: x.Server, Port: x.Port, Fields: x.Fields}
+		out[i] = localnodes.Node{
+			Name:   x.Name,
+			Group:  x.Group,
+			Via:    x.Via,
+			Proto:  x.Proto,
+			Server: x.Server,
+			Port:   x.Port,
+			Fields: x.Fields,
+		}
 	}
 	return out
 }
@@ -290,7 +298,15 @@ func (p *Pipeline) SaveLocal() error {
 	allRules := p.localRules.All()
 	ln := make([]store.LocalNode, 0, len(allNodes))
 	for _, n := range allNodes {
-		ln = append(ln, store.LocalNode{Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port, Fields: n.Fields})
+		ln = append(ln, store.LocalNode{
+			Name:   n.Name,
+			Group:  n.Group,
+			Via:    n.Via,
+			Proto:  n.Proto,
+			Server: n.Server,
+			Port:   n.Port,
+			Fields: n.Fields,
+		})
 	}
 	lr := make([]store.LocalRule, 0, len(allRules))
 	for _, r := range allRules {
@@ -298,6 +314,141 @@ func (p *Pipeline) SaveLocal() error {
 	}
 	p.store.Cfg.LocalNodes = ln
 	p.store.Cfg.LocalRules = lr
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// LocalNodeGroups returns the current local-nodes-group list (copy).
+func (p *Pipeline) LocalNodeGroups() []store.LocalNodeGroup {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]store.LocalNodeGroup, len(p.store.Cfg.LocalNodeGroups))
+	copy(out, p.store.Cfg.LocalNodeGroups)
+	return out
+}
+
+// AddLocalGroup creates a new empty local-nodes group. Returns error if a
+// group with the same name already exists.
+func (p *Pipeline) AddLocalGroup(name string) error {
+	if name == "" {
+		return fmt.Errorf("local group name required")
+	}
+	p.mu.Lock()
+	for _, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == name {
+			p.mu.Unlock()
+			return fmt.Errorf("local group %q already exists", name)
+		}
+	}
+	p.store.Cfg.LocalNodeGroups = append(p.store.Cfg.LocalNodeGroups, store.LocalNodeGroup{
+		Name: name, Enabled: true,
+	})
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// DeleteLocalGroup removes a group. Returns error if the group still has
+// nodes (caller must mv them or pass force=true to delete cascadingly).
+func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
+	p.mu.Lock()
+	hasNodes := false
+	for _, n := range p.store.Cfg.LocalNodes {
+		if n.Group == name {
+			hasNodes = true
+			break
+		}
+	}
+	if hasNodes && !force {
+		p.mu.Unlock()
+		return fmt.Errorf("local group %q is not empty (use force to delete with nodes)", name)
+	}
+	idx := -1
+	for i, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		p.mu.Unlock()
+		return fmt.Errorf("local group %q not found", name)
+	}
+	p.store.Cfg.LocalNodeGroups = append(p.store.Cfg.LocalNodeGroups[:idx], p.store.Cfg.LocalNodeGroups[idx+1:]...)
+	if force {
+		filtered := p.store.Cfg.LocalNodes[:0]
+		for _, n := range p.store.Cfg.LocalNodes {
+			if n.Group != name {
+				filtered = append(filtered, n)
+			}
+		}
+		p.store.Cfg.LocalNodes = filtered
+		nodes := make([]localnodes.Node, 0, len(filtered))
+		for _, n := range filtered {
+			nodes = append(nodes, localnodes.Node{
+				Name: n.Name, Group: n.Group, Via: n.Via, Proto: n.Proto,
+				Server: n.Server, Port: n.Port, Fields: n.Fields,
+			})
+		}
+		p.localNodes.Load(nodes)
+	}
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// ToggleLocalGroupEnabled flips the Enabled flag.
+func (p *Pipeline) ToggleLocalGroupEnabled(name string) error {
+	p.mu.Lock()
+	for i, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == name {
+			p.store.Cfg.LocalNodeGroups[i].Enabled = !g.Enabled
+			p.mu.Unlock()
+			return p.store.Save()
+		}
+	}
+	p.mu.Unlock()
+	return fmt.Errorf("local group %q not found", name)
+}
+
+// RenameLocalGroup renames a group and migrates every node's Group field.
+func (p *Pipeline) RenameLocalGroup(oldName, newName string) error {
+	if newName == "" {
+		return fmt.Errorf("new name required")
+	}
+	if oldName == newName {
+		return nil
+	}
+	p.mu.Lock()
+	for _, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == newName {
+			p.mu.Unlock()
+			return fmt.Errorf("local group %q already exists", newName)
+		}
+	}
+	idx := -1
+	for i, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == oldName {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		p.mu.Unlock()
+		return fmt.Errorf("local group %q not found", oldName)
+	}
+	p.store.Cfg.LocalNodeGroups[idx].Name = newName
+	for i, n := range p.store.Cfg.LocalNodes {
+		if n.Group == oldName {
+			p.store.Cfg.LocalNodes[i].Group = newName
+		}
+	}
+	nodes := make([]localnodes.Node, 0, len(p.store.Cfg.LocalNodes))
+	for _, n := range p.store.Cfg.LocalNodes {
+		nodes = append(nodes, localnodes.Node{
+			Name: n.Name, Group: n.Group, Via: n.Via, Proto: n.Proto,
+			Server: n.Server, Port: n.Port, Fields: n.Fields,
+		})
+	}
+	p.localNodes.Load(nodes)
 	p.mu.Unlock()
 	return p.store.Save()
 }
