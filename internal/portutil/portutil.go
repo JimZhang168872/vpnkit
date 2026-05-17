@@ -1,7 +1,10 @@
 // Package portutil contains helpers for picking a free TCP port on 127.0.0.1.
 //
-// vpnkit needs this because mihomo's mixed-port and external-controller default
-// to 7890/9090; on multi-user hosts two vpnkit installs would otherwise collide.
+// vpnkit needs this because mihomo's mixed-port and external-controller must
+// bind unique ports per process. The store now seeds defaults from a random
+// high-range (30000-60000) draw so two fresh installs on the same host very
+// rarely collide, but FindFree remains the safety net: if a chosen port is
+// already in use (TIME_WAIT, another proxy, etc.) it scans the next 100 slots.
 package portutil
 
 import (

@@ -3,8 +3,10 @@ package store
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -65,11 +67,17 @@ func Load(path string) (*Store, error) {
 	// upgrading from a pre-auth version would see fresh creds every run).
 	changed := false
 	if s.Cfg.ControllerPort == 0 {
-		s.Cfg.ControllerPort = 9090
+		s.Cfg.ControllerPort = randomHighPort()
 		changed = true
 	}
 	if s.Cfg.MixedPort == 0 {
-		s.Cfg.MixedPort = 7890
+		s.Cfg.MixedPort = randomHighPort()
+		// Guard against the (vanishingly small) chance the two random draws
+		// landed on the same port. portutil.FindFree at runtime would shift
+		// one of them anyway, but it's cleaner to start distinct.
+		for s.Cfg.MixedPort == s.Cfg.ControllerPort {
+			s.Cfg.MixedPort = randomHighPort()
+		}
 		changed = true
 	}
 	if s.Cfg.RuleTemplate == "" {
@@ -133,10 +141,15 @@ func (s *Store) Save() error {
 }
 
 func defaults() Config {
+	cp := randomHighPort()
+	mp := randomHighPort()
+	for mp == cp {
+		mp = randomHighPort()
+	}
 	return Config{
 		ControllerSecret: randHex(16),
-		ControllerPort:   9090,
-		MixedPort:        7890,
+		ControllerPort:   cp,
+		MixedPort:        mp,
 		ProxyUser:        "vpnkit-" + randHex(4),
 		ProxyPass:        randHex(16),
 		RuleTemplate:     "loyalsoldier",
@@ -148,4 +161,33 @@ func randHex(n int) string {
 	buf := make([]byte, n)
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
+}
+
+// randomHighPort returns a uniformly-distributed TCP port in [30000, 60000],
+// drawn from crypto/rand so that two concurrent first-launches by different
+// users on the same host pick independent ports — the historical 7890/9090
+// defaults guaranteed collisions in multi-user setups (mihomo could not bind).
+// portutil.FindFree still runs at startup as a safety net, but starting from
+// a random seed reduces the post-randomization scan distance to typically zero.
+//
+// Rejection sampling is used to remove modulo bias: uint16 (65536 values) mod
+// 30001 would otherwise over-sample the low ~18% of the range by 2x.
+func randomHighPort() int {
+	const count = 30001
+	const limit = 65536 - (65536 % count) // largest multiple of count fitting in uint16
+	var b [2]byte
+	for {
+		if _, err := rand.Read(b[:]); err != nil {
+			// crypto/rand on Linux/macOS does not fail post-boot. If it does,
+			// log to stderr so two simultaneous fallbacks remain observable,
+			// then return a fixed mid-range port; FindFree will scan from there.
+			fmt.Fprintln(os.Stderr, "vpnkit: crypto/rand failed in randomHighPort; using fallback 45000:", err)
+			return 45000
+		}
+		v := int(binary.BigEndian.Uint16(b[:]))
+		if v < limit {
+			return 30000 + v%count
+		}
+		// Reject the biased tail (the upper 5534 values of uint16 space) and redraw.
+	}
 }
