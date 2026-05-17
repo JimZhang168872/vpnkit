@@ -136,3 +136,23 @@ func TestParseURIHy2Alias(t *testing.T) {
 		t.Errorf("proto should normalize to hysteria2, got %q", n.Proto)
 	}
 }
+
+func TestParseURITuic(t *testing.T) {
+	uri := "tuic://UUID:PASSWORD@1.2.3.4:443?sni=example.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3#TUIC-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "tuic" || n.Server != "1.2.3.4" || n.Port != 443 {
+		t.Errorf("basic: %+v", n)
+	}
+	if n.Fields["uuid"] != "UUID" || n.Fields["password"] != "PASSWORD" {
+		t.Errorf("uuid/password: %v/%v", n.Fields["uuid"], n.Fields["password"])
+	}
+	if n.Fields["congestion-controller"] != "bbr" {
+		t.Errorf("congestion-controller: %v", n.Fields["congestion-controller"])
+	}
+	if n.Fields["sni"] != "example.com" {
+		t.Errorf("sni: %v", n.Fields["sni"])
+	}
+}

@@ -288,5 +288,38 @@ func parseHy2(u *url.URL, raw string) (Node, error) {
 	}, nil
 }
 
-// stub the remaining parser so the package compiles before we implement it.
-func parseTuic(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("tuic: not implemented yet") }
+func parseTuic(u *url.URL, raw string) (Node, error) {
+	uuid := u.User.Username()
+	password, _ := u.User.Password()
+	if uuid == "" || password == "" {
+		return Node{}, errors.New("parse(tuic): userinfo must be uuid:password")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(tuic): bad port: %w", err)
+	}
+	q := u.Query()
+	fields := map[string]any{
+		"uuid":     uuid,
+		"password": password,
+	}
+	if sni := q.Get("sni"); sni != "" {
+		fields["sni"] = sni
+	}
+	if cc := q.Get("congestion_control"); cc != "" {
+		fields["congestion-controller"] = cc
+	}
+	if udp := q.Get("udp_relay_mode"); udp != "" {
+		fields["udp-relay-mode"] = udp
+	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		fields["alpn"] = strings.Split(alpn, ",")
+	}
+	return Node{
+		Name:   nameOrFallback(u),
+		Proto:  "tuic",
+		Server: u.Hostname(),
+		Port:   port,
+		Fields: fields,
+	}, nil
+}
