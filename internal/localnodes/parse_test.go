@@ -156,3 +156,116 @@ func TestParseURITuic(t *testing.T) {
 		t.Errorf("sni: %v", n.Fields["sni"])
 	}
 }
+
+// Error path coverage tests.
+
+func TestParseURIMissingScheme(t *testing.T) {
+	if _, err := ParseURI("no-scheme-here"); err == nil {
+		t.Error("expected error for missing scheme")
+	}
+}
+
+func TestParseURIUnsupportedScheme(t *testing.T) {
+	if _, err := ParseURI("ftp://example.com"); err == nil {
+		t.Error("expected error for unsupported scheme")
+	}
+}
+
+func TestParseSS_MissingUserInfo(t *testing.T) {
+	if _, err := ParseURI("ss://1.2.3.4:8388"); err == nil {
+		t.Error("expected error for ss:// without userinfo")
+	}
+}
+
+func TestParseSS_BadBase64(t *testing.T) {
+	if _, err := ParseURI("ss://not!valid!base64@1.2.3.4:8388"); err == nil {
+		t.Error("expected error for bad base64 in ss userinfo")
+	}
+}
+
+func TestParseVmess_NoTLSNoWS(t *testing.T) {
+	// vmess with tcp transport and no tls — covers the else branches
+	payload := `{"v":"2","ps":"plain","add":"5.5.5.5","port":"1234","id":"aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb","aid":"0","net":"tcp","type":"none","host":"","path":"","tls":""}`
+	uri := "vmess://" + base64.StdEncoding.EncodeToString([]byte(payload))
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "vmess" || n.Server != "5.5.5.5" || n.Port != 1234 {
+		t.Errorf("basic: %+v", n)
+	}
+	if _, hasTLS := n.Fields["tls"]; hasTLS {
+		t.Error("should not have tls field for non-tls vmess")
+	}
+}
+
+func TestParseVmess_TLSWithSNI(t *testing.T) {
+	// tls=tls with explicit sni — covers servername=sni path
+	payload := `{"v":"2","ps":"tls-sni","add":"6.6.6.6","port":"8443","id":"11111111-2222-3333-4444-555555555555","aid":"0","net":"tcp","type":"none","host":"fallback.com","path":"","tls":"tls","sni":"explicit.com"}`
+	uri := "vmess://" + base64.StdEncoding.EncodeToString([]byte(payload))
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Fields["servername"] != "explicit.com" {
+		t.Errorf("servername should prefer sni over host: %v", n.Fields["servername"])
+	}
+}
+
+func TestParseTrojan_SkipCertVerify(t *testing.T) {
+	uri := "trojan://pass@1.2.3.4:443?allowInsecure=1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Fields["skip-cert-verify"] != true {
+		t.Errorf("skip-cert-verify: %v", n.Fields["skip-cert-verify"])
+	}
+}
+
+func TestParseVless_TLSSecurity(t *testing.T) {
+	// security=tls (not reality) covers the tls case branch
+	uri := "vless://uuid-here@1.2.3.4:443?security=tls&sni=tls.example.com&type=tcp"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Fields["tls"] != true {
+		t.Errorf("tls: %v", n.Fields["tls"])
+	}
+	if n.Fields["servername"] != "tls.example.com" {
+		t.Errorf("servername: %v", n.Fields["servername"])
+	}
+}
+
+func TestParseVless_RealityWithSID(t *testing.T) {
+	// reality with short-id
+	uri := "vless://uuid-here@1.2.3.4:443?security=reality&pbk=KEY&sid=SHORTID&sni=sni.example.com&type=tcp"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if ro, ok := n.Fields["reality-opts"].(map[string]any); !ok || ro["short-id"] != "SHORTID" {
+		t.Errorf("reality short-id: %v", n.Fields["reality-opts"])
+	}
+}
+
+func TestParseHy2_NoFragment(t *testing.T) {
+	// URI without fragment — nameOrFallback uses host
+	uri := "hysteria2://pw@example.com:443"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Name != "example.com:443" {
+		t.Errorf("name (fallback): %q", n.Name)
+	}
+}
+
+func TestToProxyMapSS(t *testing.T) {
+	n := Node{Name: "SS-1", Proto: "ss", Server: "1.1.1.1", Port: 8388, Fields: map[string]any{"cipher": "aes-256-gcm", "password": "pw"}}
+	m := ToProxyMap(n)
+	if m["type"] != "ss" || m["cipher"] != "aes-256-gcm" {
+		t.Errorf("ToProxyMap ss: %v", m)
+	}
+}
