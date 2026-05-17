@@ -461,6 +461,21 @@ func (m *localNodesModel) setData(nodes []localnodes.Node) {
 
 func (m *localNodesModel) setGroups(groups []store.LocalNodeGroup) {
 	m.groups = groups
+	// If the currently-selected group no longer exists (e.g., it was renamed
+	// out from under us, or deleted by a parallel CLI mutation), reset to
+	// the first available group — or to empty when no groups remain.
+	if m.currentGroup != "" {
+		stillExists := false
+		for _, g := range m.groups {
+			if g.Name == m.currentGroup {
+				stillExists = true
+				break
+			}
+		}
+		if !stillExists {
+			m.currentGroup = ""
+		}
+	}
 	if m.currentGroup == "" && len(m.groups) > 0 {
 		m.currentGroup = m.groups[0].Name
 	}
@@ -615,7 +630,11 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 				return m, nil
 			}
 			if err := m.deps.Pipeline.DeleteLocalGroup(m.currentGroup, false); err != nil {
-				m.flash = "delete group: " + err.Error()
+				msg := "delete group: " + err.Error()
+				if strings.Contains(err.Error(), "not empty") {
+					msg += "  (move or delete nodes first)"
+				}
+				m.flash = msg
 				return m, nil
 			}
 			m.flash = "deleted group " + m.currentGroup
