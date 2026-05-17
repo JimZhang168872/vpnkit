@@ -54,3 +54,26 @@ func TestParseURIVmess(t *testing.T) {
 		t.Errorf("ws-opts.path: %v", ws)
 	}
 }
+
+func TestParseURITrojan(t *testing.T) {
+	uri := "trojan://password123@1.2.3.4:8443?sni=example.com&alpn=h2,http/1.1#TR-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "trojan" || n.Server != "1.2.3.4" || n.Port != 8443 {
+		t.Errorf("basic: %+v", n)
+	}
+	if n.Name != "TR-1" {
+		t.Errorf("name: %q", n.Name)
+	}
+	if n.Fields["password"] != "password123" {
+		t.Errorf("password: %v", n.Fields["password"])
+	}
+	if n.Fields["sni"] != "example.com" {
+		t.Errorf("sni: %v", n.Fields["sni"])
+	}
+	if alpn, _ := n.Fields["alpn"].([]string); len(alpn) != 2 || alpn[0] != "h2" {
+		t.Errorf("alpn: %v", n.Fields["alpn"])
+	}
+}

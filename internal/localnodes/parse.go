@@ -168,8 +168,38 @@ func anyToInt(v any) (int, error) {
 	}
 }
 
+func parseTrojan(u *url.URL, raw string) (Node, error) {
+	password := u.User.Username()
+	if password == "" {
+		return Node{}, errors.New("parse(trojan): missing password (userinfo)")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(trojan): bad port: %w", err)
+	}
+	q := u.Query()
+	fields := map[string]any{
+		"password": password,
+	}
+	if sni := q.Get("sni"); sni != "" {
+		fields["sni"] = sni
+	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		fields["alpn"] = strings.Split(alpn, ",")
+	}
+	if q.Get("allowInsecure") == "1" || q.Get("skip-cert-verify") == "1" {
+		fields["skip-cert-verify"] = true
+	}
+	return Node{
+		Name:   nameOrFallback(u),
+		Proto:  "trojan",
+		Server: u.Hostname(),
+		Port:   port,
+		Fields: fields,
+	}, nil
+}
+
 // stub the other parsers so the package compiles before we implement them.
-func parseVless(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("vless: not implemented yet") }
-func parseTrojan(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("trojan: not implemented yet") }
-func parseHy2(u *url.URL, raw string) (Node, error)    { return Node{}, errors.New("hy2: not implemented yet") }
-func parseTuic(u *url.URL, raw string) (Node, error)   { return Node{}, errors.New("tuic: not implemented yet") }
+func parseVless(u *url.URL, raw string) (Node, error) { return Node{}, errors.New("vless: not implemented yet") }
+func parseHy2(u *url.URL, raw string) (Node, error)   { return Node{}, errors.New("hy2: not implemented yet") }
+func parseTuic(u *url.URL, raw string) (Node, error)  { return Node{}, errors.New("tuic: not implemented yet") }
