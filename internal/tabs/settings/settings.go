@@ -2,6 +2,7 @@
 package settings
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,6 +56,15 @@ var SubPageNames = [NumSubPages]string{
 	"About",
 }
 
+// PipelineFace is the subset of *app.Pipeline that the settings tab needs.
+// Declared here (not in app/) to break the package import cycle: settings
+// cannot import app because app imports settings.
+type PipelineFace interface {
+	RefreshSubscription(ctx context.Context, name string) (int, error)
+	Assemble() error
+	SaveLocal() error
+}
+
 // Deps are wires for sub-pages.
 type Deps struct {
 	Paths          paths.XDG
@@ -62,6 +72,7 @@ type Deps struct {
 	Service        service.Manager
 	APIClient      *api.Client
 	ExtensionsPath string         // ~/.config/vpnkit/extensions.toml (empty in tests = uses Paths)
+	Pipeline       PipelineFace   // v1 multi-source pipeline; nil until wired in run.go
 	ProxyNames     ProxyNamesFunc // returns proxy+group names from latest snapshot
 	ApplyFunc      func() error   // reassemble + reload mihomo; nil in tests
 }

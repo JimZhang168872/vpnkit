@@ -79,6 +79,7 @@ func Run(version string) error {
 		Service:        svc,
 		APIClient:      client,
 		ExtensionsPath: filepath.Join(p.VpnkitConfig, "extensions.toml"),
+		Pipeline:       pl,
 		ProxyNames: func() []string {
 			if modelRef == nil {
 				return nil
