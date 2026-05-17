@@ -184,8 +184,7 @@ func (m *Model) recordProxyNames(snap ProxiesSnapshot) {
 }
 
 // NewModel constructs the initial model. client may be nil during tests.
-// TODO(v1-phase8): mgr param removed; second arg is now ignored (passes nil from run.go).
-func NewModel(client *api.Client, _ any, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
+func NewModel(client *api.Client, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
 	stubs := [NumTabs]stub.Model{}
 	for i := TabProxies; i < NumTabs; i++ {
 		if i == TabProfiles || i == TabProxies || i == TabConnections || i == TabRules || i == TabSettings {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -27,7 +28,13 @@ type Pipeline struct {
 	mu         sync.Mutex
 	localNodes *localnodes.Manager
 	localRules *localrules.Manager
-	subResults map[string]*subscription.Result // by subscription name; absent = not yet fetched
+	// subResults caches one fetched+converted subscription Result per name.
+	// Entries for removed subscriptions are NOT auto-purged in this phase —
+	// Phase 7's `subs rm` CLI must call DropSubscription (TODO) or the next
+	// Assemble will silently include stale data via store re-lookup. Today
+	// Assemble skips groups whose name isn't in store.Cfg.Subscriptions, so
+	// the leak is contained; Phase 7 should still purge for memory hygiene.
+	subResults map[string]*subscription.Result
 }
 
 // NewPipeline constructs a Pipeline and loads existing local state from the store.
@@ -62,21 +69,31 @@ func toLocalRules(in []store.LocalRule) []localrules.Rule {
 }
 
 // RefreshSubscription fetches one named subscription, parses it, and caches
-// the result. Returns the node count.
+// the result. Returns the node count. Re-looks up the subscription by name
+// after the fetch so the in-memory store.Subscription slice can be safely
+// mutated by callers (e.g. CLI subs add/rm) while a refresh is in flight.
+//
+// Concurrent calls for the same name produce a duplicate fetch and a
+// last-write-wins cached result; we accept that cost rather than serialize
+// network I/O across all refreshes.
 func (p *Pipeline) RefreshSubscription(ctx context.Context, name string) (int, error) {
 	p.mu.Lock()
-	var sub *store.Subscription
-	for i := range p.store.Cfg.Subscriptions {
-		if p.store.Cfg.Subscriptions[i].Name == name {
-			sub = &p.store.Cfg.Subscriptions[i]
+	var url, ua string
+	found := false
+	for _, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			url = s.URL
+			ua = s.UserAgent
+			found = true
 			break
 		}
 	}
 	p.mu.Unlock()
-	if sub == nil {
+	if !found {
 		return 0, fmt.Errorf("subscription %q not found", name)
 	}
-	body, err := subscription.Fetch(ctx, sub.URL, sub.UserAgent)
+
+	body, err := subscription.Fetch(ctx, url, ua)
 	if err != nil {
 		return 0, err
 	}
@@ -84,12 +101,29 @@ func (p *Pipeline) RefreshSubscription(ctx context.Context, name string) (int, e
 	if err != nil {
 		return 0, err
 	}
+
 	p.mu.Lock()
+	// Re-look up by name — the subscription may have been removed or
+	// renamed while we were fetching.
+	idx := -1
+	for i, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		p.mu.Unlock()
+		return 0, fmt.Errorf("subscription %q removed during refresh", name)
+	}
 	p.subResults[name] = &res
-	sub.LastUpdated = time.Now()
-	sub.NodeCount = len(res.Proxies)
+	p.store.Cfg.Subscriptions[idx].LastUpdated = time.Now()
+	p.store.Cfg.Subscriptions[idx].NodeCount = len(res.Proxies)
 	p.mu.Unlock()
-	_ = p.store.Save()
+
+	if err := p.store.Save(); err != nil {
+		return 0, fmt.Errorf("save store: %w", err)
+	}
 	return len(res.Proxies), nil
 }
 
@@ -109,7 +143,14 @@ func (p *Pipeline) Assemble() error {
 		subs = append(subs, groups.NewSubscriptionGroup(s.Name, true, res))
 	}
 	localGroup := groups.NewLocalNodesGroup("local", p.localNodes)
-	ext, _ := extensions.Load(p.extensionsPath)
+	// extensions.Load returns (Extensions{}, nil) for a missing file, so the
+	// blank identifier is safe for that case. Non-nil errors indicate parse
+	// failures (corrupt TOML), which we surface to stderr rather than silently
+	// assembling without user-defined extensions.
+	ext, err := extensions.Load(p.extensionsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vpnkit: extensions load failed (using none): %v\n", err)
+	}
 	cfg := p.store.Cfg
 	p.mu.Unlock()
 
@@ -144,12 +185,14 @@ func (p *Pipeline) LocalRules() *localrules.Manager { return p.localRules }
 // SaveLocal persists localNodes + localRules back into the Store.
 func (p *Pipeline) SaveLocal() error {
 	p.mu.Lock()
-	ln := make([]store.LocalNode, 0)
-	for _, n := range p.localNodes.All() {
+	allNodes := p.localNodes.All()
+	allRules := p.localRules.All()
+	ln := make([]store.LocalNode, 0, len(allNodes))
+	for _, n := range allNodes {
 		ln = append(ln, store.LocalNode{Name: n.Name, Proto: n.Proto, Server: n.Server, Port: n.Port, Fields: n.Fields})
 	}
-	lr := make([]store.LocalRule, 0)
-	for _, r := range p.localRules.All() {
+	lr := make([]store.LocalRule, 0, len(allRules))
+	for _, r := range allRules {
 		lr = append(lr, store.LocalRule{Type: r.Type, Payload: r.Payload, Target: r.Target})
 	}
 	p.store.Cfg.LocalNodes = ln

@@ -92,7 +92,7 @@ func Run(version string) error {
 			return applyCfg(ctx)
 		},
 	}
-	model := NewModel(client, nil, settingsDeps, applyCfg)
+	model := NewModel(client, settingsDeps, applyCfg)
 	modelRef = &model
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 

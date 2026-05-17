@@ -9,7 +9,7 @@ import (
 )
 
 func TestTabSwitching(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
@@ -35,7 +35,7 @@ func updateModel(m Model, msg tea.Msg) (Model, tea.Cmd) {
 // TestAppFocusDefaultIsTabBody — existing keyboards keep working without
 // users having to learn the new ← / → focus flow.
 func TestAppFocusDefaultIsTabBody(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	if m.AppFocus() != FocusTabBody {
 		t.Errorf("default appFocus should be TabBody, got %v", m.AppFocus())
 	}
@@ -44,7 +44,7 @@ func TestAppFocusDefaultIsTabBody(t *testing.T) {
 // TestLeftArrowEntersMainSidebar — pressing ← anywhere with appFocus=TabBody
 // shifts focus to the main sidebar (where ↑/↓ then cycles top tabs).
 func TestLeftArrowEntersMainSidebar(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.AppFocus() != FocusMainSidebar {
@@ -55,7 +55,7 @@ func TestLeftArrowEntersMainSidebar(t *testing.T) {
 // TestRightArrowReturnsToTabBody — symmetric: → from MainSidebar goes back
 // to TabBody.
 func TestRightArrowReturnsToTabBody(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyLeft})  // go to sidebar
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRight}) // back to body
@@ -67,7 +67,7 @@ func TestRightArrowReturnsToTabBody(t *testing.T) {
 // TestUpDownOnMainSidebarCyclesTabs — the core "user wants ↑↓ to navigate
 // top tabs" feature.
 func TestUpDownOnMainSidebarCyclesTabs(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyLeft}) // sidebar focus
 	if m.activeTab != TabDashboard {
@@ -93,7 +93,7 @@ func TestUpDownOnMainSidebarCyclesTabs(t *testing.T) {
 // TestUpDownOnTabBodyDelegates — when focus is on TabBody, ↑/↓ keep doing
 // what they used to (move the active tab's cursor), not cycle top tabs.
 func TestUpDownOnTabBodyDelegates(t *testing.T) {
-	m := NewModel(nil, nil, tabsettings.Deps{}, nil)
+	m := NewModel(nil, tabsettings.Deps{}, nil)
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	// default focus = TabBody; activeTab = Dashboard (no list to move).
 	// Use Profiles instead — its cursor is observable.
