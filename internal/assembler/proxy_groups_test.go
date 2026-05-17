@@ -22,7 +22,7 @@ func TestAssembleEmitsTwoGroupsPerSubscription(t *testing.T) {
 
 	out, _ := Assemble(Input{
 		Subscriptions:    []groups.Group{sub},
-		LocalNodes:       groups.NewLocalNodesGroup("local", local),
+		LocalGroups:      []groups.Group{groups.NewLocalNodesGroup("local", local)},
 		MixedPort:        50595,
 		ControllerPort:   32645,
 		ControllerSecret: "s",

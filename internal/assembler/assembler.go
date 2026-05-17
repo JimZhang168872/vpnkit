@@ -29,7 +29,7 @@ type Input struct {
 	Mode             Mode
 	GlobalTarget     string
 	Subscriptions    []groups.Group
-	LocalNodes       groups.Group
+	LocalGroups      []groups.Group // one Group per enabled local-nodes-group
 	LocalRules       []localrules.Rule
 	Extensions       extensions.Extensions
 	MixedPort        int
@@ -66,8 +66,8 @@ func Assemble(in Input) ([]byte, error) {
 		doc["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
 	}
 
-	doc["proxies"] = emitProxies(in.Subscriptions, in.LocalNodes)
-	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalNodes, in.GlobalTarget)
+	doc["proxies"] = emitProxies(in.Subscriptions, in.LocalGroups)
+	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalGroups, in.GlobalTarget)
 	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions)
 
 	if err := extensions.Apply(doc, in.Extensions); err != nil {
