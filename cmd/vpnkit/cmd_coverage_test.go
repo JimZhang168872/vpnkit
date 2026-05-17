@@ -1325,3 +1325,199 @@ func TestDispatchLocalRulesListJSON(t *testing.T) {
 	}
 	dispatchLocalRules([]string{"list", "--json"})
 }
+
+// --- dispatchLocalGroups coverage ---
+
+func TestDispatchLocalGroupsNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{}) })
+}
+
+func TestDispatchLocalGroupsUnknownVerb(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"bogus"}) })
+}
+
+func TestDispatchLocalGroupsListJSON(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "myhome"})
+	mustNotPanic(t, func() { dispatchLocalGroups([]string{"list", "--json"}) })
+}
+
+func TestDispatchLocalGroupsRm(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "todelete"})
+	mustNotPanic(t, func() { dispatchLocalGroups([]string{"rm", "todelete"}) })
+}
+
+func TestDispatchLocalGroupsRmNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"rm"}) })
+}
+
+func TestDispatchLocalGroupsEnableAlreadyEnabled(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	// add creates group with Enabled=true; enabling again is a no-op
+	dispatchLocalGroups([]string{"add", "grpA"})
+	mustNotPanic(t, func() { dispatchLocalGroups([]string{"enable", "grpA"}) })
+}
+
+func TestDispatchLocalGroupsDisableAlreadyDisabled(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "grpB"})
+	dispatchLocalGroups([]string{"disable", "grpB"})
+	// disabling again is a no-op
+	mustNotPanic(t, func() { dispatchLocalGroups([]string{"disable", "grpB"}) })
+}
+
+func TestDispatchLocalGroupsEnableNotFound(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"enable", "nosuchgroup"}) })
+}
+
+func TestDispatchLocalGroupsEnableNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"enable"}) })
+}
+
+func TestDispatchLocalGroupsRenameNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"rename", "only-one"}) })
+}
+
+func TestRunLocalGroupsListDisabledMark(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "grpC"})
+	dispatchLocalGroups([]string{"disable", "grpC"})
+	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
+	var out bytes.Buffer
+	runLocalGroupsList(&out, st, false)
+	if !strings.Contains(out.String(), "grpC") {
+		t.Errorf("list missing 'grpC': %q", out.String())
+	}
+}
+
+// --- dispatchLocalNodes mv coverage ---
+
+func TestDispatchLocalNodesMvVerb(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dispatchLocalGroups([]string{"add", "src"})
+	dispatchLocalGroups([]string{"add", "dst"})
+	const uri = "ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#MV-Node"
+	mustNotPanic(t, func() { dispatchLocalNodes([]string{"add", uri, "--group=src"}) })
+	mustNotPanic(t, func() { dispatchLocalNodes([]string{"mv", "MV-Node", "dst"}) })
+}
+
+func TestDispatchLocalNodesMvNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalNodes([]string{"mv", "only-one"}) })
+}
+
+func TestDispatchLocalNodesMvNotFound(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalNodes([]string{"mv", "nosuchnode", "grp"}) })
+}
+
+func TestDispatchLocalGroupsAddNoArgs(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "dieUserErr", func() { dispatchLocalGroups([]string{"add"}) })
+}
