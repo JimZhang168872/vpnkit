@@ -70,6 +70,9 @@ func main() {
 		case "ext":
 			dispatchExt(os.Args[2:])
 			return
+		case "subs":
+			dispatchSubs(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {
