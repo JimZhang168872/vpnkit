@@ -129,7 +129,12 @@ func (m Model) View(width, height int) string {
 	start, end := viewport.Window(len(visible), m.cursor, maxRows)
 	indicator := viewport.Indicator(start, len(visible), maxRows, m.cursor)
 
+	innerWidth := width - 6
+	if innerWidth < 20 {
+		innerWidth = 20
+	}
 	colHead := fmt.Sprintf("  %-30s  %-6s  %-12s  %-12s  %s", "HOST", "PORT", "UP", "DOWN", "RULE")
+	colHead = viewport.TruncateDisplay(colHead, innerWidth)
 	if indicator != "" {
 		colHead += "   " + lipgloss.NewStyle().Faint(true).Render(indicator)
 	}
@@ -140,15 +145,17 @@ func (m Model) View(width, height int) string {
 		if i == m.cursor {
 			prefix = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("▶ ")
 		}
-		rows = append(rows, fmt.Sprintf("%s%-30s  %-6s  %-12s  %-12s  %s",
-			prefix, truncate(it.Host, 30), it.Port, human(it.Upload), human(it.Download), it.Rule))
+		line := fmt.Sprintf("%-30s  %-6s  %-12s  %-12s  %s",
+			truncate(it.Host, 30), it.Port, human(it.Upload), human(it.Download), it.Rule)
+		rows = append(rows, prefix+viewport.TruncateDisplay(line, innerWidth-2))
 	}
 	if m.filtering {
 		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
 	} else {
 		rows = append(rows, "", "[/] filter  [x] close selected  [↑↓] navigate")
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func human(n int64) string {

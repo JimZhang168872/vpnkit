@@ -1,6 +1,49 @@
 package viewport
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestTruncateDisplay_NoTruncationWhenShortEnough(t *testing.T) {
+	if got := TruncateDisplay("hello", 10); got != "hello" {
+		t.Errorf("got %q, want hello", got)
+	}
+}
+
+func TestTruncateDisplay_ASCIIAddsEllipsis(t *testing.T) {
+	got := TruncateDisplay("abcdefghij", 5)
+	// Should end with … and total display width ≤ 5.
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("expected trailing …, got %q", got)
+	}
+}
+
+func TestTruncateDisplay_CJKWideChars(t *testing.T) {
+	// 你好世界 = 4 chars * 2 cols = 8 cols display width.
+	// maxWidth=5 → only 你 (2 cols) + … (1 col) = 3 cols fits.
+	got := TruncateDisplay("你好世界", 5)
+	if displayWidth(got) > 5 {
+		t.Errorf("truncated string %q exceeds max width 5 (got %d cols)", got, displayWidth(got))
+	}
+}
+
+func TestTruncateDisplay_EmptyAndZeroWidth(t *testing.T) {
+	if got := TruncateDisplay("", 10); got != "" {
+		t.Errorf("empty input → empty output, got %q", got)
+	}
+	if got := TruncateDisplay("abc", 0); got != "" {
+		t.Errorf("zero width → empty, got %q", got)
+	}
+}
+
+func TestTruncateDisplay_VerySmallWidthFallsBackToEmpty(t *testing.T) {
+	// maxWidth=1 with multi-byte CJK input: "你"=2 cols, "…"=1 col → "…" wins.
+	got := TruncateDisplay("你好", 1)
+	if got != "…" && got != "" {
+		t.Errorf("got %q, want either … or empty", got)
+	}
+}
 
 func TestWindow_FitsWhenSmallerThanMax(t *testing.T) {
 	start, end := Window(5, 0, 10)

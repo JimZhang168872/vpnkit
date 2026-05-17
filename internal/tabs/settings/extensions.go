@@ -262,9 +262,13 @@ func (m extensionsModel) View(width, height int) string {
 	if maxList < 3 {
 		maxList = 3
 	}
-	body, indicator := m.renderList(maxList)
+	innerWidth := width - 4
+	if innerWidth < 20 {
+		innerWidth = 20
+	}
+	body, indicator := m.renderList(maxList, innerWidth)
 	footer := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
-		"[c]hains [g]roups   [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply",
+		viewport.TruncateDisplay("[c]hains [g]roups   [↑↓] navigate  [a]dd  [e]dit  [d]el  [r] apply", innerWidth),
 	)
 	out := header + "\n\n" + tabs
 	if indicator != "" {
@@ -272,10 +276,11 @@ func (m extensionsModel) View(width, height int) string {
 	}
 	out += "\n\n" + body + "\n\n" + footer
 	if m.flash != "" {
-		out += "\n  → " + m.flash
+		out += "\n  → " + viewport.TruncateDisplay(m.flash, innerWidth-4)
 	}
-	out += fmt.Sprintf("\n\nfile: %s", m.path)
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(out)
+	out += fmt.Sprintf("\n\nfile: %s", viewport.TruncateDisplay(m.path, innerWidth-6))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(out)
 }
 
 func (m extensionsModel) renderTabs() string {
@@ -290,7 +295,7 @@ func (m extensionsModel) renderTabs() string {
 		style(m.pane == paneGroups).Render(fmt.Sprintf("[g] Groups (%d)", len(m.ext.Groups)))
 }
 
-func (m extensionsModel) renderList(maxRows int) (body, indicator string) {
+func (m extensionsModel) renderList(maxRows, innerWidth int) (body, indicator string) {
 	total := m.activeLen()
 	if total == 0 {
 		switch m.pane {
@@ -312,12 +317,14 @@ func (m extensionsModel) renderList(maxRows int) (body, indicator string) {
 	case paneChains:
 		for i := start; i < end; i++ {
 			c := m.ext.Chains[i]
-			lines = append(lines, cursor(i)+fmt.Sprintf("%-30s → %s", c.Node, c.Via))
+			line := fmt.Sprintf("%-30s → %s", c.Node, c.Via)
+			lines = append(lines, cursor(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	case paneGroups:
 		for i := start; i < end; i++ {
 			g := m.ext.Groups[i]
-			lines = append(lines, cursor(i)+fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ",")))
+			line := fmt.Sprintf("%-20s [%s] %s", g.Name, g.Type, strings.Join(g.Proxies, ","))
+			lines = append(lines, cursor(i)+viewport.TruncateDisplay(line, innerWidth-2))
 		}
 	}
 	return strings.Join(lines, "\n"), viewport.Indicator(start, total, maxRows, m.row)

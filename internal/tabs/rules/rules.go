@@ -127,11 +127,16 @@ func (m Model) View(width, height int) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("Rules")
 	rows := []string{header, ""}
 
+	innerWidthProv := width - 6
+	if innerWidthProv < 10 {
+		innerWidthProv = 10
+	}
 	if len(m.providers) > 0 {
 		rows = append(rows, lipgloss.NewStyle().Bold(true).Render("Rule Providers"))
 		for _, p := range m.providers {
-			rows = append(rows, fmt.Sprintf("  %-20s  %-8s  count=%d  updated=%s",
-				p.Name, p.Behavior, p.RuleCount, p.UpdatedAt))
+			line := fmt.Sprintf("%-20s  %-8s  count=%d  updated=%s",
+				p.Name, p.Behavior, p.RuleCount, p.UpdatedAt)
+			rows = append(rows, "  "+viewport.TruncateDisplay(line, innerWidthProv))
 		}
 		rows = append(rows, "")
 	}
@@ -157,9 +162,18 @@ func (m Model) View(width, height int) string {
 	}
 	rows = append(rows, rulesHeader)
 	cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	// Hard-truncate each row to the body's inner width so lipgloss never
+	// soft-wraps a long rule onto a second line — wrapping doubles the row
+	// count and overflows Height, which is what was pushing the sidebar
+	// off-screen on the Rules tab.
+	innerWidth := width - 6 // -4 padding (2*2) - 2 cursor/marker prefix slack
+	if innerWidth < 10 {
+		innerWidth = 10
+	}
 	for i := start; i < end; i++ {
 		r := filtered[i]
 		line := fmt.Sprintf("%-14s  %-30s  → %s", r.Type, truncate(r.Payload, 30), r.Proxy)
+		line = viewport.TruncateDisplay(line, innerWidth)
 		if i == m.cursor {
 			rows = append(rows, cursorStyle.Render("▶ "+line))
 		} else {
@@ -171,7 +185,11 @@ func (m Model) View(width, height int) string {
 	} else {
 		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate")
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	// MaxHeight enforces clip at body height — without it, lipgloss lets
+	// content extend below the box, and JoinHorizontal then misaligns the
+	// sidebar.
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func truncate(s string, n int) string {

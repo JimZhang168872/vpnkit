@@ -85,6 +85,10 @@ func (m Model) View(width, height int) string {
 	if maxRows < 3 {
 		maxRows = 3
 	}
+	innerWidth := width - 6
+	if innerWidth < 20 {
+		innerWidth = 20
+	}
 	start, end := viewport.Window(len(m.list), m.cursor, maxRows)
 	indicator := viewport.Indicator(start, len(m.list), maxRows, m.cursor)
 	titleLine := header
@@ -99,6 +103,7 @@ func (m Model) View(width, height int) string {
 			marker = "⭐ "
 		}
 		row := fmt.Sprintf("%s%-12s  %-40s  nodes=%d", marker, p.Name, truncate(p.URL, 40), p.NodeCount)
+		row = viewport.TruncateDisplay(row, innerWidth)
 		if i == m.cursor {
 			row = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("▶ " + row)
 		} else {
@@ -107,7 +112,8 @@ func (m Model) View(width, height int) string {
 		rows = append(rows, row)
 	}
 	rows = append(rows, "", "[a] add  [u] update  [Enter] activate  [d] delete  [↑↓] navigate")
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).
+		Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func truncate(s string, n int) string {
