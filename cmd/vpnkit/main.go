@@ -73,6 +73,9 @@ func main() {
 		case "subs":
 			dispatchSubs(os.Args[2:])
 			return
+		case "local-nodes":
+			dispatchLocalNodes(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {
