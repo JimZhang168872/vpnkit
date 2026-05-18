@@ -18,6 +18,17 @@
 
 ### Fixed
 
+- **Existing rc.5- users stuck on `GlobalTarget = "DIRECT"` after upgrade.**
+  rc.6's first store migration bumped the self-loop default
+  `"🚀 Proxy"` → `"DIRECT"`. The follow-up first-source-auto nudge
+  (rc.6) only fires when `AddSubscription`/`AddLocalGroup` runs — so
+  upgrading users whose subscriptions already existed never got the
+  bump, and `MATCH,🚀 Proxy` resolved to direct connections forever.
+  Now `store.Load` ALSO bumps: when `GlobalTarget == "DIRECT"` AND
+  there's at least one enabled proxy source on disk, set it to that
+  source's `-auto`. Persists once, then no-op on subsequent loads.
+  Migration is ordered AFTER the lazy `local_node_groups` synthesis so
+  rc.2 stores converge in a single Load (no second-load churn).
 - **Default rules disappear after first edit + unmatched traffic goes
   direct instead of through proxy.** Two related bugs:
   - The rule template (loyalsoldier by default — its rule-providers +

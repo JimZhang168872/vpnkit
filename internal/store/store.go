@@ -175,16 +175,30 @@ func Load(path string) (*Store, error) {
 		changed = true
 	}
 	// GlobalTarget is the *member* the top-level "🚀 Proxy" Selector
-	// defaults to. It MUST NOT equal "🚀 Proxy" itself — that creates a
-	// self-referential proxy-group which mihomo refuses to load (
-	// "Parse config error: loop is detected in ProxyGroup"). Older vpnkit
-	// (≤ rc.5) wrote "🚀 Proxy" as the default; migrate any persisted
-	// instance — including newly-loaded empty stores — to "DIRECT", which
-	// is the safest "no traffic forwarded" default.
+	// defaults to. Layered migration:
+	//
+	//   1. Empty or "🚀 Proxy" (rc.5- self-loop) → "DIRECT" as the safe
+	//      fallback. Done unconditionally.
+	//   2. "DIRECT" + at least one enabled proxy source → first source's
+	//      `-auto`. Catches the rc.6 upgrade case where users with
+	//      existing subs end up stuck on DIRECT (rule (1) bumped them
+	//      there) and MATCH,🚀 Proxy then resolves to direct connections.
+	//      AddSubscription / AddLocalGroup have a similar nudge for new
+	//      runtime additions, but they don't fire on already-loaded
+	//      stores — Load() is the only place that catches the upgrade.
+	//
+	// If the user explicitly wants MATCH → DIRECT despite having proxies,
+	// the right knob is `mode = "direct"` (emits MATCH,🎯 Direct
+	// directly), not `global_target = "DIRECT"`.
 	if s.Cfg.GlobalTarget == "" || s.Cfg.GlobalTarget == "🚀 Proxy" {
 		s.Cfg.GlobalTarget = "DIRECT"
 		changed = true
 	}
+	// The "DIRECT" → first-source bump must run AFTER the lazy
+	// local-node-group migration below — otherwise a first-load on an
+	// rc.2 store (ungrouped node + no group entry yet) would miss the
+	// freshly-synthesized "local" group and stay on DIRECT, then bump
+	// only on the second load, producing churn.
 	if s.Cfg.Subscriptions == nil {
 		s.Cfg.Subscriptions = []Subscription{}
 		changed = true
@@ -226,12 +240,41 @@ func Load(path string) (*Store, error) {
 			changed = true
 		}
 	}
+	// Deferred from above: now that lazy migration may have synthesized
+	// a "local" group, re-evaluate the DIRECT bump so existing-source
+	// users (including rc.2 lazy-migrated ones) hop to first-source-auto
+	// in a single Load() pass.
+	if s.Cfg.GlobalTarget == "DIRECT" {
+		if first := firstEnabledProxySource(&s.Cfg); first != "" {
+			s.Cfg.GlobalTarget = first + "-auto"
+			changed = true
+		}
+	}
 	if changed {
 		if err := s.Save(); err != nil {
 			return nil, err
 		}
 	}
 	return s, nil
+}
+
+// firstEnabledProxySource returns the name of the first enabled proxy
+// source (subscription preferred, then local-node group) in insertion
+// order. Used by Load() for the GlobalTarget="DIRECT"→first-source
+// migration, and conceptually mirrors app.firstProxySource — kept here
+// to avoid a store→app import cycle.
+func firstEnabledProxySource(cfg *Config) string {
+	for _, s := range cfg.Subscriptions {
+		if s.Enabled {
+			return s.Name
+		}
+	}
+	for _, g := range cfg.LocalNodeGroups {
+		if g.Enabled {
+			return g.Name
+		}
+	}
+	return ""
 }
 
 // Save serializes Cfg to disk atomically (tmp + rename).
