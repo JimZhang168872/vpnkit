@@ -2,10 +2,20 @@
 
 ## v1.0.0-rc.5 — 2026-05-18
 
+### Documentation
+
+- **[`docs/USAGE.md`](docs/USAGE.md)** — new comprehensive technical
+  reference: every CLI command (synopsis + flags + exit codes + JSON
+  schema), every TUI tab (layout + keybindings + behavior contracts),
+  config schema, file layout, troubleshooting, design tradeoffs. README
+  is now the elevator pitch; USAGE.md is the source of truth.
+- `docs/delay-test.md` removed — content absorbed into USAGE.md ›
+  Active delay test (deep dive).
+
 ### Added
 
-- **Active delay test** via two entry points (technical doc:
-  [`docs/delay-test.md`](docs/delay-test.md)):
+- **Active delay test** via two entry points (full details in
+  [USAGE.md › Active delay test](docs/USAGE.md#active-delay-test-deep-dive)):
   - **CLI**: `vpnkit test <group> [<node>]` with `--url` / `--timeout-ms`
     / `--json` flags. Defaults to mihomo's standard
     `https://www.gstatic.com/generate_204` + 5000 ms.

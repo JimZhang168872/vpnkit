@@ -19,6 +19,10 @@ root、不依赖 TUN。v1.0.0 新增**多订阅组共存、手动本地节点、
 TUI 7 个 tab + 完整 `vpnkit subs / local-nodes / local-rules / target` CLI
 都能改。
 
+> 📖 **[docs/USAGE.md](docs/USAGE.md)** — 完整技术参考：每个 CLI 命令、每个
+> TUI tab、每个按键、每份 JSON 输出 schema、配置文件结构、延迟测试深度剖析、
+> 故障排查。**README 之外的所有疑问都先看这里。**
+
 > **v0.10.x → v1.0.0 是破坏性升级**。store schema v1 → v2。看
 > [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md) 走迁移流程。
 
@@ -193,14 +197,15 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 | `vpnkit local-rules list/add/rm/move` | 管理本地规则 |
 | `vpnkit groups` | 实时 proxy-group 列表（从 mihomo controller 读） |
 | `vpnkit nodes '<组>'` | 列某组成员 + 缓存延迟（被动读，mihomo url-test 缓存） |
-| `vpnkit test '<组>' ['<节点>']` | 主动测延迟 — 见 [docs/delay-test.md](docs/delay-test.md) |
+| `vpnkit test '<组>' ['<节点>']` | 主动测延迟（见 [USAGE.md › 延迟测试](docs/USAGE.md#active-delay-test-deep-dive)） |
 | `vpnkit use '<组>' '<节点>'` | 切换某组的选中节点 |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | 输出 shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | 升级 vpnkit + mihomo |
 | `vpnkit init [--force]` | 重建配置骨架（`--force` 会备份旧 store） |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | 停服务，删 vpnkit 全部文件 |
 
-只读命令接受 `--json`。退出码：`0` 成功、`1` 用户错、`2` 运行时错。
+只读命令接受 `--json`。退出码：`0` 成功、`1` 用户错、`2` 运行时错。每个
+命令的 flag 详解 + JSON schema 在 [docs/USAGE.md › CLI reference](docs/USAGE.md#cli-reference)。
 
 ## TUI 布局 (v1)
 
@@ -227,6 +232,8 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 - **Rules › Live**：`/` 过滤 · `u` 刷新 providers · `Tab` 切 Local Rules
 - **Rules › Local Rules**：`d` 删 · `K/J` 上下移 · `Tab` 切回 Live
 - **Settings › Routing**：`↑↓ Enter` 选模式；global target 走 CLI 改
+
+每个 tab 的按键表 + 行为详解在 [docs/USAGE.md › TUI reference](docs/USAGE.md#tui-reference)。
 
 ## 目录布局
 

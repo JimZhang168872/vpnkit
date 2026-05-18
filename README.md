@@ -20,6 +20,11 @@ root, no TUN. v1.0.0 adds **multi-source subscriptions, hand-entered local
 nodes, and structured local rules**, all editable from a 7-tab TUI or a
 matching `vpnkit subs / local-nodes / local-rules / target` CLI surface.
 
+> 📖 **[docs/USAGE.md](docs/USAGE.md)** — full technical reference: every CLI
+> command, every TUI tab, every keyboard shortcut, every JSON output schema,
+> config file layout, delay-test deep-dive, troubleshooting. **Start there
+> for anything beyond the README.**
+
 > **v0.10.x → v1.0.0 is a breaking change.** Store schema bumped v1 → v2.
 > See [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md) for the migration path.
 
@@ -205,7 +210,7 @@ Via: doge-auto              # any subscription/local node name OR group name
 | `vpnkit local-rules list/add/rm/move` | manage local routing rules |
 | `vpnkit groups` | live proxy-group list (from mihomo controller) |
 | `vpnkit nodes '<group>'` | members + cached delay (read-only, from mihomo url-test cache) |
-| `vpnkit test '<group>' ['<node>']` | active delay test — see [docs/delay-test.md](docs/delay-test.md) |
+| `vpnkit test '<group>' ['<node>']` | active delay test (see [USAGE.md › Active delay test](docs/USAGE.md#active-delay-test-deep-dive)) |
 | `vpnkit use '<group>' '<node>'` | switch a group's selection |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
@@ -213,7 +218,8 @@ Via: doge-auto              # any subscription/local node name OR group name
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
 
 All read commands accept `--json` for scripting. Exit codes: `0` ok,
-`1` user error, `2` runtime error.
+`1` user error, `2` runtime error. Per-command flags and JSON schemas
+are in [docs/USAGE.md › CLI reference](docs/USAGE.md#cli-reference).
 
 ## TUI layout (v1)
 
@@ -240,6 +246,9 @@ Keys:
 - **Rules › Live**: `/` filter · `u` refresh providers · `Tab` switch to Local Rules
 - **Rules › Local Rules**: `d` delete · `K/J` move up/down · `Tab` back to Live
 - **Settings › Routing**: `↑↓ Enter` pick mode · global target editable via `vpnkit target`
+
+Per-tab key tables + behavior contracts live in
+[docs/USAGE.md › TUI reference](docs/USAGE.md#tui-reference).
 
 ## Layout
 
