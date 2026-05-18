@@ -51,6 +51,10 @@ type Model struct {
 	// nowByGroup mirrors mihomo's /proxies → <group>.now. Updated on every
 	// ProxiesSnapshot we receive via Update().
 	nowByGroup map[string]string
+	// delayByNode tracks the most recent /group/<name>/delay measurement
+	// per namespaced node ("<group>:<name>"). Zero means timeout in
+	// mihomo's wire format; we surface it as "timeout" in the View.
+	delayByNode map[string]int
 }
 
 type groupEntry struct {
@@ -61,7 +65,17 @@ type groupEntry struct {
 
 // New returns an empty Groups tab model.
 func New(deps Deps) Model {
-	return Model{deps: deps, nowByGroup: map[string]string{}}
+	return Model{deps: deps, nowByGroup: map[string]string{}, delayByNode: map[string]int{}}
+}
+
+// DelayByNode returns a defensive copy of the per-node delay map (ms). 0
+// means timeout; missing keys mean "never tested in this session".
+func (m Model) DelayByNode() map[string]int {
+	out := make(map[string]int, len(m.delayByNode))
+	for k, v := range m.delayByNode {
+		out[k] = v
+	}
+	return out
 }
 
 // Refresh rebuilds the group list from deps. Preserves rightCursor when
@@ -144,6 +158,28 @@ func (m *Model) MoveUp() {
 func (m Model) SubFocus() SubFocus       { return m.subFocus }
 func (m *Model) SetSubFocus(f SubFocus)  { m.subFocus = f; m.clampRightCursor() }
 
+// renderDelay formats a per-node delay measurement for trailing display.
+// Returns "" when no measurement exists yet (no test fired in this session),
+// "timeout" in red for mihomo's 0-ms timeout signal, and a colored
+// "<n> ms" otherwise (green <200, yellow 200-500, red >500).
+func renderDelay(delays map[string]int, namespaced string) string {
+	d, ok := delays[namespaced]
+	if !ok {
+		return ""
+	}
+	if d == 0 {
+		return "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("timeout")
+	}
+	color := lipgloss.Color("46") // green
+	switch {
+	case d > 500:
+		color = lipgloss.Color("196") // red
+	case d > 200:
+		color = lipgloss.Color("214") // yellow/orange
+	}
+	return "  " + lipgloss.NewStyle().Foreground(color).Render(fmt.Sprintf("%d ms", d))
+}
+
 // SelectedGroup returns the group name currently under the left-pane cursor,
 // or "" if no group is selected.
 func (m Model) SelectedGroup() string {
@@ -172,14 +208,29 @@ func (m Model) SelectedNode() string {
 // Init satisfies tea.Model.
 func (Model) Init() tea.Cmd { return nil }
 
-// Update reacts to ProxiesSnapshot messages by mirroring each group's `now`
-// into nowByGroup so the View can highlight it. All other messages are
-// passed through unchanged — keystrokes are handled at the app level so
-// the focus model can route them correctly.
+// Update reacts to two kinds of messages:
+//   - ProxiesSnapshot: mirror each group's `now` into nowByGroup so the
+//     View can highlight the active member.
+//   - DelayResults: ingest the latest group-delay test results so each
+//     node row can render its measured round-trip time. Mihomo writes 0
+//     for timeouts; we keep the 0 here and translate to "timeout" in View
+//     so callers can still tell "never tested" from "tested+timeout".
+//
+// All other messages (including keystrokes) are passed through unchanged
+// — input handling lives at the app level so the focus model can route
+// keys correctly.
 func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
-	if snap, ok := message.(msg.ProxiesSnapshot); ok {
-		for name, g := range snap.Groups {
+	switch ev := message.(type) {
+	case msg.ProxiesSnapshot:
+		for name, g := range ev.Groups {
 			m.nowByGroup[name] = g.Now
+		}
+	case msg.DelayResults:
+		if m.delayByNode == nil {
+			m.delayByNode = map[string]int{}
+		}
+		for n, d := range ev.Results {
+			m.delayByNode[n] = d
 		}
 	}
 	return m, nil
@@ -276,16 +327,17 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 					portStr = fmt.Sprintf(":%d", n.Port)
 				}
 				line := fmt.Sprintf("%-28s  %-8s  %s%s", n.Name, n.Proto, n.Server, portStr)
-				lineRendered := viewport.TruncateDisplay(line, rightW-6)
+				lineRendered := viewport.TruncateDisplay(line, rightW-18)
+				delaySuffix := renderDelay(m.delayByNode, namespaced)
 				if idx == m.rightCursor && rightFocused {
-					rightRows = append(rightRows, curStyle.Render("▶ ")+marker+lineRendered)
+					rightRows = append(rightRows, curStyle.Render("▶ ")+marker+lineRendered+delaySuffix)
 				} else if idx == m.rightCursor {
-					rightRows = append(rightRows, lipgloss.NewStyle().Faint(true).Render("▶ ")+marker+lineRendered)
+					rightRows = append(rightRows, lipgloss.NewStyle().Faint(true).Render("▶ ")+marker+lineRendered+delaySuffix)
 				} else {
-					rightRows = append(rightRows, "  "+marker+lineRendered)
+					rightRows = append(rightRows, "  "+marker+lineRendered+delaySuffix)
 				}
 			}
-			rightRows = append(rightRows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] node  [Enter] use this node  [←] back"))
+			rightRows = append(rightRows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] node  [Enter] use  [t] test delay  [←] back"))
 		}
 	}
 	rightPane := lipgloss.NewStyle().

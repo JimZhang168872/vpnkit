@@ -49,6 +49,9 @@ func main() {
 		case "nodes":
 			dispatchNodes(os.Args[2:])
 			return
+		case "test":
+			dispatchTest(os.Args[2:])
+			return
 		case "use":
 			dispatchUse(os.Args[2:])
 			return
