@@ -167,6 +167,7 @@ func (p *Pipeline) Assemble() error {
 	}
 	bytes_, err := assembler.Assemble(assembler.Input{
 		Mode:             assembler.Mode(cfg.Mode),
+		ActiveSource:     cfg.ActiveSource,
 		GlobalTarget:     cfg.GlobalTarget,
 		Subscriptions:    subs,
 		LocalGroups:      localGroups,
@@ -267,8 +268,47 @@ func (p *Pipeline) AddSubscription(sub store.Subscription) error {
 	if p.store.Cfg.GlobalTarget == "DIRECT" && firstProxySource(p.store) == sub.Name {
 		p.store.Cfg.GlobalTarget = sub.Name + "-auto"
 	}
+	// First-source rc.7 nudge: if no ActiveSource yet, take it. New
+	// subscriptions on an existing install don't displace the current
+	// active.
+	if p.store.Cfg.ActiveSource == "" {
+		p.store.Cfg.ActiveSource = sub.Name
+	}
 	p.mu.Unlock()
 	return p.store.Save()
+}
+
+// SetActiveSource swaps the routing source. The name must match an
+// existing enabled subscription or local-node group; otherwise the swap
+// is rejected so the user gets a clear error rather than silently
+// breaking routing. Caller is expected to follow up with Assemble() +
+// reload to push the new config to mihomo.
+func (p *Pipeline) SetActiveSource(name string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, s := range p.store.Cfg.Subscriptions {
+		if s.Enabled && s.Name == name {
+			p.store.Cfg.ActiveSource = name
+			p.store.Cfg.GlobalTarget = name + "-auto"
+			return p.store.Save()
+		}
+	}
+	for _, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Enabled && g.Name == name {
+			p.store.Cfg.ActiveSource = name
+			p.store.Cfg.GlobalTarget = name + "-auto"
+			return p.store.Save()
+		}
+	}
+	return fmt.Errorf("active source %q is not an enabled subscription or local group", name)
+}
+
+// ActiveSource returns the currently active source name (for display /
+// CLI output). May return "" if the store is bootstrap-empty.
+func (p *Pipeline) ActiveSource() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.store.Cfg.ActiveSource
 }
 
 // firstProxySource returns the name of the first enabled proxy source —
@@ -377,6 +417,10 @@ func (p *Pipeline) AddLocalGroup(name string) error {
 	// at this new local group's -auto so unmatched traffic uses it.
 	if p.store.Cfg.GlobalTarget == "DIRECT" && firstProxySource(p.store) == name {
 		p.store.Cfg.GlobalTarget = name + "-auto"
+	}
+	// rc.7 ActiveSource nudge — same intent as the GlobalTarget bump.
+	if p.store.Cfg.ActiveSource == "" {
+		p.store.Cfg.ActiveSource = name
 	}
 	p.mu.Unlock()
 	return p.store.Save()
