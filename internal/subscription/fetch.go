@@ -9,7 +9,15 @@ import (
 	"time"
 )
 
-const defaultUA = "clash-verge/v1.4.0"
+// defaultUA mimics a recent mihomo build's outbound UA. Many subscription
+// backends gate behind a name+version regex (e.g. doggygosubs returns 4
+// dummy "❗您的客户端版本太老❗" nodes when the UA matches `clash-verge` or
+// `ClashforWindows/0.20.x`). `mihomo/<ver>` and `clash.meta` both pass.
+// We pick mihomo/ because it's the canonical name of our underlying core;
+// version is concrete (not "X.Y.Z" placeholder) so naive regexes that
+// extract a version succeed. Update periodically as mihomo releases major
+// versions — outdated values still work but get less polite treatment.
+const defaultUA = "mihomo/v1.19.25"
 
 // Fetch retrieves a subscription body.
 //
