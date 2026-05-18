@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.0-rc.6 — 2026-05-18
+
+### Fixed
+
+- **Delay test 404 on user-facing groups**. mihomo's `/group/<name>/delay`
+  only accepts url-test / fallback / load-balance types, but vpnkit's
+  Selectors (every `🚀 Proxy`, every subscription group, every local-
+  nodes group) returned `404 Resource not found`. Both `vpnkit test
+  <group>` and the TUI Groups tab `[t]` would error instead of measuring
+  anything.
+  - New `api.Client.MeasureGroup` runs a 3-step cascade: try
+    `<name>-auto` (vpnkit's url-test companion) → `<name>` direct →
+    parallel per-member `/proxies/<member>/delay`. Details in
+    [USAGE.md › Group endpoint resolution](docs/USAGE.md#group-endpoint-resolution).
+- **TUI double-namespacing of measured delays**. The Groups tab handler
+  re-prefixed mihomo-returned keys with `<group>:` even though mihomo
+  already namespaces them, so `delayByNode["doge:doge:HK-A"]` never
+  matched the View's `"doge:HK-A"` lookup. Delays were measured but
+  never rendered. Removed the prefix step.
+
+---
+
 ## v1.0.0-rc.5 — 2026-05-18
 
 ### Documentation

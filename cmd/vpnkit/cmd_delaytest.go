@@ -50,7 +50,10 @@ func runTest(out io.Writer, c *api.Client, group, node, testURL string, timeoutM
 		return nil
 	}
 
-	results, err := c.GroupDelay(ctx, group, testURL, timeoutMs)
+	// MeasureGroup transparently handles the Selector→url-test pivot and
+	// the per-member fallback for groups mihomo doesn't accept on its
+	// /group/<name>/delay endpoint. See api.MeasureGroup for the cascade.
+	results, err := c.MeasureGroup(ctx, group, testURL, timeoutMs)
 	if err != nil {
 		return fmt.Errorf("delay %s: %w", group, err)
 	}
