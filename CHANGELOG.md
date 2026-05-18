@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.0-rc.5 — 2026-05-18
+
+### Added
+
+- **Active delay test** via two entry points (technical doc:
+  [`docs/delay-test.md`](docs/delay-test.md)):
+  - **CLI**: `vpnkit test <group> [<node>]` with `--url` / `--timeout-ms`
+    / `--json` flags. Defaults to mihomo's standard
+    `https://www.gstatic.com/generate_204` + 5000 ms.
+  - **TUI**: Groups tab → drill into right pane → `t` triggers
+    `GroupDelay` on the selected group. Each node row shows the measured
+    delay color-coded (green < 200 ms / yellow 200-500 / red > 500 or
+    timeout).
+  - Result coding: mihomo returns `0` for timeout — CLI text path renders
+    `timeout`; CLI JSON path keeps `0` so machine consumers decide.
+
+### Fixed
+
+- README claim "🌐 Groups (read-only + delay test)" now matches reality
+  (rc.4 advertised it but never wired the trigger).
+
+---
+
 ## v1.0.0-rc.4 — 2026-05-18
 
 ### Fixed

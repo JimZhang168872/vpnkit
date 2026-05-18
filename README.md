@@ -204,7 +204,8 @@ Via: doge-auto              # any subscription/local node name OR group name
 | `vpnkit local-nodes list/add/rm/edit/mv` (with `--group/--via`) | manage hand-entered nodes |
 | `vpnkit local-rules list/add/rm/move` | manage local routing rules |
 | `vpnkit groups` | live proxy-group list (from mihomo controller) |
-| `vpnkit nodes '<group>'` | members + cached delay |
+| `vpnkit nodes '<group>'` | members + cached delay (read-only, from mihomo url-test cache) |
+| `vpnkit test '<group>' ['<node>']` | active delay test — see [docs/delay-test.md](docs/delay-test.md) |
 | `vpnkit use '<group>' '<node>'` | switch a group's selection |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
@@ -230,6 +231,7 @@ All read commands accept `--json` for scripting. Exit codes: `0` ok,
 Keys:
 - `↑↓` navigate · `←` back / sidebar focus · `→` content focus / drill-in · `Enter` activate · `q` quit
 - `1`–`7` jump to tab · `Tab`/`Shift+Tab` cycle
+- **Groups**: `r` refresh · `t` test delay (active probe, current group) · `Enter` switch to highlighted node · `←/→` left/right pane focus
 - **Sources › Subscriptions**: `a` add · `d` delete · `u` update now · `e` toggle enabled
 - **Sources › Local Nodes**: `a` add (proto-driven form) · `e` edit · `d` delete · `u` paste URI ·
   `N`/`D`/`E`/`T` new/delete/rename/toggle group · `←/→` switch group (when no form open)

@@ -192,7 +192,8 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 | `vpnkit local-nodes list/add/rm/edit/mv`（含 `--group/--via`） | 管理手动节点 |
 | `vpnkit local-rules list/add/rm/move` | 管理本地规则 |
 | `vpnkit groups` | 实时 proxy-group 列表（从 mihomo controller 读） |
-| `vpnkit nodes '<组>'` | 列某组成员 + 缓存延迟 |
+| `vpnkit nodes '<组>'` | 列某组成员 + 缓存延迟（被动读，mihomo url-test 缓存） |
+| `vpnkit test '<组>' ['<节点>']` | 主动测延迟 — 见 [docs/delay-test.md](docs/delay-test.md) |
 | `vpnkit use '<组>' '<节点>'` | 切换某组的选中节点 |
 | `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | 输出 shell snippet |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | 升级 vpnkit + mihomo |
@@ -217,6 +218,7 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 按键：
 - `↑↓` 移动 · `←` 退/sidebar focus · `→` content focus / 进 · `Enter` 激活 · `q` 退出
 - `1`-`7` 跳 tab · `Tab`/`Shift+Tab` 循环
+- **Groups**：`r` 刷新 · `t` 测延迟（主动 probe 当前组） · `Enter` 切到高亮节点 · `←/→` 切左右面板 focus
 - **Sources › Subscriptions**：`a` 添加 · `d` 删 · `u` 拉一次 · `e` 启/禁
 - **Sources › Local Nodes**：`a` 添加（proto 表单）· `e` 编辑 · `d` 删 · `u` 粘 URI ·
   `N`/`D`/`E`/`T` 新建/删/重命名/启停 group · `←/→` 切换 group（无表单时）
