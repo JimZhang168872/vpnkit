@@ -18,6 +18,19 @@
 
 ### Fixed
 
+- **狗狗加速 (doggygosubs) imports only 4 fake "client too old" nodes.**
+  Their backend gates the response on `User-Agent`: `clash-verge/*` and
+  `ClashforWindows/0.20.*` get 4 dummy `❗您的客户端版本太老❗` SS nodes
+  instead of the real proxy list. Default UA changed from
+  `clash-verge/v1.4.0` to `mihomo/v1.19.25` — also accepted by every
+  other tested provider (boostnet, etc.) and matches the core we
+  actually run. Existing users: `vpnkit subs update <name>` re-fetches
+  with the new UA; no re-add needed.
+- **Groups tab right pane truncated long node lists with no way to
+  scroll.** A 50-node subscription rendered the first ~22 plus
+  `… and 28 more`, hiding the rest. Now uses `viewport.Window` against
+  `rightCursor`, so the cursor stays visible as it moves and the right
+  header shows a `[start-end/total]` indicator when the list overflows.
 - **Existing rc.5- users stuck on `GlobalTarget = "DIRECT"` after upgrade.**
   rc.6's first store migration bumped the self-loop default
   `"🚀 Proxy"` → `"DIRECT"`. The follow-up first-source-auto nudge

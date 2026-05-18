@@ -289,9 +289,13 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 		Render(strings.Join(leftRows, "\n"))
 
 	// Right pane: nodes for the selected group with `●` on current `now`.
+	// Long lists scroll instead of hard-truncating so a 50-node
+	// subscription doesn't appear as "22 nodes + 28 unreachable" to the
+	// user. Window is computed against rightCursor so the active row is
+	// always visible.
 	rightHeader := viewport.FocusDot(rightFocused) +
 		lipgloss.NewStyle().Bold(true).Render("Nodes")
-	rightRows := []string{rightHeader, ""}
+	rightRows := []string{}
 	if m.cursor >= 0 && m.cursor < len(m.groups) {
 		g := m.groups[m.cursor]
 		now := m.nowByGroup[g.name]
@@ -299,6 +303,19 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 		if g.kind == "local" {
 			kind = "local"
 		}
+		// Inline the [1-N/total] indicator in the header so it doesn't
+		// eat one of the precious node rows.
+		maxRows := height - 8
+		if maxRows < 3 {
+			maxRows = 3
+		}
+		indicator := ""
+		if len(g.nodes) > maxRows {
+			indicator = "   " + lipgloss.NewStyle().Faint(true).Render(
+				viewport.Indicator(0, len(g.nodes), maxRows, m.rightCursor),
+			)
+		}
+		rightRows = append(rightRows, rightHeader+indicator, "")
 		subtitle := lipgloss.NewStyle().Faint(true).Render(g.name + "  " + kind)
 		rightRows = append(rightRows, subtitle, "")
 		if len(g.nodes) == 0 {
@@ -308,15 +325,9 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 			}
 			rightRows = append(rightRows, helpMsg)
 		} else {
-			maxRows := height - 8
-			if maxRows < 3 {
-				maxRows = 3
-			}
-			for idx, n := range g.nodes {
-				if idx >= maxRows {
-					rightRows = append(rightRows, fmt.Sprintf("  … and %d more", len(g.nodes)-maxRows))
-					break
-				}
+			start, end := viewport.Window(len(g.nodes), m.rightCursor, maxRows)
+			for idx := start; idx < end; idx++ {
+				n := g.nodes[idx]
 				namespaced := fmt.Sprintf("%s:%s", g.name, n.Name)
 				marker := "  "
 				if namespaced == now {
@@ -339,6 +350,8 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 			}
 			rightRows = append(rightRows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] node  [Enter] use  [t] test delay  [←] back"))
 		}
+	} else {
+		rightRows = append(rightRows, rightHeader, "")
 	}
 	rightPane := lipgloss.NewStyle().
 		Width(rightW).Height(height).

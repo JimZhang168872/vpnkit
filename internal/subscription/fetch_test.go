@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,28 @@ func TestFetchSendsUA(t *testing.T) {
 	}
 	if seenUA != "clash-verge/1.0" {
 		t.Errorf("UA: %s", seenUA)
+	}
+}
+
+// TestFetchDefaultUAIsMihomoFamily — empty UA must fall back to a UA that
+// real-world subscription backends accept. We hit a regression where
+// doggygosubs.com (and similar "客户端版本太老" gating providers) returned
+// 4 fake "❗您的客户端版本太老❗" nodes when the UA was the old
+// `clash-verge/v1.4.0` default. Switching to `mihomo/<ver>` makes them
+// return the real proxy list. Don't pin the exact version (it'll age
+// faster than the codebase), just enforce the `mihomo/` prefix.
+func TestFetchDefaultUAIsMihomoFamily(t *testing.T) {
+	var seenUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenUA = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte("body"))
+	}))
+	defer srv.Close()
+	if _, err := Fetch(context.Background(), srv.URL, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(seenUA, "mihomo/") {
+		t.Errorf("default UA must start with mihomo/, got %q", seenUA)
 	}
 }
 
