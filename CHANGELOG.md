@@ -2,6 +2,20 @@
 
 ## v1.0.0-rc.6 — 2026-05-18
 
+### Added
+
+- **Embedded loyalsoldier rule-set snapshot.** vpnkit now ships 13
+  pre-fetched `.txt.gz` files in `internal/rules/rulesets/` (gzipped
+  2.1 MB; +2.6 MB on the stripped binary). Bootstrap writes them to
+  `~/.config/mihomo/ruleset/` before mihomo's first start, so RULE-SET
+  rules are usable immediately — no more waiting for jsdelivr.net on
+  slow / GFW'd networks. mihomo's `interval: 86400` keeps the local
+  copies up-to-date over time.
+- **Bilingual technical reference.** [`docs/USAGE.md`](docs/USAGE.md)
+  now has a Chinese twin at [`docs/USAGE_zh.md`](docs/USAGE_zh.md); the
+  v0 → v1 migration guide gets [`docs/UPGRADE-v1_zh.md`](docs/UPGRADE-v1_zh.md).
+  Top-of-doc cross-links keep the two in sync.
+
 ### Fixed
 
 - **Default rules disappear after first edit + unmatched traffic goes

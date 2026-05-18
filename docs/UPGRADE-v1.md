@@ -1,5 +1,7 @@
 # Upgrading vpnkit to v1.0.0
 
+> 中文版 → [UPGRADE-v1_zh.md](UPGRADE-v1_zh.md)
+
 > **v1.0.0-rc.1 is a pre-release** with the full feature set landed. Treat it
 > as production-ready for new installs; existing v0.10.x users must migrate.
 

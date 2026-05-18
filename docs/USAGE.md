@@ -1,5 +1,7 @@
 # vpnkit Technical Reference
 
+> 中文版 → [USAGE_zh.md](USAGE_zh.md)
+
 The single most detailed source for using vpnkit — every CLI command, every
 TUI tab, every keyboard shortcut, every config file, every JSON output
 schema. Read top-to-bottom for a guided tour, or jump to a section.
