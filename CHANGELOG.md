@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **Proxy URI parse failure when password contains literal `/`**. Real-world
+  hysteria2 / trojan URIs from gulujili.xyz and other providers ship the
+  password with unescaped `/` (RFC 3986 says `%2F`, but lenient form is
+  accepted by Shadowrocket / Clash / NekoBox). Go's `net/url.Parse` was
+  treating the `/` as the start of the URL path, so the password got
+  truncated, host became gibberish, and `ParseURI` returned `parse(hy2):
+  missing password (userinfo)`. Now `ParseURI` percent-encodes any `/`
+  inside the userinfo segment before handing to `net/url.Parse`.
+  Reported case:
+  `hysteria2://CBAI0bv97b21KRjXw3fDArlnW/ymWTur@jim.gulujili.xyz:8443?...`
 - **Delay test 404 on user-facing groups**. mihomo's `/group/<name>/delay`
   only accepts url-test / fallback / load-balance types, but vpnkit's
   Selectors (every `🚀 Proxy`, every subscription group, every local-

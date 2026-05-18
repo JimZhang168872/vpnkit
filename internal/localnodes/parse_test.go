@@ -125,6 +125,86 @@ func TestParseURIHysteria2(t *testing.T) {
 	}
 }
 
+// TestParseURIHysteria2_SlashInPassword regresses a real-world hysteria2
+// URI where the password contains a literal '/'. Per RFC 3986 the '/' should
+// be percent-encoded as %2F in userinfo, but many proxy providers emit the
+// lenient form and other clients (Shadowrocket, Clash, NekoBox) accept it.
+// Without preprocessing, Go's net/url.Parse would treat the '/' as the start
+// of the path, mangling host/userinfo. Reported in:
+//   hysteria2://CBAI0bv97b21KRjXw3fDArlnW/ymWTur@jim.gulujili.xyz:8443?...
+func TestParseURIHysteria2_SlashInPassword(t *testing.T) {
+	uri := "hysteria2://CBAI0bv97b21KRjXw3fDArlnW/ymWTur@jim.gulujili.xyz:8443?security=tls&fp=chrome&alpn=h3&sni=jim.gulujili.xyz#Hy2-entrance-CN-jim-hy2"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "hysteria2" {
+		t.Errorf("proto: %q", n.Proto)
+	}
+	if n.Server != "jim.gulujili.xyz" {
+		t.Errorf("server: %q want jim.gulujili.xyz", n.Server)
+	}
+	if n.Port != 8443 {
+		t.Errorf("port: %d want 8443", n.Port)
+	}
+	if n.Fields["password"] != "CBAI0bv97b21KRjXw3fDArlnW/ymWTur" {
+		t.Errorf("password: %q (must preserve raw / not percent-encoded)", n.Fields["password"])
+	}
+	if n.Fields["sni"] != "jim.gulujili.xyz" {
+		t.Errorf("sni: %v", n.Fields["sni"])
+	}
+	if n.Name != "Hy2-entrance-CN-jim-jim-hy2" && n.Name != "Hy2-entrance-CN-jim-hy2" {
+		// fragment is the visual name; some normalizers may dedupe hy2 → hy2
+		// but the literal fragment text should land as the name.
+		t.Errorf("name: %q want Hy2-entrance-CN-jim-hy2", n.Name)
+	}
+}
+
+// TestParseURITrojan_SlashInPassword covers the same lenient-userinfo
+// behavior for trojan URIs (also seen in the wild from various providers).
+func TestParseURITrojan_SlashInPassword(t *testing.T) {
+	uri := "trojan://abc/def@example.com:443?sni=example.com#tj-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Server != "example.com" || n.Port != 443 {
+		t.Errorf("server:port = %s:%d, want example.com:443", n.Server, n.Port)
+	}
+	if n.Fields["password"] != "abc/def" {
+		t.Errorf("password = %q, want %q", n.Fields["password"], "abc/def")
+	}
+}
+
+// TestEscapeUserinfoSlashes_NoOpWhenSafe asserts the helper never changes
+// strings that don't need fixing (no userinfo, no slashes, etc.).
+func TestEscapeUserinfoSlashes_NoOpWhenSafe(t *testing.T) {
+	cases := []string{
+		"ss://YWVzOnB3@host:8388#name",                                       // no slash in userinfo
+		"https://example.com/path/with/slashes?q=1",                          // no userinfo, slashes in path are fine
+		"vless://uuid@host:443/?type=ws&path=/abc",                           // userinfo has no slash; path has them
+		"trojan://pw@host:443/?sni=x#trojan-1",                               // trailing-only path, no userinfo slash
+		"hysteria2://password@host:443?sni=x#hy2-1",                          // plain password
+	}
+	for _, c := range cases {
+		got := escapeUserinfoSlashes(c)
+		if got != c {
+			t.Errorf("escapeUserinfoSlashes(%q) = %q, want unchanged", c, got)
+		}
+	}
+}
+
+// TestEscapeUserinfoSlashes_EncodesOnlyInUserinfo asserts only the userinfo
+// segment is touched — path / query / fragment slashes are preserved.
+func TestEscapeUserinfoSlashes_EncodesOnlyInUserinfo(t *testing.T) {
+	in := "hy2://ab/cd@host:443/some/path?p=/q#frag/with/slash"
+	got := escapeUserinfoSlashes(in)
+	want := "hy2://ab%2Fcd@host:443/some/path?p=/q#frag/with/slash"
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
 // Also support the hy2:// alias.
 func TestParseURIHy2Alias(t *testing.T) {
 	uri := "hy2://password@1.2.3.4:443"
