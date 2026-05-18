@@ -44,7 +44,7 @@ func isHelpArg(s string) bool {
 func rejectJSONOnMutation(verbName string, args []string) {
 	for _, a := range args {
 		if a == "--json" {
-			dieUserErr("%s: --json is only supported on read verbs (list/ls/show); use `%s` followed by a read verb to see JSON output", verbName, verbName)
+			dieUserErr("%s: --json not supported on this category. The verbs that emit JSON: status, ip, groups, nodes, test, mode, target, active, and all `... ls` / `... list` reads.", verbName)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,16 +126,16 @@ Read verbs (always safe):
   vpnkit nodes <group> [--json]         list nodes in a group
   vpnkit test <group> [<node>] [--json] active delay test
 
-Mutation verbs (hold a config flock; --json not supported):
+Mutation verbs (hold a config flock):
   vpnkit init [--force]                 generate / regenerate config
-  vpnkit subs        <list|add|rm|enable|disable|update>
-  vpnkit local-nodes <list|add|rm|edit|mv>
-  vpnkit local-groups <list|add|rm|enable|disable|rename>
-  vpnkit local-rules <list|add|rm|move>
-  vpnkit mode    [rule|global|direct]
-  vpnkit target  [<name>]
-  vpnkit active  [<name>]
-  vpnkit use     <group> <node>
+  vpnkit subs        <list|add|rm|enable|disable|update>     # CRUD: no --json
+  vpnkit local-nodes <list|add|rm|edit|mv>                   # CRUD: no --json
+  vpnkit local-groups <list|add|rm|enable|disable|rename>    # CRUD: no --json
+  vpnkit local-rules <list|add|rm|move>                      # CRUD: no --json
+  vpnkit mode    [rule|global|direct] [--json]               # show or set; JSON ok
+  vpnkit target  [<name>]              [--json]              # show or set; JSON ok
+  vpnkit active  [<name>]              [--json]              # show or set; JSON ok
+  vpnkit use     <group> <node>        [--json]              # mihomo Selector.now
   vpnkit update  [--check] [--yes] [--vpnkit-only] [--mihomo-only]
   vpnkit uninstall --yes
 
@@ -281,10 +282,18 @@ func dispatchNodes(args []string) {
 }
 
 func dispatchInit(args []string) {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	// ContinueOnError + suppressed Usage so unknown flags get our
+	// polished one-line error instead of the stdlib `flag` package's
+	// verbose "Usage of init:" block that doesn't match the rest of
+	// vpnkit's CLI surface.
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
 	force := fs.Bool("force", false, "back up any existing store before regenerating (use to recover from v1 → v2)")
 	_ = fs.Bool("non-interactive", false, "(no-op; init is always non-interactive)")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		dieUserErr("vpnkit init: %v (valid flags: --force, --non-interactive)", err)
+	}
 	if err := runInit(os.Stdout, runInitOpts{Force: *force}); err != nil {
 		dieRuntime("vpnkit init: %v", err)
 	}
