@@ -117,12 +117,24 @@ func fallback(s, alt string) string {
 	return s
 }
 
-func humanRate(n int64) string {
+func humanRate(n int64) string { return HumanRate(n) }
+
+// HumanRate formats a bytes/second number into B / KiB / MiB / GiB / TiB.
+// Exported so internal/app/statusbar.go can share the same implementation
+// (pre-rc.7 had a byte-identical copy that capped at MiB → 1 GiB/s
+// rendered as "1024.0 MiB" eating 5+ columns of statusbar space).
+func HumanRate(n int64) string {
 	const (
 		KiB = 1024
 		MiB = 1024 * KiB
+		GiB = 1024 * MiB
+		TiB = 1024 * GiB
 	)
 	switch {
+	case n >= TiB:
+		return fmt.Sprintf("%.1f TiB", float64(n)/float64(TiB))
+	case n >= GiB:
+		return fmt.Sprintf("%.1f GiB", float64(n)/float64(GiB))
 	case n >= MiB:
 		return fmt.Sprintf("%.1f MiB", float64(n)/float64(MiB))
 	case n >= KiB:

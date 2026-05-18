@@ -629,7 +629,7 @@ func TestDispatchLocalRulesAdd(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 	mustNotPanic(t, func() {
-		dispatchLocalRules([]string{"add", "DOMAIN", "example.com", "PROXY"})
+		dispatchLocalRules([]string{"add", "DOMAIN", "example.com", "DIRECT"})
 	})
 }
 
@@ -644,7 +644,7 @@ func TestDispatchLocalRulesRm(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 	mustNotPanic(t, func() {
-		dispatchLocalRules([]string{"add", "DOMAIN", "example.com", "PROXY"})
+		dispatchLocalRules([]string{"add", "DOMAIN", "example.com", "DIRECT"})
 	})
 	mustNotPanic(t, func() {
 		dispatchLocalRules([]string{"rm", "0"})
@@ -663,7 +663,7 @@ func TestDispatchLocalRulesMove(t *testing.T) {
 	}
 	// Add two rules then move.
 	mustNotPanic(t, func() {
-		dispatchLocalRules([]string{"add", "DOMAIN", "a.com", "PROXY"})
+		dispatchLocalRules([]string{"add", "DOMAIN", "a.com", "DIRECT"})
 	})
 	mustNotPanic(t, func() {
 		dispatchLocalRules([]string{"add", "DOMAIN", "b.com", "DIRECT"})

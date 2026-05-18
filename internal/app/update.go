@@ -331,10 +331,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(v, m.keys.PrevTab):
 			m.activeTab = (m.activeTab + NumTabs - 1) % NumTabs
 		case key.Matches(v, m.keys.Help):
-			// Inline keymap flash — cheap stand-in for a full overlay,
-			// but enough to fix the status bar advertising "?:help"
-			// while ? did nothing.
-			m.flash = "Keys: [1-7] tab  [tab/S-Tab] cycle  [q] quit  [/] filter (Rules/Conn)  [a] add (Sources)  [t] test (Groups)"
+			// Statusbar is single-line; the verbose hint was truncated
+			// at 60 cols. Use a terse mnemonic instead; full help is
+			// in docs/USAGE.md.
+			m.flash = "Keys: 1-7 tab • /filter • a add • t test • q quit"
 		case key.Matches(v, m.keys.Mode):
 			// Direct users to the canonical UI for mode changes.
 			m.flash = "Cycle mode in Settings → Routing or `vpnkit mode [rule|global|direct]`"

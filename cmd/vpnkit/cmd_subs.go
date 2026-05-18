@@ -113,6 +113,14 @@ func dispatchSubs(args []string) {
 				errs = append(errs, fmt.Errorf("%s: %w", n, err))
 				continue
 			}
+			if count == 0 {
+				// A 0-node refresh is almost always a sign of malformed
+				// YAML, an HTML error page, or a feed that requires a
+				// different User-Agent (doggygosubs returns dummy nodes
+				// for non-mihomo UAs — historical bug). Surface loud.
+				fmt.Fprintf(os.Stderr, "⚠️  %s — 0 nodes (malformed feed? UA gated? check the URL with curl)\n", n)
+				continue
+			}
 			fmt.Printf("✅ %s — %d nodes\n", n, count)
 		}
 		if len(errs) > 0 {

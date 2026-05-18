@@ -44,6 +44,13 @@ func dispatchLocalRules(args []string) {
 			dieUserErr("usage: vpnkit local-rules add <type> <payload> <target>")
 		}
 		rejectExtraArgs("vpnkit local-rules add", rest, 3)
+		// Target must resolve to a known source or built-in (DIRECT/
+		// REJECT). Pre-rc.7 unknown targets like "BADTARGET" landed in
+		// config.yaml and mihomo refused to reload later with a cryptic
+		// error.
+		if err := validateTarget(st, rest[2]); err != nil {
+			dieUserErr("target: %v", err)
+		}
 		if err := runLocalRulesAdd(st, rest[0], rest[1], rest[2]); err != nil {
 			dieUserErr("%v", err)
 		}

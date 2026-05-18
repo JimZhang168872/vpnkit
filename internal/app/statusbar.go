@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"vpnkit/internal/tabs/dashboard"
 	"vpnkit/internal/tabs/viewport"
 )
 
@@ -53,17 +54,7 @@ func runDot(d interface{ UpHistoryLast() int64 }) string {
 	return "⚪"
 }
 
-func fmtRate(n int64) string {
-	const (
-		KiB = 1024
-		MiB = 1024 * KiB
-	)
-	switch {
-	case n >= MiB:
-		return fmt.Sprintf("%.1f MiB", float64(n)/float64(MiB))
-	case n >= KiB:
-		return fmt.Sprintf("%.1f KiB", float64(n)/float64(KiB))
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
-}
+// fmtRate is a thin re-export of dashboard.HumanRate. Kept as a function
+// so callers in this file don't need a renamed import; the underlying
+// formatter is shared so dashboard + statusbar stay consistent.
+func fmtRate(n int64) string { return dashboard.HumanRate(n) }

@@ -31,6 +31,9 @@ func main() {
 		case "--version", "-v", "version":
 			runVersion()
 			return
+		case "--help", "-h", "help":
+			printTopLevelHelp()
+			return
 		case "env":
 			runEnv(os.Args[2:])
 			return
@@ -103,6 +106,43 @@ func main() {
 	}
 }
 
+// printTopLevelHelp emits a concise summary of every verb. Users typing
+// `vpnkit --help` / `-h` / `help` get this instead of the cryptic
+// "unknown command" they used to receive.
+func printTopLevelHelp() {
+	fmt.Println(`vpnkit — TUI + CLI for managing the mihomo proxy core.
+
+Usage:
+  vpnkit                                launch the TUI
+  vpnkit version | --version | -v       print version + mihomo path
+  vpnkit help    | --help    | -h       this message
+
+Read verbs (always safe):
+  vpnkit status [--json]                show service / port / mode
+  vpnkit ip [--json]                    show egress IP via proxy
+  vpnkit env [--shell bash|zsh|fish]    print shell exports for HTTP(S)_PROXY
+  vpnkit groups [--json]                list proxy groups
+  vpnkit nodes <group> [--json]         list nodes in a group
+  vpnkit test <group> [<node>] [--json] active delay test
+
+Mutation verbs (hold a config flock; --json not supported):
+  vpnkit init [--force]                 generate / regenerate config
+  vpnkit subs        <list|add|rm|enable|disable|update>
+  vpnkit local-nodes <list|add|rm|edit|mv>
+  vpnkit local-groups <list|add|rm|enable|disable|rename>
+  vpnkit local-rules <list|add|rm|move>
+  vpnkit mode    [rule|global|direct]
+  vpnkit target  [<name>]
+  vpnkit active  [<name>]
+  vpnkit use     <group> <node>
+  vpnkit update  [--check] [--yes] [--vpnkit-only] [--mihomo-only]
+  vpnkit uninstall --yes
+
+Run any verb without arguments (or with --help on a subverb) for usage.
+
+Docs: https://github.com/JimZhang168872/vpnkit (USAGE.md / USAGE_zh.md)`)
+}
+
 func runVersion() {
 	short := commit
 	if len(short) > 7 {
@@ -126,7 +166,11 @@ func runEnv(args []string) {
 	functions := fs.Bool("functions", false, "emit proxy_on / proxy_off function defs (append once to ~/.zshrc)")
 	_ = fs.Parse(args)
 
-	flavor := "bash"
+	// Recognized shell flavors. Anything else (powershell, cmd, sh,
+	// dash, nushell, etc.) gets a loud error rather than silently
+	// falling back to bash syntax — pre-rc.7 Windows users pasted
+	// `export ...` into PowerShell and got opaque errors.
+	flavor := ""
 	switch {
 	case *shell == "" || strings.Contains(*shell, "bash"):
 		flavor = "bash"
@@ -134,6 +178,9 @@ func runEnv(args []string) {
 		flavor = "zsh"
 	case strings.Contains(*shell, "fish"):
 		flavor = "fish"
+	}
+	if flavor == "" {
+		dieUserErr("vpnkit env: unsupported --shell %q (supported: bash, zsh, fish)", *shell)
 	}
 
 	p := paths.Resolve()
