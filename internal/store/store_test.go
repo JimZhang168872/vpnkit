@@ -135,8 +135,8 @@ func TestSchemaV2Roundtrip(t *testing.T) {
 	if s.Cfg.Mode != "rule" {
 		t.Errorf("default mode: got %q, want \"rule\"", s.Cfg.Mode)
 	}
-	if s.Cfg.GlobalTarget != "🚀 Proxy" {
-		t.Errorf("default global_target: got %q, want \"🚀 Proxy\"", s.Cfg.GlobalTarget)
+	if s.Cfg.GlobalTarget != "DIRECT" {
+		t.Errorf("default global_target: got %q, want \"DIRECT\" (rc.6 changed default to avoid 🚀 Proxy self-loop)", s.Cfg.GlobalTarget)
 	}
 	if s.Cfg.Subscriptions == nil {
 		t.Error("Subscriptions must be empty slice, not nil")
@@ -370,5 +370,60 @@ url = "https://example.invalid/sub"
 	}
 	if !strings.Contains(err.Error(), "schema") || !strings.Contains(err.Error(), "vpnkit init --force") {
 		t.Errorf("error should mention schema upgrade + remedy command, got: %v", err)
+	}
+}
+
+// TestLoadMigratesProxyGlobalTargetToDirect regresses the rc.6 startup
+// crash: pre-rc.7 vpnkit defaulted store.Cfg.GlobalTarget to "🚀 Proxy",
+// which is the name of the top-level Selector group itself. The
+// assembler dutifully included it as a member of its own group, mihomo
+// detected the cycle and refused to load with:
+//   Parse config error: loop is detected in ProxyGroup, please check
+//   following ProxyGroups: [🚀 Proxy]
+//
+// Load() now rewrites any "🚀 Proxy" GlobalTarget to "DIRECT" on disk
+// the next time a user opens the store. Belt-and-suspenders with the
+// assembler-layer guard in withTargetFirst.
+func TestLoadMigratesProxyGlobalTargetToDirect(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	// Hand-craft a v2 store that has the rc.x default "🚀 Proxy" target.
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "🚀 Proxy"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Cfg.GlobalTarget != "DIRECT" {
+		t.Errorf("expected GlobalTarget migrated to DIRECT, got %q", st.Cfg.GlobalTarget)
+	}
+	// And it must be persisted, not just in-memory — re-load and check.
+	st2, _ := Load(path)
+	if st2.Cfg.GlobalTarget != "DIRECT" {
+		t.Errorf("migration didn't persist; second load got %q", st2.Cfg.GlobalTarget)
+	}
+}
+
+// TestLoadDefaultGlobalTargetIsDirect — new stores (no existing toml) get
+// GlobalTarget="DIRECT" as the conservative default. Any future Selector
+// member name (a subscription / local group / specific node) can be set
+// by the user; "DIRECT" guarantees no startup loop on day one.
+func TestLoadDefaultGlobalTargetIsDirect(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Cfg.GlobalTarget != "DIRECT" {
+		t.Errorf("default GlobalTarget should be DIRECT, got %q", st.Cfg.GlobalTarget)
 	}
 }
