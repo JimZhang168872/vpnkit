@@ -562,20 +562,43 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 						m.flash = "save: " + err.Error()
 						return m, nil
 					}
-					if m.deps.Pipeline != nil {
-						if err := m.deps.Pipeline.LocalNodes().Add(n); err != nil {
+					if m.deps.Pipeline == nil {
+						m.form = nil
+						return m, nil
+					}
+					mgr := m.deps.Pipeline.LocalNodes()
+					editing := m.form.editingName
+					if editing != "" {
+						oldNode, found := mgr.Get(editing)
+						if !found {
+							m.flash = "save: original node disappeared"
+							m.form = nil
+							return m, nil
+						}
+						if err := mgr.Remove(editing); err != nil {
+							m.flash = "save: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+						if err := mgr.Add(n); err != nil {
+							_ = mgr.Add(oldNode) // rollback rename collision
+							m.flash = "save: " + err.Error()
+							m.form = nil
+							return m, nil
+						}
+						m.flash = "edited " + n.Group + ":" + n.Name
+					} else {
+						if err := mgr.Add(n); err != nil {
 							m.flash = "add: " + err.Error()
 							m.form = nil
 							return m, nil
 						}
-						_ = m.deps.Pipeline.SaveLocal()
 						m.flash = "added " + n.Group + ":" + n.Name
-						m.nodes = m.deps.Pipeline.LocalNodes().All()
-						m.form = nil
-						return m, emitPipelineMutated()
 					}
+					_ = m.deps.Pipeline.SaveLocal()
+					m.nodes = mgr.All()
 					m.form = nil
-					return m, nil
+					return m, emitPipelineMutated()
 				case tea.KeyTab, tea.KeyDown:
 					if m.form.focused < len(m.form.inputs)-1 {
 						m.form.inputs[m.form.focused].Blur()
@@ -590,24 +613,16 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 						m.form.inputs[m.form.focused].Focus()
 					}
 					return m, nil
-				}
-				switch km.String() {
-				case "ctrl+p":
-					idx := 0
-					for i, p := range supportedProtos {
-						if p == m.form.proto {
-							idx = i
-							break
-						}
+				case tea.KeyLeft:
+					if m.form.focused == 0 {
+						m.form = cycleProto(m.form, -1)
+						return m, nil
 					}
-					next := supportedProtos[(idx+1)%len(supportedProtos)]
-					m.form = newLocalNodeFieldForm(next, m.form.defaultGroup)
-					return m, nil
-				case "ctrl+u":
-					f := newLocalNodeURIForm()
-					f.defaultGroup = m.form.defaultGroup
-					m.form = f
-					return m, nil
+				case tea.KeyRight:
+					if m.form.focused == 0 {
+						m.form = cycleProto(m.form, +1)
+						return m, nil
+					}
 				}
 				var cmd tea.Cmd
 				m.form.inputs[m.form.focused], cmd = m.form.inputs[m.form.focused].Update(message)
@@ -661,6 +676,12 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 			}
 		case "a":
 			m.form = newLocalNodeFieldForm("hysteria2", m.currentGroup)
+			return m, nil
+		case "e":
+			filtered := m.filteredNodes()
+			if m.cursor < len(filtered) {
+				m.form = newLocalNodeFieldFormFromNode(filtered[m.cursor])
+			}
 			return m, nil
 		case "u":
 			// URI mode for one-shot paste.

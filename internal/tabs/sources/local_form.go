@@ -31,9 +31,10 @@ type localNodeForm struct {
 	oldName      string // rename mode: current name being changed
 
 	// formModeNodeFields:
-	inputs  []textinput.Model
-	focused int
-	proto   string
+	inputs      []textinput.Model
+	focused     int
+	proto       string
+	editingName string // non-empty when editing an existing node (used to call Update vs Add)
 }
 
 // ─── Single-input constructors ────────────────────────────────────────────────
@@ -124,8 +125,46 @@ var protoFields = map[string][]fieldDef{
 	},
 }
 
-// supportedProtos is the ordered list for [p] cycling.
+// supportedProtos is the ordered list for ←/→ cycling on the Proto field.
 var supportedProtos = []string{"ss", "vmess", "vless", "trojan", "hysteria2", "tuic"}
+
+// cycleProto returns a new form whose proto is shifted by dir (+1 or -1)
+// relative to f.proto. Values for keys present in both old and new proto's
+// field set are carried over; proto-specific fields are reset to defaults.
+// editingName is preserved so commit still calls Update() for edit flows.
+func cycleProto(f *localNodeForm, dir int) *localNodeForm {
+	idx := 0
+	for i, p := range supportedProtos {
+		if p == f.proto {
+			idx = i
+			break
+		}
+	}
+	next := supportedProtos[(idx+dir+len(supportedProtos))%len(supportedProtos)]
+	nf := newLocalNodeFieldForm(next, f.defaultGroup)
+	nf.editingName = f.editingName
+
+	oldDefs := f.formFieldDefs()
+	oldValues := make(map[string]string, len(oldDefs))
+	for i, d := range oldDefs {
+		oldValues[d.key] = f.inputs[i].Value()
+	}
+	newDefs := nf.formFieldDefs()
+	for i, d := range newDefs {
+		if d.key == "proto" {
+			continue
+		}
+		if v, ok := oldValues[d.key]; ok {
+			nf.inputs[i].SetValue(v)
+		}
+	}
+	nf.focused = 0
+	for i := range nf.inputs {
+		nf.inputs[i].Blur()
+	}
+	nf.inputs[0].Focus()
+	return nf
+}
 
 // viaField is appended after proto-specific fields.
 var viaField = fieldDef{
@@ -167,6 +206,96 @@ func newLocalNodeFieldForm(proto, defaultGroup string) *localNodeForm {
 	}
 }
 
+// newLocalNodeFieldFormFromNode builds a multi-field edit form pre-filled
+// with the values from an existing node. Sets editingName so commit calls
+// Update() instead of Add(). Proto is taken from the node; the form's field
+// set matches the node's proto.
+func newLocalNodeFieldFormFromNode(n localnodes.Node) *localNodeForm {
+	f := newLocalNodeFieldForm(n.Proto, n.Group)
+	f.editingName = n.Name
+	defs := f.formFieldDefs()
+	for i, d := range defs {
+		v := valueForFieldFromNode(n, d)
+		if v != "" {
+			f.inputs[i].SetValue(v)
+		} else if d.key == "proto" {
+			// Always keep proto value visible even if blank check skipped it.
+			f.inputs[i].SetValue(n.Proto)
+		}
+	}
+	return f
+}
+
+// valueForFieldFromNode reads one fieldDef's value out of a Node and returns
+// the string representation suitable for a textinput.
+func valueForFieldFromNode(n localnodes.Node, d fieldDef) string {
+	switch d.key {
+	case "proto":
+		return n.Proto
+	case "name":
+		return n.Name
+	case "group":
+		return n.Group
+	case "server":
+		return n.Server
+	case "port":
+		if n.Port > 0 {
+			return strconv.Itoa(n.Port)
+		}
+		return ""
+	case "via":
+		return n.Via
+	}
+	// Nested keys like "ws-opts.host" — index into the outer map.
+	if strings.Contains(d.key, ".") {
+		parts := strings.SplitN(d.key, ".", 2)
+		outer, inner := parts[0], parts[1]
+		sub, _ := n.Fields[outer].(map[string]any)
+		if sub == nil {
+			return ""
+		}
+		s, _ := sub[inner].(string)
+		return s
+	}
+	v, ok := n.Fields[d.key]
+	if !ok {
+		return ""
+	}
+	switch d.key {
+	case "tls", "skip-cert-verify":
+		if b, ok := v.(bool); ok {
+			if b {
+				return "true"
+			}
+			return "false"
+		}
+	case "alpn":
+		switch arr := v.(type) {
+		case []string:
+			return strings.Join(arr, ",")
+		case []any:
+			ss := make([]string, len(arr))
+			for i, e := range arr {
+				ss[i] = fmt.Sprint(e)
+			}
+			return strings.Join(ss, ",")
+		}
+	case "up", "down":
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(strings.TrimSuffix(s, "Mbps"))
+		}
+	}
+	if d.intField {
+		if i, ok := v.(int); ok {
+			return strconv.Itoa(i)
+		}
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprint(v)
+}
+
 // formFieldDefs returns the ordered field definitions for this form's proto.
 func (f *localNodeForm) formFieldDefs() []fieldDef {
 	defs := append([]fieldDef{{key: "proto", label: "Proto:", placeholder: f.proto}}, commonFields...)
@@ -200,7 +329,11 @@ func renderLocalNodeForm(f *localNodeForm) string {
 // renderLocalNodeFieldForm renders the proto-driven multi-field form.
 func renderLocalNodeFieldForm(f *localNodeForm) string {
 	defs := f.formFieldDefs()
-	rows := []string{lipgloss.NewStyle().Bold(true).Render("Add Local Node — " + f.proto), ""}
+	title := "Add Local Node — " + f.proto
+	if f.editingName != "" {
+		title = "Edit Local Node — " + f.proto + " (" + f.editingName + ")"
+	}
+	rows := []string{lipgloss.NewStyle().Bold(true).Render(title), ""}
 	for i, d := range defs {
 		mark := "  "
 		if i == f.focused {
@@ -209,7 +342,7 @@ func renderLocalNodeFieldForm(f *localNodeForm) string {
 		rows = append(rows, mark+d.label+" "+f.inputs[i].View())
 	}
 	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(
-		"[Tab/↑↓] navigate  [Enter] save  [Esc] cancel  [Ctrl+P] change proto  [Ctrl+U] URI mode"))
+		"[Tab/↑↓] navigate  [Enter] save  [Esc] cancel  [←→ on Proto] cycle proto"))
 	return strings.Join(rows, "\n")
 }
 
