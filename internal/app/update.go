@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	apiPkg "vpnkit/internal/api"
 	tabgroups "vpnkit/internal/tabs/groups"
 	tabrules "vpnkit/internal/tabs/rules"
 	tabsources "vpnkit/internal/tabs/sources"
@@ -175,16 +176,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// mihomo already returns namespaced node names ("doge:HK-A"),
 				// matching what groups.View() looks up in delayByNode — no
 				// re-namespacing here.
+				//
+				// Self-heal: if the first probe returns a transport-layer
+				// failure (mihomo not running / crashed), call applyCfg
+				// which reassembles config + restarts the service via
+				// service.Manager, wait briefly, retry once. This rescues
+				// the common case where mihomo died between the user adding
+				// a node and pressing `t` — they shouldn't have to know to
+				// go to Settings → Service [r].
 				group := m.groupsTab.SelectedGroup()
 				if group == "" || m.apiClient == nil {
 					return m, nil
 				}
 				m.flash = "⏱  testing " + group + "…"
 				client := m.apiClient
+				applyCfg := m.applyCfg
 				return m, func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+					ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 					defer cancel()
 					results, err := client.MeasureGroup(ctx, group, "https://www.gstatic.com/generate_204", 5000)
+					if err != nil && apiPkg.IsUnreachable(err) && applyCfg != nil {
+						if applyErr := applyCfg(ctx); applyErr == nil {
+							time.Sleep(2 * time.Second)
+							results, err = client.MeasureGroup(ctx, group, "https://www.gstatic.com/generate_204", 5000)
+						}
+					}
 					if err != nil {
 						return delayErrMsg{group: group, err: err}
 					}
@@ -288,7 +304,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = fmt.Sprintf("✓ %s: tested %d nodes", v.Group, len(v.Results))
 		return m, nil
 	case delayErrMsg:
-		m.flash = "❌ delay " + v.group + ": " + v.err.Error()
+		if apiPkg.IsUnreachable(v.err) {
+			m.flash = "❌ mihomo unreachable — try Settings → Service [r] restart, or `journalctl --user -u mihomo` to inspect"
+		} else {
+			m.flash = "❌ delay " + v.group + ": " + v.err.Error()
+		}
 		return m, nil
 	case groupSwitchMsg:
 		if v.err != nil {
