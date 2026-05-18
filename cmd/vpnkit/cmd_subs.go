@@ -22,6 +22,12 @@ func dispatchSubs(args []string) {
 		dieUserErr("vpnkit subs: usage: vpnkit subs <list|add|rm|enable|disable|update>")
 	}
 	sub, rest := args[0], args[1:]
+	// Reject --json on mutation subverbs (list/ls are the only read ones).
+	// Pre-rc.7 each subverb's `if len(rest) < N` check would either eat
+	// --json as a positional or produce a confusing "too many args" message.
+	if sub != "list" && sub != "ls" {
+		rejectJSONOnMutation("vpnkit subs "+sub, rest)
+	}
 	p := paths.Resolve()
 	st, err := storeLoad(p.VpnkitConfigFile())
 	if err != nil {
@@ -39,14 +45,6 @@ func dispatchSubs(args []string) {
 			dieRuntime("%v", err)
 		}
 	case "add":
-		// Filter out --json early with a clearer error — pre-rc.7 this
-		// went through the "too many positionals" path which confused
-		// users who naturally typed `subs add foo http://x --json`.
-		for _, a := range rest {
-			if a == "--json" {
-				dieUserErr("vpnkit subs add: --json not supported (only read verbs support it); use `vpnkit subs ls --json` after add")
-			}
-		}
 		ua, posArgs := extractUAFlag(rest)
 		if len(posArgs) < 2 {
 			dieUserErr("usage: vpnkit subs add <name> <url> [--ua=...]")
@@ -69,6 +67,7 @@ func dispatchSubs(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs rm <name>")
 		}
+		rejectExtraArgs("vpnkit subs rm", rest, 1)
 		// Route through Pipeline.DeleteSubscription so the
 		// ActiveSource-clearing side-effect fires (rc.7+: stale
 		// ActiveSource pointing at a deleted sub would degrade 🚀 Proxy
@@ -81,6 +80,7 @@ func dispatchSubs(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs enable <name>")
 		}
+		rejectExtraArgs("vpnkit subs enable", rest, 1)
 		if err := pl.SetSubscriptionEnabled(rest[0], true); err != nil {
 			dieUserErr("%v", err)
 		}
@@ -89,6 +89,7 @@ func dispatchSubs(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs disable <name>")
 		}
+		rejectExtraArgs("vpnkit subs disable", rest, 1)
 		// Idempotent set (not toggle) — disabling an already-disabled
 		// sub is a no-op, NOT an accidental re-enable. Also clears
 		// ActiveSource if it was pointing at this sub.

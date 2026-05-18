@@ -22,6 +22,9 @@ func dispatchLocalNodes(args []string) {
 		dieUserErr("vpnkit local-nodes: usage: vpnkit local-nodes <list|add|rm|edit|mv>")
 	}
 	sub, rest := args[0], args[1:]
+	if sub != "list" && sub != "ls" {
+		rejectJSONOnMutation("vpnkit local-nodes "+sub, rest)
+	}
 	p := paths.Resolve()
 	st, err := storeLoad(p.VpnkitConfigFile())
 	if err != nil {
@@ -119,6 +122,7 @@ func dispatchLocalNodes(args []string) {
 		fmt.Printf("✅ added local node %s:%s\n", node.Group, node.Name)
 		mutated = true
 	case "rm", "remove":
+		rejectExtraArgs("vpnkit local-nodes rm", rest, 1)
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-nodes rm <node>")
 		}
@@ -146,6 +150,7 @@ func dispatchLocalNodes(args []string) {
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-nodes mv <node> <new-group>")
 		}
+		rejectExtraArgs("vpnkit local-nodes mv", rest, 2)
 		group, name, ambig, ok := resolveLocalNode(st, rest[0])
 		if ambig {
 			dieUserErr("vpnkit: ambiguous %q — use \"<group>:<name>\"", rest[0])

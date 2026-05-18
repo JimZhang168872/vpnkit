@@ -18,6 +18,9 @@ func dispatchLocalRules(args []string) {
 		dieUserErr("vpnkit local-rules: usage: vpnkit local-rules <list|add|rm|move>")
 	}
 	sub, rest := args[0], args[1:]
+	if sub != "list" && sub != "ls" {
+		rejectJSONOnMutation("vpnkit local-rules "+sub, rest)
+	}
 	p := paths.Resolve()
 	st, err := storeLoad(p.VpnkitConfigFile())
 	if err != nil {
@@ -40,6 +43,7 @@ func dispatchLocalRules(args []string) {
 		if len(rest) < 3 {
 			dieUserErr("usage: vpnkit local-rules add <type> <payload> <target>")
 		}
+		rejectExtraArgs("vpnkit local-rules add", rest, 3)
 		if err := runLocalRulesAdd(st, rest[0], rest[1], rest[2]); err != nil {
 			dieUserErr("%v", err)
 		}
@@ -51,6 +55,7 @@ func dispatchLocalRules(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-rules rm <idx>")
 		}
+		rejectExtraArgs("vpnkit local-rules rm", rest, 1)
 		idx, err := strconv.Atoi(rest[0])
 		if err != nil {
 			dieUserErr("invalid index %q: %v", rest[0], err)
@@ -66,6 +71,7 @@ func dispatchLocalRules(args []string) {
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-rules move <from> <to>")
 		}
+		rejectExtraArgs("vpnkit local-rules move", rest, 2)
 		from, err := strconv.Atoi(rest[0])
 		if err != nil {
 			dieUserErr("invalid from index %q: %v", rest[0], err)

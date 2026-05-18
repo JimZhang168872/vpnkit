@@ -383,7 +383,7 @@ func (m subsModel) View(width, height int, focused bool) string {
 
 	if m.form != nil {
 		rows = append(rows, renderSubsForm(m.form))
-		return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).
+		return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).
 			Render(strings.Join(rows, "\n"))
 	}
 
@@ -394,8 +394,18 @@ func (m subsModel) View(width, height int, focused bool) string {
 		if innerW < 20 {
 			innerW = 20
 		}
+		// Scroll window so the cursor stays visible on long lists.
+		// Pre-rc.7 the list rendered every entry, pushing the cursor
+		// off-screen for 50+ subs and making `d`/`e` operate on an
+		// unseen selection. Same pattern groups.go and rules.go use.
+		maxList := height - 6
+		if maxList < 3 {
+			maxList = 3
+		}
+		start, end := viewport.Window(len(m.list), m.cursor, maxList)
 		curStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-		for i, s := range m.list {
+		for i := start; i < end; i++ {
+			s := m.list[i]
 			enabled := "✓"
 			if !s.Enabled {
 				enabled = "✗"
@@ -409,9 +419,12 @@ func (m subsModel) View(width, height int, focused bool) string {
 				rows = append(rows, "  "+line)
 			}
 		}
+		if ind := viewport.Indicator(0, len(m.list), maxList, m.cursor); ind != "" && len(m.list) > maxList {
+			rows = append(rows, lipgloss.NewStyle().Faint(true).Render("  "+ind))
+		}
 	}
 	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[a] add  [d] delete  [u] update now  [e] toggle enabled"))
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).
 		Render(strings.Join(rows, "\n"))
 }
 
@@ -826,7 +839,14 @@ func (m localNodesModel) View(width, height int, focused bool) string {
 				rows = append(rows, fmt.Sprintf("  (no nodes in %q — press [a] to add)", m.currentGroup))
 			}
 		} else {
-			for i, n := range filtered {
+			// Scroll so cursor remains visible on long node lists.
+			maxList := height - 8
+			if maxList < 3 {
+				maxList = 3
+			}
+			start, end := viewport.Window(len(filtered), m.cursor, maxList)
+			for i := start; i < end; i++ {
+				n := filtered[i]
 				portStr := ""
 				if n.Port > 0 {
 					portStr = fmt.Sprintf(":%d", n.Port)
@@ -842,6 +862,9 @@ func (m localNodesModel) View(width, height int, focused bool) string {
 					rows = append(rows, "  "+line+via)
 				}
 			}
+			if ind := viewport.Indicator(0, len(filtered), maxList, m.cursor); ind != "" && len(filtered) > maxList {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Render("  "+ind))
+			}
 		}
 		rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(
 			"[a] add  [d] delete  [e] edit  [u] paste URI"))
@@ -851,7 +874,7 @@ func (m localNodesModel) View(width, height int, focused bool) string {
 	if m.flash != "" {
 		rows = append(rows, "", lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render(m.flash))
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).Render(strings.Join(rows, "\n"))
 }
 
 func newTextInput(placeholder, value string) textinput.Model {

@@ -17,6 +17,9 @@ func dispatchLocalGroups(args []string) {
 		dieUserErr("vpnkit local-groups: usage: vpnkit local-groups <list|add|rm|enable|disable|rename>")
 	}
 	sub, rest := args[0], args[1:]
+	if sub != "list" && sub != "ls" {
+		rejectJSONOnMutation("vpnkit local-groups "+sub, rest)
+	}
 	p := paths.Resolve()
 	st, err := storeLoad(p.VpnkitConfigFile())
 	if err != nil {
@@ -68,6 +71,7 @@ func dispatchLocalGroups(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-groups %s <name>", sub)
 		}
+		rejectExtraArgs("vpnkit local-groups "+sub, rest, 1)
 		current := false
 		found := false
 		for _, g := range st.Cfg.LocalNodeGroups {
@@ -94,6 +98,7 @@ func dispatchLocalGroups(args []string) {
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-groups rename <old> <new>")
 		}
+		rejectExtraArgs("vpnkit local-groups rename", rest, 2)
 		// Same validation as `local-groups add` — pre-rc.7 rename was a
 		// loophole around every guard (reserved names, cross-namespace).
 		if err := validateSourceName(rest[1]); err != nil {

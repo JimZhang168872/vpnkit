@@ -25,6 +25,32 @@ func loadClient() (*api.Client, *store.Store, error) {
 	return api.New(url, st.Cfg.ControllerSecret), st, nil
 }
 
+// rejectJSONOnMutation aborts with a clear user error when args contains
+// `--json`. Mutation verbs (subs add/rm, local-rules add/rm/move,
+// local-nodes add/rm/edit/mv, local-groups add/rm/enable/disable/rename)
+// don't have a defined JSON output shape; pre-rc.7 each verb either
+// silently dropped --json into positional args or produced confusing
+// "too many positional args" errors. Call this once at the top of every
+// mutation dispatcher.
+func rejectJSONOnMutation(verbName string, args []string) {
+	for _, a := range args {
+		if a == "--json" {
+			dieUserErr("%s: --json is only supported on read verbs (list/ls/show); use `%s` followed by a read verb to see JSON output", verbName, verbName)
+		}
+	}
+}
+
+// rejectExtraArgs aborts when args has more positional args than `want`.
+// Pre-rc.7 most mutation dispatchers silently dropped extras —
+// `subs add foo URL garbage1` returned rc=0 with garbage1 invisibly
+// discarded. Now every mutation verb that takes a fixed positional
+// count calls this to catch the typo loud.
+func rejectExtraArgs(verbName string, args []string, want int) {
+	if len(args) > want {
+		dieUserErr("%s: takes exactly %d positional arg(s); got %d: %v", verbName, want, len(args), args)
+	}
+}
+
 // lockIfMutating is a wrapper that only acquires the store flock when
 // args[0] indicates a mutation. Read-only subverbs (`list`/`ls`, no-arg
 // show forms of `target`/`active`/`mode`) bypass the lock so they don't

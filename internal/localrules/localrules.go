@@ -35,6 +35,7 @@ var validTypes = map[string]bool{
 	"DOMAIN-SUFFIX":        true,
 	"DOMAIN-KEYWORD":       true,
 	"DOMAIN-REGEX":         true,
+	"DOMAIN-WILDCARD":      true,
 	"GEOSITE":              true,
 	"IP-CIDR":              true,
 	"IP-CIDR6":             true,
