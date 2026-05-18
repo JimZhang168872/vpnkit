@@ -548,7 +548,30 @@ mihomo's `/proxies/<name>/delay` and `/group/<name>/delay`.
 |---|---|---|
 | Test URL | `https://www.gstatic.com/generate_204` | mihomo standard. 204 No Content keeps payload near-zero so the timing reflects the proxy hop, not page load |
 | Timeout | 5000 ms | mihomo `url-test` default; tested-good nodes return in 100-500 ms, no real wait |
-| Concurrency | mihomo-controlled | group endpoint fans out internally; vpnkit doesn't rate-limit |
+| Concurrency | mihomo-controlled or vpnkit fan-out | depends on which endpoint succeeds (see below) |
+
+### Group endpoint resolution
+
+mihomo's `/group/<name>/delay` endpoint only accepts **url-test / fallback /
+load-balance** group types. Selectors (which is what `🚀 Proxy`, `doge`,
+`local`, and every user-facing vpnkit group actually is) return `404
+Resource not found`.
+
+vpnkit's assembler emits **two** mihomo groups per user-facing group: the
+Selector `<name>` and the companion url-test `<name>-auto`. So the
+`api.MeasureGroup` helper used by both the TUI and CLI runs this cascade:
+
+1. Try `/group/<name>-auto/delay` — works for every vpnkit-assembled
+   subscription / local-nodes group. **One round-trip.**
+2. On 404, try `/group/<name>/delay` — covers custom user-defined
+   url-test groups (e.g. from a hand-edited `~/.config/mihomo/config.yaml`).
+3. On 404 again, read members from `/proxies/<name>.all` and call
+   `/proxies/<member>/delay` in parallel goroutines. Slower but works for
+   any group regardless of type, including bare Selectors that have no
+   companion url-test.
+
+Non-404 errors (`401`, `500`, network timeout) surface as-is rather than
+triggering the cascade — they indicate a real problem, not "wrong endpoint."
 
 CLI overrides: `--url https://...` and `--timeout-ms 3000`. TUI uses
 defaults (no in-UI override).
@@ -698,6 +721,15 @@ or first delete the conflicting node.
   doesn't require GFW-bypass.
 - Auth misconfig: `curl -i http://127.0.0.1:<port>/proxies` should
   return 200 with the secret in `Authorization: Bearer <token>` header.
+
+### `delay <group>: mihomo GET /group/<group>/delay: 404 Resource not found`
+
+This used to bite anyone trying to test a vpnkit-managed group before
+rc.6 because vpnkit's user-facing groups are mihomo Selectors, and
+`/group/<name>/delay` only works on url-test / fallback / load-balance
+types. Fixed by the
+[Group endpoint resolution](#group-endpoint-resolution) cascade — now
+upgrade to rc.6+ or rebuild from `main`.
 
 ### "TUI tabs don't show subscriptions / local nodes after `vpnkit subs add` from another shell"
 

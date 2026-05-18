@@ -160,8 +160,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "t":
 				// Trigger a group-wide delay test against the highlighted
-				// group. Async — the result lands as msg.DelayResults in the
-				// app-level handler below and is forwarded to groupsTab.
+				// group. Uses MeasureGroup which handles the Selector vs
+				// url-test split (vpnkit Selectors return 404 on direct
+				// /group/<name>/delay; MeasureGroup retries with the
+				// "<group>-auto" companion and finally falls back to
+				// per-member /proxies/<member>/delay).
+				//
+				// mihomo already returns namespaced node names ("doge:HK-A"),
+				// matching what groups.View() looks up in delayByNode — no
+				// re-namespacing here.
 				group := m.groupsTab.SelectedGroup()
 				if group == "" || m.apiClient == nil {
 					return m, nil
@@ -169,19 +176,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.flash = "⏱  testing " + group + "…"
 				client := m.apiClient
 				return m, func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 					defer cancel()
-					results, err := client.GroupDelay(ctx, group, "https://www.gstatic.com/generate_204", 5000)
+					results, err := client.MeasureGroup(ctx, group, "https://www.gstatic.com/generate_204", 5000)
 					if err != nil {
 						return delayErrMsg{group: group, err: err}
 					}
-					// Re-namespace to "<group>:<name>" so it matches what
-					// groups.View() keys on.
-					nsResults := make(map[string]int, len(results))
-					for n, d := range results {
-						nsResults[group+":"+n] = d
-					}
-					return DelayResults{Group: group, Results: nsResults}
+					return DelayResults{Group: group, Results: results}
 				}
 			case "enter":
 				// Switch the selected group's `now` to the highlighted node

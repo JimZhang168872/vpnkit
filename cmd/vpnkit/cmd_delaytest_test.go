@@ -37,11 +37,12 @@ func TestRunTestSingleNode(t *testing.T) {
 	}
 }
 
-// TestRunTestGroup verifies the group endpoint /group/<name>/delay is hit
-// and each member is rendered with its delay.
+// TestRunTestGroup verifies that runTest probes the vpnkit url-test
+// companion group (<name>-auto) first, which is the happy path for every
+// subscription / local-nodes group emitted by the assembler.
 func TestRunTestGroup(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/group/doge/delay", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/group/doge-auto/delay", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]int{
 			"HK-01": 234,
 			"JP-02": 567,
@@ -67,7 +68,7 @@ func TestRunTestGroup(t *testing.T) {
 // 0 stays as 0 (caller can interpret as timeout).
 func TestRunTestJSON(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/group/doge/delay", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/group/doge-auto/delay", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]int{"HK-01": 234, "JP-02": 0})
 	})
 	srv := httptest.NewServer(mux)
