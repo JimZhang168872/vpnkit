@@ -77,7 +77,7 @@ func dispatchSubs(args []string) {
 	case "update":
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitConfig+"/extensions.toml")
+		pl := app.NewPipeline(st, p.MihomoConfigFile())
 		names := rest
 		if len(names) == 0 {
 			for _, s := range st.Cfg.Subscriptions {

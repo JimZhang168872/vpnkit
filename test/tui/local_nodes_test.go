@@ -46,6 +46,54 @@ func TestTUILocalNodesAddViaURI(t *testing.T) {
 	}
 }
 
+// TestTUILocalNodesEditOpensPrefilled regresses Bug A: pressing `e` on a
+// highlighted node must open the multi-field edit form pre-filled with the
+// node's existing values. Before the rc.4 fix the help line advertised [e]
+// but the Update handler had no case for it, so nothing happened.
+func TestTUILocalNodesEditOpensPrefilled(t *testing.T) {
+	iso := newIsolatedHome(t)
+	sess := newTUISession(t, iso)
+	sess.SendKeys("Left", "Down", "Down", "Right", "Down")
+	// Create group + node first.
+	sess.SendKeys("N")
+	sess.WaitFor("New Local Group", 3*time.Second)
+	sess.SendLiteral("home")
+	sess.SendKeys("Enter")
+	sess.WaitFor("home", 3*time.Second)
+	sess.SendKeys("u")
+	sess.WaitFor("Add Local Node", 3*time.Second)
+	sess.SendLiteral("ss://YWVzLTI1Ni1nY206cGFzczE@1.2.3.4:8388#editme")
+	sess.SendKeys("Enter")
+	sess.WaitFor("editme", 3*time.Second)
+	// Press e — should open Edit Local Node form pre-filled with the node.
+	sess.SendKeys("e")
+	sess.WaitFor("Edit Local Node", 3*time.Second)
+	sess.MustContain("editme")
+	sess.MustContain("1.2.3.4")
+}
+
+// TestTUILocalNodesAddCyclesProtoWithArrow regresses the Ctrl+P removal:
+// the user opens the Add form (defaults to hysteria2), navigates focus to
+// the Proto field (Shift+Tab once from the default Name focus), and presses
+// → — the form title should update to a different proto.
+func TestTUILocalNodesAddCyclesProtoWithArrow(t *testing.T) {
+	iso := newIsolatedHome(t)
+	sess := newTUISession(t, iso)
+	sess.SendKeys("Left", "Down", "Down", "Right", "Down")
+	sess.SendKeys("N")
+	sess.WaitFor("New Local Group", 3*time.Second)
+	sess.SendLiteral("home")
+	sess.SendKeys("Enter")
+	sess.WaitFor("home", 3*time.Second)
+	sess.SendKeys("a")
+	sess.WaitFor("Add Local Node — hysteria2", 3*time.Second)
+	// Default focus is Name (index 1). Up once → Proto (index 0).
+	sess.SendKeys("Up")
+	sess.SendKeys("Right")
+	// hysteria2 → tuic (next in supportedProtos order).
+	sess.WaitFor("Add Local Node — tuic", 3*time.Second)
+}
+
 func TestTUINewLocalGroup(t *testing.T) {
 	iso := newIsolatedHome(t)
 	sess := newTUISession(t, iso)

@@ -1,12 +1,10 @@
 package settings
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"vpnkit/internal/extensions"
 )
 
 func TestSubMenuNavigation(t *testing.T) {
@@ -16,7 +14,6 @@ func TestSubMenuNavigation(t *testing.T) {
 	if m.SelectedPage() != SubService {
 		t.Errorf("expected SubService after one ↓ on SubCore, got %v", m.SelectedPage())
 	}
-	// ↓ also switches.
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if m.SelectedPage() != SubController {
 		t.Errorf("expected SubController after one ↓, got %v", m.SelectedPage())
@@ -28,7 +25,7 @@ func TestSubMenuNavigation(t *testing.T) {
 }
 
 func TestPageEnumNames(t *testing.T) {
-	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubExtensions, SubCache, SubAbout}
+	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubCache, SubAbout}
 	if len(SubPageNames) != len(expected) {
 		t.Fatalf("len(SubPageNames)=%d, want %d", len(SubPageNames), len(expected))
 	}
@@ -39,115 +36,22 @@ func TestPageEnumNames(t *testing.T) {
 	}
 }
 
-// TestArrowKeysDelegateToActiveSubPage covers the case where the user has
-// focused the Extensions content panel (via SetFocus from app-level →) and
-// then uses ↑/↓ for list navigation.
-func TestArrowKeysDelegateToActiveSubPage(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "extensions.toml")
-	_ = extensions.Save(path, extensions.Extensions{
-		Chains: []extensions.Chain{
-			{Node: "A", Via: "B"},
-			{Node: "C", Via: "D"},
-			{Node: "E", Via: "F"},
-		},
-	})
-	m := New(Deps{ExtensionsPath: path})
-	// SubExtensions is now at index 5 (Core=0,Service=1,Controller=2,Routing=3,Rules=4,Extensions=5).
-	for i := 0; i < 5; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	}
-	m.SetFocus(FocusContent)
-	// ↓ should now move chains-list cursor (not switch sub-page).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubExtensions {
-		t.Errorf("↓ on Extensions+FocusContent should NOT switch sub-page, got %v", m.SelectedPage())
-	}
-	if m.extensions.row != 1 {
-		t.Errorf("Extensions row after ↓: want 1, got %d", m.extensions.row)
-	}
-	// ↑ back to 0.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if m.extensions.row != 0 {
-		t.Errorf("Extensions row after ↑: want 0, got %d", m.extensions.row)
-	}
-	// ↑ with row==0 + FocusContent: still delegated to sub-page (which no-ops
-	// at the top); does NOT switch sub-page. To switch, user goes back to
-	// Sidebar first via app-level ←.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if m.SelectedPage() != SubExtensions {
-		t.Errorf("↑ at row 0 + FocusContent should stay on Extensions, got %v", m.SelectedPage())
-	}
-	// After SetFocus(FocusSidebar), ↑ switches to the previous sub-page.
-	m.SetFocus(FocusSidebar)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if m.SelectedPage() != SubRules {
-		t.Errorf("↑ on Extensions+FocusSidebar should switch to SubRules, got %v", m.SelectedPage())
-	}
-}
-
-// TestFocusToggleInExtensions covers the focus-state model. ←/→ at app
-// level translate to SetFocus calls; here we test the model contract: when
-// FocusContent is set and the user presses ↓, the extensions list cursor
-// moves; when FocusSidebar is set, ↓ switches sub-page.
-func TestFocusToggleInExtensions(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "extensions.toml")
-	_ = extensions.Save(path, extensions.Extensions{
-		Chains: []extensions.Chain{{Node: "A", Via: "B"}, {Node: "C", Via: "D"}},
-	})
-	m := New(Deps{ExtensionsPath: path})
-	// Switch to Extensions (now at index 5).
-	for i := 0; i < 5; i++ {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	}
-	if m.SelectedPage() != SubExtensions {
-		t.Fatalf("setup: expected SubExtensions, got %v", m.SelectedPage())
-	}
-	if m.Focus() != FocusSidebar {
-		t.Errorf("default focus on entering Extensions should be Sidebar, got %v", m.Focus())
-	}
-	// App-level handler shifts focus → content.
-	m.SetFocus(FocusContent)
-	if m.Focus() != FocusContent {
-		t.Fatalf("SetFocus(Content) failed, got %v", m.Focus())
-	}
-	// ↓ now navigates extensions list (because focus = content).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.extensions.row != 1 {
-		t.Errorf("↓ on Extensions+FocusContent should move list cursor to 1, got %d", m.extensions.row)
-	}
-	if m.SelectedPage() != SubExtensions {
-		t.Errorf("↓ on Extensions+FocusContent should NOT switch sub-page, got %v", m.SelectedPage())
-	}
-	// Shift back to sidebar.
-	m.SetFocus(FocusSidebar)
-	// ↓ on Extensions+FocusSidebar switches sub-page (sidebar nav).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubCache {
-		t.Errorf("↓ on Extensions+FocusSidebar should switch sub-page to SubCache, got %v", m.SelectedPage())
-	}
-}
-
 // TestFocusResetsOnSubPageChange ensures focus snaps back to sidebar whenever
 // the user navigates to a different sub-page (so they don't end up with
 // FocusContent on a sub-page that has no content panel).
 func TestFocusResetsOnSubPageChange(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "extensions.toml")
-	_ = extensions.Save(path, extensions.Extensions{
-		Chains: []extensions.Chain{{Node: "A", Via: "B"}},
-	})
-	m := New(Deps{ExtensionsPath: path})
-	// Navigate to Extensions (now at index 5).
-	for i := 0; i < 5; i++ {
+	m := New(Deps{})
+	// Navigate to Routing (own-arrows page).
+	for i := 0; i < int(SubRouting); i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
-	// SetFocus(Sidebar) so ↓ switches sub-page (rather than delegating).
+	if m.SelectedPage() != SubRouting {
+		t.Fatalf("setup: expected SubRouting, got %v", m.SelectedPage())
+	}
 	m.SetFocus(FocusSidebar)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubCache {
-		t.Errorf("expected SubCache, got %v", m.SelectedPage())
+	if m.SelectedPage() != SubRules {
+		t.Errorf("expected SubRules, got %v", m.SelectedPage())
 	}
 	if m.Focus() != FocusSidebar {
 		t.Errorf("focus should remain Sidebar on sub-page change, got %v", m.Focus())
@@ -161,19 +65,18 @@ func TestSubPageOwnsContent(t *testing.T) {
 	if m.SubPageOwnsContent() {
 		t.Errorf("default sub-page (Core) should NOT own content")
 	}
-	// Extensions is now at index 5.
-	for i := 0; i < 5; i++ {
+	// Routing owns arrows.
+	for i := 0; i < int(SubRouting); i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	if !m.SubPageOwnsContent() {
-		t.Errorf("Extensions sub-page should own content")
+		t.Errorf("Routing sub-page should own content")
 	}
 }
 
 // TestArrowsClampAtEnds asserts ↓ stops at last page and ↑ at first.
 func TestArrowsClampAtEnds(t *testing.T) {
 	m := New(Deps{})
-	// ↓ until end.
 	for i := 0; i < int(NumSubPages)+5; i++ {
 		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}

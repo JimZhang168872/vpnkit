@@ -23,7 +23,6 @@ const (
 	SubController
 	SubRouting
 	SubRules
-	SubExtensions
 	SubCache
 	SubAbout
 	NumSubPages
@@ -39,7 +38,7 @@ const (
 	// FocusSidebar = ↑/↓ moves between sub-pages.
 	FocusSidebar SettingsFocus = iota
 	// FocusContent = ↑/↓ goes to the sub-page's internal list (only
-	// meaningful on sub-pages that own arrows, currently SubExtensions).
+	// meaningful on sub-pages whose subPageOwnsArrows returns true).
 	FocusContent
 )
 
@@ -50,7 +49,6 @@ var SubPageNames = [NumSubPages]string{
 	"External Controller",
 	"Routing",
 	"Rule Template",
-	"Extensions",
 	"Cache",
 	"About",
 }
@@ -66,14 +64,12 @@ type PipelineFace interface {
 
 // Deps are wires for sub-pages.
 type Deps struct {
-	Paths          paths.XDG
-	Store          *store.Store
-	Service        service.Manager
-	APIClient      *api.Client
-	ExtensionsPath string         // ~/.config/vpnkit/extensions.toml (empty in tests = uses Paths)
-	Pipeline       PipelineFace   // v1 multi-source pipeline; nil until wired in run.go
-	ProxyNames     ProxyNamesFunc // returns proxy+group names from latest snapshot
-	ApplyFunc      func() error   // reassemble + reload mihomo; nil in tests
+	Paths     paths.XDG
+	Store     *store.Store
+	Service   service.Manager
+	APIClient *api.Client
+	Pipeline  PipelineFace // v1 multi-source pipeline; nil until wired in run.go
+	ApplyFunc func() error // reassemble + reload mihomo; nil in tests
 }
 
 // Model is the Settings tab.
@@ -88,7 +84,6 @@ type Model struct {
 	controller controllerModel
 	service    serviceModel
 	core       coreModel
-	extensions extensionsModel
 	routing    routingModel
 }
 
@@ -101,27 +96,19 @@ func (m Model) Focus() SettingsFocus { return m.focus }
 func (m *Model) SetFocus(f SettingsFocus) { m.focus = f }
 
 // SubPageOwnsContent reports whether the active sub-page has a navigable
-// content panel that the user can shift focus into (currently Extensions
-// is the only one). App-level →/← uses this to decide whether to advance
-// inner focus or to bounce focus all the way to MainSidebar.
+// content panel that the user can shift focus into. App-level →/← uses this
+// to decide whether to advance inner focus or to bounce focus all the way to
+// MainSidebar.
 func (m Model) SubPageOwnsContent() bool { return subPageOwnsArrows(m.current) }
 
 // InputOpen reports whether a sub-page is currently in a state where every
-// key should be delivered to it (e.g. Extensions add/edit form). Used by
-// the app's global focus shifter to step aside.
-func (m Model) InputOpen() bool {
-	return m.current == SubExtensions && m.extensions.formOpen()
-}
+// key should be delivered to it. Currently no Settings sub-page opens a
+// textinput overlay, so this is always false — kept on the interface so the
+// app-level focus shifter has a consistent escape hatch.
+func (m Model) InputOpen() bool { return false }
 
 // New constructs the Settings tab Model with all sub-pages instantiated.
 func New(deps Deps) Model {
-	extPath := deps.ExtensionsPath
-	if extPath == "" {
-		// Fallback for tests / unwired callers — keeps the sub-page usable.
-		extPath = "/tmp/extensions.toml"
-	}
-	ex := newExtensions(extPath, deps.ProxyNames)
-	ex.applyFunc = deps.ApplyFunc
 	return Model{
 		deps:       deps,
 		about:      newAbout(),
@@ -130,7 +117,6 @@ func New(deps Deps) Model {
 		controller: newController(deps.Store),
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
-		extensions: ex,
 		routing:    newRouting(deps.Store, deps.ApplyFunc),
 	}
 }
@@ -143,7 +129,7 @@ func (m Model) SelectedPage() SubPage { return m.current }
 // level to switch between sub-pages. Add new sub-pages with internal nav
 // here.
 func subPageOwnsArrows(p SubPage) bool {
-	return p == SubExtensions || p == SubRouting || p == SubRules
+	return p == SubRouting || p == SubRules
 }
 
 func (Model) Init() tea.Cmd { return nil }
@@ -194,8 +180,6 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.service, cmd = m.service.Update(message)
 	case SubCore:
 		m.core, cmd = m.core.Update(message)
-	case SubExtensions:
-		m.extensions, cmd = m.extensions.Update(message)
 	case SubRouting:
 		m.routing, cmd = m.routing.Update(message)
 	}
@@ -233,8 +217,6 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 		body = m.service.View(bodyWidth, height)
 	case SubCore:
 		body = m.core.View(bodyWidth, height)
-	case SubExtensions:
-		body = m.extensions.ViewFocused(bodyWidth, height, contentFocused)
 	case SubRouting:
 		body = m.routing.ViewFocused(bodyWidth, height, contentFocused)
 	}

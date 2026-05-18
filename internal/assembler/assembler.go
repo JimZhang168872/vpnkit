@@ -1,6 +1,6 @@
 // Package assembler builds the final mihomo config.yaml from vpnkit's
-// in-memory state: subscription groups, the local-nodes group, local rules,
-// extensions overlay, and the top-level routing knobs (Mode + GlobalTarget).
+// in-memory state: subscription groups, the local-nodes group(s), local rules,
+// and the top-level routing knobs (Mode + GlobalTarget).
 package assembler
 
 import (
@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-	"vpnkit/internal/extensions"
 	"vpnkit/internal/groups"
 	"vpnkit/internal/localrules"
 )
@@ -31,7 +30,6 @@ type Input struct {
 	Subscriptions    []groups.Group
 	LocalGroups      []groups.Group // one Group per enabled local-nodes-group
 	LocalRules       []localrules.Rule
-	Extensions       extensions.Extensions
 	MixedPort        int
 	ControllerPort   int
 	ControllerSecret string
@@ -69,10 +67,6 @@ func Assemble(in Input) ([]byte, error) {
 	doc["proxies"] = emitProxies(in.Subscriptions, in.LocalGroups)
 	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalGroups, in.GlobalTarget)
 	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions)
-
-	if err := extensions.Apply(doc, in.Extensions); err != nil {
-		return nil, fmt.Errorf("extensions: %w", err)
-	}
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)

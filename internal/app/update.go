@@ -240,7 +240,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard, cmd = m.dashboard.Update(msg)
 	case ProxiesSnapshot, DelayResults:
 		if snap, ok := msg.(ProxiesSnapshot); ok {
-			m.recordProxyNames(snap)
 			// Forward to groupsTab so it can mirror each group's `now` for
 			// the right-pane node highlight.
 			m.groupsTab, _ = m.groupsTab.Update(snap)
