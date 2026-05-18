@@ -35,10 +35,22 @@ func dispatchLocalGroups(args []string) {
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-groups add <name>")
 		}
-		if err := pl.AddLocalGroup(rest[0]); err != nil {
+		name := rest[0]
+		if err := validateSourceName(name); err != nil {
 			dieUserErr("%v", err)
 		}
-		fmt.Printf("✅ created local group %q\n", rest[0])
+		// Cross-namespace collision check: subs and local-groups share
+		// the routing namespace. A sub already named "shared" plus a
+		// local-group "shared" would emit a duplicate-key mihomo config.
+		for _, s := range st.Cfg.Subscriptions {
+			if s.Name == name {
+				dieUserErr("name %q already used by a subscription — sources share the routing namespace, pick a different name", name)
+			}
+		}
+		if err := pl.AddLocalGroup(name); err != nil {
+			dieUserErr("%v", err)
+		}
+		fmt.Printf("✅ created local group %q\n", name)
 		mutated = true
 	case "rm", "remove":
 		fs := flag.NewFlagSet("local-groups rm", flag.ExitOnError)
@@ -96,21 +108,34 @@ func dispatchLocalGroups(args []string) {
 }
 
 func runLocalGroupsList(out io.Writer, st *store.Store, jsonOut bool) {
-	if jsonOut {
-		_ = json.NewEncoder(out).Encode(st.Cfg.LocalNodeGroups)
-		return
+	// Pre-compute node counts so both text and JSON paths share them.
+	// Pre-rc.7 the JSON path emitted the raw LocalNodeGroup struct which
+	// lacks the count — users scripting against --json got no way to see
+	// group population without a separate `local-nodes list` query.
+	type groupOut struct {
+		Name      string `json:"name"`
+		Enabled   bool   `json:"enabled"`
+		NodeCount int    `json:"node_count"`
 	}
+	rows := make([]groupOut, 0, len(st.Cfg.LocalNodeGroups))
 	for _, g := range st.Cfg.LocalNodeGroups {
-		mark := "✅"
-		if !g.Enabled {
-			mark = "  "
-		}
 		count := 0
 		for _, n := range st.Cfg.LocalNodes {
 			if n.Group == g.Name {
 				count++
 			}
 		}
-		fmt.Fprintf(out, "%s  %-20s  %d nodes\n", mark, g.Name, count)
+		rows = append(rows, groupOut{Name: g.Name, Enabled: g.Enabled, NodeCount: count})
+	}
+	if jsonOut {
+		_ = json.NewEncoder(out).Encode(rows)
+		return
+	}
+	for _, r := range rows {
+		mark := "✅"
+		if !r.Enabled {
+			mark = "  "
+		}
+		fmt.Fprintf(out, "%s  %-20s  %d nodes\n", mark, r.Name, r.NodeCount)
 	}
 }

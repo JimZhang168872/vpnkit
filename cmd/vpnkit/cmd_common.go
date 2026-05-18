@@ -25,6 +25,26 @@ func loadClient() (*api.Client, *store.Store, error) {
 	return api.New(url, st.Cfg.ControllerSecret), st, nil
 }
 
+// withStoreLock acquires a POSIX advisory lock on the config file before
+// invoking fn, and releases it after. Used to serialize CLI mutators so
+// concurrent `vpnkit subs add &` workers don't race their read-modify-
+// write of config.toml. CLI mutation dispatchers (subs / local-nodes /
+// local-groups / local-rules / target / mode / active / init) wrap their
+// whole flow with this; read-only verbs (status / ip / env / list) skip
+// it to avoid pointless contention.
+//
+// Failure to acquire (e.g. read-only filesystem) exits via dieRuntime so
+// the caller doesn't proceed silently.
+func withStoreLock(fn func()) {
+	p := paths.Resolve()
+	lock, err := store.AcquireLock(p.VpnkitConfigFile())
+	if err != nil {
+		dieRuntime("vpnkit: acquire config lock: %v", err)
+	}
+	defer lock.Release()
+	fn()
+}
+
 // applyMutation reassembles config.yaml from the current store and asks the
 // running mihomo to reload. Best-effort on the reload step: if mihomo isn't
 // running (`vpnkit init` before first launch, vpnkit-only operations) we

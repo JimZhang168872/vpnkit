@@ -139,36 +139,56 @@ func runUninstall(out io.Writer, opts uninstallOptions) error {
 	return nil
 }
 
-// backupProfiles parses the vpnkit config.toml, extracts the [[profiles]]
-// array, and writes a standalone TOML file containing only the profiles
-// section. Returns the backup path, or empty string when there are no
-// profiles to back up. Uses the same toml lib as the rest of the project
-// so non-trivial values (URLs containing brackets, multi-line strings, etc.)
-// round-trip correctly.
+// backupProfiles archives the user's config.toml before uninstall wipes
+// the XDG dirs. Supports BOTH schema versions:
+//
+//   - v1 stores: write only the [[profiles]] array (legacy format).
+//   - v2+ stores: copy the full config (subscriptions, local nodes, local
+//     groups, local rules — anything users would lose).
+//
+// Pre-rc.7 this function ONLY handled v1, so uninstalling a v2 (current)
+// store silently created no backup and the user lost everything. The
+// pre-confirmation prompt already promises a backup unconditionally; this
+// function must deliver one in both cases.
+//
+// Returns the backup path or "" when the file is empty/malformed (and
+// we can't meaningfully archive it).
 func backupProfiles(tomlPath, dir string) (string, error) {
 	data, err := os.ReadFile(tomlPath)
 	if err != nil {
 		return "", err
 	}
+	if len(data) == 0 {
+		return "", nil
+	}
+	// Probe for v1 shape — if any [[profiles]] entries exist, write the
+	// legacy-shaped backup. Otherwise dump the entire config file so
+	// users on v2+ still get something to restore from.
 	var src struct {
 		Profiles []store.Profile `toml:"profiles"`
 	}
 	if err := toml.Unmarshal(data, &src); err != nil {
 		return "", fmt.Errorf("parse %s: %w", tomlPath, err)
 	}
-	if len(src.Profiles) == 0 {
-		return "", nil
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	out := filepath.Join(dir, fmt.Sprintf("vpnkit-profiles-%s.toml", time.Now().Format("20060102-150405")))
-	f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return "", err
+	stamp := time.Now().Format("20060102-150405.000000")
+	if len(src.Profiles) > 0 {
+		out := filepath.Join(dir, fmt.Sprintf("vpnkit-profiles-%s.toml", stamp))
+		f, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		if err := toml.NewEncoder(f).Encode(src); err != nil {
+			return "", err
+		}
+		return out, nil
 	}
-	defer f.Close()
-	if err := toml.NewEncoder(f).Encode(src); err != nil {
+	// v2+: whole-file copy. Avoids tracking every schema field separately.
+	out := filepath.Join(dir, fmt.Sprintf("vpnkit-config-%s.toml", stamp))
+	if err := os.WriteFile(out, data, 0o600); err != nil {
 		return "", err
 	}
 	return out, nil

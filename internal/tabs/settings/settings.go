@@ -195,6 +195,20 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	if _, ok := message.(msg.ServiceStatus); ok && m.current != SubService {
 		m.service, _ = m.service.Update(message)
 	}
+	// Async apply-done messages (Routing / Active Source) must reach
+	// their respective sub-pages even if the user navigated away
+	// mid-apply — otherwise the sub-page's busy flag stays true forever
+	// and re-visiting the page shows a permanently-stuck spinner.
+	switch message.(type) {
+	case RoutingApplyDoneMsg:
+		if m.current != SubRouting {
+			m.routing, _ = m.routing.Update(message)
+		}
+	case ActiveApplyDoneMsg:
+		if m.current != SubActive {
+			m.active, _ = m.active.Update(message)
+		}
+	}
 	switch m.current {
 	case SubAbout:
 		m.about, cmd = m.about.Update(message)

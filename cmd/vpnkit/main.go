@@ -40,8 +40,13 @@ func main() {
 		case "ip":
 			dispatchIP(os.Args[2:])
 			return
+		// Mutation verbs hold a POSIX flock on the config so concurrent
+		// `vpnkit X &` workers can't race read-modify-write of the
+		// config.toml. Read-only verbs (status/ip/groups/nodes/env) skip
+		// the lock — they tolerate stale snapshots and contention would
+		// only slow them down.
 		case "mode":
-			dispatchMode(os.Args[2:])
+			withStoreLock(func() { dispatchMode(os.Args[2:]) })
 			return
 		case "groups":
 			dispatchGroups(os.Args[2:])
@@ -56,32 +61,39 @@ func main() {
 			dispatchUse(os.Args[2:])
 			return
 		case "init":
-			dispatchInit(os.Args[2:])
+			withStoreLock(func() { dispatchInit(os.Args[2:]) })
 			return
 		case "uninstall":
-			dispatchUninstall(os.Args[2:])
+			withStoreLock(func() { dispatchUninstall(os.Args[2:]) })
 			return
 		case "update":
 			dispatchUpdate(os.Args[2:])
 			return
 		case "subs":
-			dispatchSubs(os.Args[2:])
+			withStoreLock(func() { dispatchSubs(os.Args[2:]) })
 			return
 		case "local-groups":
-			dispatchLocalGroups(os.Args[2:])
+			withStoreLock(func() { dispatchLocalGroups(os.Args[2:]) })
 			return
 		case "local-nodes":
-			dispatchLocalNodes(os.Args[2:])
+			withStoreLock(func() { dispatchLocalNodes(os.Args[2:]) })
 			return
 		case "local-rules":
-			dispatchLocalRules(os.Args[2:])
+			withStoreLock(func() { dispatchLocalRules(os.Args[2:]) })
 			return
 		case "target":
-			dispatchTarget(os.Args[2:])
+			withStoreLock(func() { dispatchTarget(os.Args[2:]) })
 			return
 		case "active":
-			dispatchActive(os.Args[2:])
+			withStoreLock(func() { dispatchActive(os.Args[2:]) })
 			return
+		default:
+			// CL4 from QA: unknown verbs used to drop into the TUI which
+			// then errored with the cryptic "could not open a new TTY"
+			// because os.Args[1] looks like a non-TTY environment. Fail
+			// loud with a helpful message instead.
+			fmt.Fprintf(os.Stderr, "vpnkit: unknown command %q. Run with no args to launch the TUI, or `vpnkit version` for help.\n", os.Args[1])
+			os.Exit(1)
 		}
 	}
 	if err := app.Run(version); err != nil {

@@ -73,6 +73,16 @@ func dispatchLocalNodes(args []string) {
 			node.Group = "local"
 		}
 		node.Via = *viaFlag
+		// Duplicate-name check by (Group, Name). Without this, adding the
+		// same URI twice silently stores two entries; subsequent `rm` then
+		// errors "ambiguous" and rules-emit produces duplicate proxy names
+		// that mihomo rejects. The dead-code path in runLocalNodesAdd had
+		// this check; the inline branch above bypassed it.
+		for _, existing := range st.Cfg.LocalNodes {
+			if existing.Name == node.Name && existing.Group == node.Group {
+				dieUserErr("local node %q already exists in group %q", node.Name, node.Group)
+			}
+		}
 		st.Cfg.LocalNodes = append(st.Cfg.LocalNodes, store.LocalNode{
 			Name: node.Name, Group: node.Group, Via: node.Via,
 			Proto: node.Proto, Server: node.Server, Port: node.Port, Fields: node.Fields,
@@ -140,9 +150,11 @@ func dispatchLocalNodes(args []string) {
 		// doesn't end up orphaned (the assembler would skip a node whose
 		// Group has no matching LocalNodeGroup entry).
 		hasGroup := false
+		targetEnabled := true
 		for _, g := range st.Cfg.LocalNodeGroups {
 			if g.Name == newGroup {
 				hasGroup = true
+				targetEnabled = g.Enabled
 				break
 			}
 		}
@@ -150,6 +162,13 @@ func dispatchLocalNodes(args []string) {
 			st.Cfg.LocalNodeGroups = append(st.Cfg.LocalNodeGroups, store.LocalNodeGroup{
 				Name: newGroup, Enabled: true,
 			})
+		}
+		// Warn (not refuse) when moving into a disabled group — node
+		// becomes unroutable until the group is re-enabled. Without this
+		// the user gets silent "why isn't my node showing up" later.
+		if hasGroup && !targetEnabled {
+			fmt.Fprintf(os.Stderr, "⚠️  group %q is disabled — node %q is now unroutable until you `vpnkit local-groups enable %s`\n",
+				newGroup, name, newGroup)
 		}
 		if err := st.Save(); err != nil {
 			dieRuntime("save: %v", err)
