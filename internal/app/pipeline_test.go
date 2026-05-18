@@ -1,7 +1,9 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"vpnkit/internal/localnodes"
@@ -347,5 +349,47 @@ func TestDeleteActiveLocalGroupClearsActiveSource(t *testing.T) {
 	}
 	if p.store.Cfg.ActiveSource != "" {
 		t.Errorf("deleting active local group should clear ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestAssembleReSyncsFromStoreAfterDirectMutation — QA round-4 regression
+// for the stale-cache bug. CLI dispatchers mutate st.Cfg.LocalRules /
+// LocalNodes directly (bypassing Pipeline.AddLocalRule etc.) and then
+// call pl.Assemble(). Pre-fix, Assemble used the stale managers cached
+// at NewPipeline time, so the just-added/removed item was off-by-one in
+// the emitted YAML.
+func TestAssembleReSyncsFromStoreAfterDirectMutation(t *testing.T) {
+	p := newTestPipeline(t)
+	// Configure minimal viable state so Assemble succeeds.
+	p.store.Cfg.MixedPort = 7890
+	p.store.Cfg.ControllerPort = 9090
+	p.store.Cfg.ControllerSecret = "x"
+	p.store.Cfg.Mode = "rule"
+
+	// Direct mutation (mimics CLI cmd_local_rules.go runLocalRulesAdd).
+	p.store.Cfg.LocalRules = []store.LocalRule{
+		{Type: "DOMAIN", Payload: "test.example.com", Target: "DIRECT"},
+	}
+	if err := p.Assemble(); err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	data, err := os.ReadFile(p.configYAMLPath)
+	if err != nil {
+		t.Fatalf("read assembled config: %v", err)
+	}
+	if !strings.Contains(string(data), "test.example.com") {
+		t.Errorf("first Assemble should emit the just-added rule:\n%s", data)
+	}
+
+	// Remove the rule directly; Assemble must re-sync and NOT keep the
+	// stale entry visible. Before the fix, this was the worst case:
+	// `local-rules rm` left a ghost rule in the YAML.
+	p.store.Cfg.LocalRules = nil
+	if err := p.Assemble(); err != nil {
+		t.Fatalf("second Assemble: %v", err)
+	}
+	data2, _ := os.ReadFile(p.configYAMLPath)
+	if strings.Contains(string(data2), "test.example.com") {
+		t.Errorf("second Assemble should NOT emit the removed rule:\n%s", data2)
 	}
 }

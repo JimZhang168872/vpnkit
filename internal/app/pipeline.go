@@ -135,8 +135,20 @@ func (p *Pipeline) RefreshSubscription(ctx context.Context, name string) (int, e
 }
 
 // Assemble produces the config.yaml for the current state and writes it.
+//
+// Re-syncs the in-memory managers (localNodes, localRules) from
+// store.Cfg first. Without this, CLI mutation paths that write directly
+// to st.Cfg.LocalRules / st.Cfg.LocalNodes (cmd_local_rules.go,
+// cmd_local_nodes.go) end up off-by-one: NewPipeline cached the
+// PRE-mutation state into the managers, the mutator then changed
+// st.Cfg.* directly, and Assemble used to read the stale manager copy.
+// Worst case was `local-rules rm` — the just-removed rule kept
+// reappearing in the emitted config.yaml until the next mutation
+// forced a re-sync.
 func (p *Pipeline) Assemble() error {
 	p.mu.Lock()
+	p.localNodes.Load(toLocalNodes(p.store.Cfg.LocalNodes))
+	p.localRules.Load(toLocalRules(p.store.Cfg.LocalRules))
 	subs := make([]groups.Group, 0, len(p.store.Cfg.Subscriptions))
 	for _, s := range p.store.Cfg.Subscriptions {
 		if !s.Enabled {

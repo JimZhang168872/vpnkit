@@ -52,7 +52,13 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 		pauseMark = " [PAUSED]"
 	}
 	rows := []string{header + pauseMark, ""}
-	tailSize := height - 4
+	// height budget breakdown:
+	//   2 rows: top + bottom Padding(1, 2)
+	//   2 rows: header + blank separator
+	//   2 rows: blank separator + footer ("[p] pause/resume")
+	// → tailSize = height - 6. Pre-rc.7 used -4 which clipped the
+	// footer off-screen, leaving the pause feature undiscoverable.
+	tailSize := height - 6
 	if tailSize < 1 {
 		tailSize = 1
 	}
