@@ -19,12 +19,13 @@ root、不依赖 TUN。v1.0.0 新增**多订阅组共存、手动本地节点、
 TUI 7 个 tab + 完整 `vpnkit subs / local-nodes / local-rules / target` CLI
 都能改。
 
-> 📖 **[docs/USAGE.md](docs/USAGE.md)** — 完整技术参考：每个 CLI 命令、每个
-> TUI tab、每个按键、每份 JSON 输出 schema、配置文件结构、延迟测试深度剖析、
-> 故障排查。**README 之外的所有疑问都先看这里。**
+> 📖 **完整技术参考**：[docs/USAGE_zh.md](docs/USAGE_zh.md)（中文）/
+> [docs/USAGE.md](docs/USAGE.md)（English）—— 每个 CLI 命令、每个 TUI tab、
+> 每个按键、每份 JSON 输出 schema、配置文件结构、延迟测试深度剖析、故障
+> 排查。**README 之外的所有疑问都先看这里。**
 
 > **v0.10.x → v1.0.0 是破坏性升级**。store schema v1 → v2。看
-> [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md) 走迁移流程。
+> [`docs/UPGRADE-v1_zh.md`](docs/UPGRADE-v1_zh.md) 走迁移流程。
 
 ## 安装
 

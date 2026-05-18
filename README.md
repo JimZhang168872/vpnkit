@@ -20,10 +20,11 @@ root, no TUN. v1.0.0 adds **multi-source subscriptions, hand-entered local
 nodes, and structured local rules**, all editable from a 7-tab TUI or a
 matching `vpnkit subs / local-nodes / local-rules / target` CLI surface.
 
-> 📖 **[docs/USAGE.md](docs/USAGE.md)** — full technical reference: every CLI
-> command, every TUI tab, every keyboard shortcut, every JSON output schema,
-> config file layout, delay-test deep-dive, troubleshooting. **Start there
-> for anything beyond the README.**
+> 📖 **Full reference**: [docs/USAGE.md](docs/USAGE.md) (English) /
+> [docs/USAGE_zh.md](docs/USAGE_zh.md) (中文) — every CLI command, every TUI
+> tab, every keyboard shortcut, every JSON output schema, config file
+> layout, delay-test deep-dive, troubleshooting. **Start there for anything
+> beyond the README.**
 
 > **v0.10.x → v1.0.0 is a breaking change.** Store schema bumped v1 → v2.
 > See [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md) for the migration path.
