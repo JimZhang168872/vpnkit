@@ -7,12 +7,14 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/config"
 	"vpnkit/internal/installer"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/rules"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 )
@@ -74,6 +76,18 @@ func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 		// if that also fails the user can fix it manually without reinstalling.
 		if _, err := installer.EnsureGeo(d.Paths.MihomoConfig, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "vpnkit: geo pre-seed had errors (non-fatal): %v\n", err)
+		}
+
+		// 3.6. Pre-seed rule-set text files from vpnkit's embedded
+		// snapshot into ~/.config/mihomo/ruleset/. Without this mihomo
+		// would have to fetch every RULE-SET from jsdelivr at first
+		// boot — on slow / GFW'd networks that can take minutes and
+		// the user perceives "rules never appear". Idempotent: existing
+		// files are left alone so subsequent mihomo refreshes survive.
+		// Non-fatal: if writing fails, mihomo will fall back to its
+		// own fetch loop and the user gets the rc.5 behavior.
+		if _, err := rules.WriteRulesetsTo(filepath.Join(d.Paths.MihomoConfig, "ruleset")); err != nil {
+			fmt.Fprintf(os.Stderr, "vpnkit: ruleset seed had errors (non-fatal): %v\n", err)
 		}
 
 		// 4. Install + start the service.
