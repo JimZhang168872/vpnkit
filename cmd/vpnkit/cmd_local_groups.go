@@ -23,6 +23,7 @@ func dispatchLocalGroups(args []string) {
 		dieRuntime("vpnkit local-groups: %v", err)
 	}
 	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	mutated := false
 	switch sub {
 	case "list", "ls":
 		jsonOut := false
@@ -38,6 +39,7 @@ func dispatchLocalGroups(args []string) {
 			dieUserErr("%v", err)
 		}
 		fmt.Printf("✅ created local group %q\n", rest[0])
+		mutated = true
 	case "rm", "remove":
 		fs := flag.NewFlagSet("local-groups rm", flag.ExitOnError)
 		force := fs.Bool("force", false, "delete even if the group has nodes (cascade)")
@@ -49,6 +51,7 @@ func dispatchLocalGroups(args []string) {
 			dieUserErr("%v", err)
 		}
 		fmt.Printf("✅ removed local group %q\n", fs.Arg(0))
+		mutated = true
 	case "enable", "disable":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-groups %s <name>", sub)
@@ -74,6 +77,7 @@ func dispatchLocalGroups(args []string) {
 			dieUserErr("%v", err)
 		}
 		fmt.Printf("✅ %sd local group %q\n", sub, rest[0])
+		mutated = true
 	case "rename":
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-groups rename <old> <new>")
@@ -82,8 +86,12 @@ func dispatchLocalGroups(args []string) {
 			dieUserErr("%v", err)
 		}
 		fmt.Printf("✅ renamed local group %q → %q\n", rest[0], rest[1])
+		mutated = true
 	default:
 		dieUserErr("vpnkit local-groups: unknown verb %q", sub)
+	}
+	if mutated {
+		applyMutation(pl)
 	}
 }
 

@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	tabsettings "vpnkit/internal/tabs/settings"
+	tabsourcesPkg "vpnkit/internal/tabs/sources"
 )
 
 func TestTabSwitching(t *testing.T) {
@@ -106,5 +108,47 @@ func TestUpDownOnTabBodyDelegates(t *testing.T) {
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyDown})
 	if m.activeTab != TabRules {
 		t.Errorf("↓ on TabBody should NOT cycle tabs, got activeTab=%v", m.activeTab)
+	}
+}
+
+// TestPipelineMutatedTriggersApplyCfg regresses the rc.6 bug where TUI
+// Sources mutations (subscription / local-node CRUD) updated the store
+// but never reassembled config.yaml or reloaded mihomo. As a result the
+// running mihomo had no idea about new groups / nodes, and a follow-up
+// delay test would fail with `group "Local" not found in /proxies`.
+//
+// The fix wires applyCfg into the PipelineMutatedMsg handler — same
+// reassemble+reload closure used by Settings → Routing mode change.
+func TestPipelineMutatedTriggersApplyCfg(t *testing.T) {
+	called := make(chan struct{}, 1)
+	applyCfg := func(ctx context.Context) error {
+		called <- struct{}{}
+		return nil
+	}
+	m := NewModel(nil, tabsettings.Deps{}, applyCfg)
+	mm, cmd := m.Update(tabsourcesPkg.PipelineMutatedMsg{})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("expected a cmd that invokes applyCfg, got nil")
+	}
+	// bubbletea runs the cmd in a goroutine; here we invoke it directly
+	// to observe the side effect.
+	_ = cmd()
+	select {
+	case <-called:
+	default:
+		t.Error("applyCfg was not invoked by the cmd")
+	}
+}
+
+// TestPipelineMutatedNilApplyCfgDoesNotCrash — tests / harnesses may
+// construct a Model without an applyCfg closure. The handler must not
+// panic in that case (degrades to "refresh display only").
+func TestPipelineMutatedNilApplyCfgDoesNotCrash(t *testing.T) {
+	m := NewModel(nil, tabsettings.Deps{}, nil)
+	_, cmd := m.Update(tabsourcesPkg.PipelineMutatedMsg{})
+	if cmd != nil {
+		// If a cmd is returned, it must be safely invocable with nil applyCfg.
+		_ = cmd()
 	}
 }

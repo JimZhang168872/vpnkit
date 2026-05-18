@@ -26,6 +26,8 @@ func dispatchSubs(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit subs: %v", err)
 	}
+	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	mutated := false
 	switch sub {
 	case "list", "ls":
 		jsonOut := false
@@ -48,6 +50,7 @@ func dispatchSubs(args []string) {
 		if err := st.Save(); err != nil {
 			dieRuntime("%v", err)
 		}
+		mutated = true
 	case "rm", "remove":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs rm <name>")
@@ -58,6 +61,7 @@ func dispatchSubs(args []string) {
 		if err := st.Save(); err != nil {
 			dieRuntime("%v", err)
 		}
+		mutated = true
 	case "enable":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs enable <name>")
@@ -66,6 +70,7 @@ func dispatchSubs(args []string) {
 			dieUserErr("%v", err)
 		}
 		_ = st.Save()
+		mutated = true
 	case "disable":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit subs disable <name>")
@@ -74,10 +79,10 @@ func dispatchSubs(args []string) {
 			dieUserErr("%v", err)
 		}
 		_ = st.Save()
+		mutated = true
 	case "update":
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		pl := app.NewPipeline(st, p.MihomoConfigFile())
 		names := rest
 		if len(names) == 0 {
 			for _, s := range st.Cfg.Subscriptions {
@@ -96,8 +101,12 @@ func dispatchSubs(args []string) {
 		if len(errs) > 0 {
 			dieRuntime("%v", errors.Join(errs...))
 		}
+		mutated = true
 	default:
 		dieUserErr("vpnkit subs: unknown verb %q", sub)
+	}
+	if mutated {
+		applyMutation(pl)
 	}
 }
 

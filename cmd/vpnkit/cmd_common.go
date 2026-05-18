@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"vpnkit/internal/api"
+	"vpnkit/internal/app"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/store"
 )
@@ -20,6 +23,36 @@ func loadClient() (*api.Client, *store.Store, error) {
 	}
 	url := fmt.Sprintf("http://127.0.0.1:%d", st.Cfg.ControllerPort)
 	return api.New(url, st.Cfg.ControllerSecret), st, nil
+}
+
+// applyMutation reassembles config.yaml from the current store and asks the
+// running mihomo to reload. Best-effort on the reload step: if mihomo isn't
+// running (`vpnkit init` before first launch, vpnkit-only operations) we
+// still want the new config.yaml written so the next mihomo launch picks
+// it up. The reload error is non-fatal but reported on stderr so users can
+// see when their mutation didn't take effect immediately.
+//
+// Most mutation CLI commands (subs add/rm/update, local-nodes /
+// local-groups / local-rules CRUD) should call this at the end. Without
+// it, the store is updated but mihomo's running config has no idea about
+// the new state, so follow-up calls (`vpnkit use`, `vpnkit test`) 404.
+func applyMutation(pl *app.Pipeline) {
+	if err := pl.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "vpnkit: reassemble failed: %v\n", err)
+		return
+	}
+	c, _, err := loadClient()
+	if err != nil {
+		// store unreadable would have already aborted upstream — be quiet here.
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.ReloadConfig(ctx, ""); err != nil {
+		// Most common reason: mihomo not running yet. New config is on disk;
+		// next launch picks it up. Surface just enough so the user knows.
+		fmt.Fprintf(os.Stderr, "vpnkit: mihomo reload skipped (%v) — config.yaml updated on disk\n", err)
+	}
 }
 
 // parseFlags extracts a `--json` flag from args (any position).

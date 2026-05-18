@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"vpnkit/internal/app"
 	"vpnkit/internal/localnodes"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/store"
@@ -25,6 +26,8 @@ func dispatchLocalNodes(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit local-nodes: %v", err)
 	}
+	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	mutated := false
 	switch sub {
 	case "list", "ls":
 		jsonOut := false
@@ -90,6 +93,7 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("save: %v", err)
 		}
 		fmt.Printf("✅ added local node %s:%s\n", node.Group, node.Name)
+		mutated = true
 	case "rm", "remove":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-nodes rm <node>")
@@ -113,6 +117,7 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("save: %v", err)
 		}
 		fmt.Printf("✅ removed %s:%s\n", group, name)
+		mutated = true
 	case "mv":
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-nodes mv <node> <new-group>")
@@ -150,6 +155,7 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("save: %v", err)
 		}
 		fmt.Printf("✅ moved %s:%s → %s\n", group, name, newGroup)
+		mutated = true
 	case "edit":
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-nodes edit <node> key=val [...]")
@@ -205,8 +211,12 @@ func dispatchLocalNodes(args []string) {
 			dieRuntime("save: %v", err)
 		}
 		fmt.Printf("✅ edited %s:%s\n", group, target.Name)
+		mutated = true
 	default:
 		dieUserErr("vpnkit local-nodes: unknown verb %q", sub)
+	}
+	if mutated {
+		applyMutation(pl)
 	}
 }
 
