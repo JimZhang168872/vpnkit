@@ -323,6 +323,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
 		m.logsTab, _ = m.logsTab.Update(msg)
+	case tabsources.RefreshDoneMsg, tabsources.RefreshErrMsg:
+		// Subscription-refresh tea.Cmds (fired by Sources tab's `u`) come
+		// back as these messages. They need to land on sourcesTab so its
+		// internal handler updates the flash, reloads the on-display list,
+		// and — critically — emits PipelineMutatedMsg downstream. Without
+		// this explicit forwarding the message dies in the top-level
+		// switch's default fallthrough and config.yaml stays stale,
+		// leading to "delay <name>: group not found in /proxies" when the
+		// user follows up with a delay test. See model_test.go's
+		// TestSubsRefreshDoneTriggersApplyCfg.
+		m.sourcesTab, cmd = m.sourcesTab.Update(msg)
+		return m, cmd
 	case tabsources.PipelineMutatedMsg:
 		// Sources mutations (subs / local-node / local-group CRUD) change
 		// the assembled mihomo config — must rewrite config.yaml AND

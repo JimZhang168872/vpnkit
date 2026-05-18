@@ -18,6 +18,18 @@
 
 ### Fixed
 
+- **`vpnkit subs update`/Sources `u` doesn't reach mihomo: delay test
+  immediately after refresh fails with `group "<name>" not found in
+  /proxies`.** The Sources tab's `u` returned a private
+  `refreshDoneMsg` from its tea.Cmd, but the app's top-level Update
+  switch had no case for it — the message dropped into the implicit
+  default and never reached `sourcesTab.Update`, so the chained
+  `emitPipelineMutated()` never fired and `applyCfg` never ran.
+  Config.yaml stayed at whatever it was before the refresh, mihomo's
+  `/proxies` had no new group, and the subsequent delay test fell into
+  the per-member fallback that finally surfaced the missing group.
+  Exported `RefreshDoneMsg` + `RefreshErrMsg` from `tabsources` and
+  added explicit forwarding in `app/update.go`.
 - **狗狗加速 (doggygosubs) imports only 4 fake "client too old" nodes.**
   Their backend gates the response on `User-Agent`: `clash-verge/*` and
   `ClashforWindows/0.20.*` get 4 dummy `❗您的客户端版本太老❗` SS nodes

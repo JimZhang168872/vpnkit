@@ -322,9 +322,9 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 					defer cancel()
 					n, err := pl.RefreshSubscription(ctx, name)
 					if err != nil {
-						return refreshErrMsg{name: name, err: err}
+						return RefreshErrMsg{Name: name, Err: err}
 					}
-					return refreshDoneMsg{name: name, count: n}
+					return RefreshDoneMsg{Name: name, Count: n}
 				}
 			}
 		case "e":
@@ -340,28 +340,36 @@ func (m subsModel) Update(message tea.Msg) (subsModel, tea.Cmd) {
 		}
 	}
 	switch ev := message.(type) {
-	case refreshDoneMsg:
-		m.flash = fmt.Sprintf("✅ %s: %d nodes", ev.name, ev.count)
+	case RefreshDoneMsg:
+		m.flash = fmt.Sprintf("✅ %s: %d nodes", ev.Name, ev.Count)
 		if m.deps.Pipeline != nil {
 			m.list = m.deps.Pipeline.SubscriptionNames()
 		}
 		return m, emitPipelineMutated()
-	case refreshErrMsg:
-		if ev.err != nil {
-			m.flash = "❌ " + ev.name + ": " + ev.err.Error()
+	case RefreshErrMsg:
+		if ev.Err != nil {
+			m.flash = "❌ " + ev.Name + ": " + ev.Err.Error()
 		}
 	}
 	return m, nil
 }
 
-type refreshDoneMsg struct {
-	name  string
-	count int
+// RefreshDoneMsg is the result of a successful `subs update` triggered
+// from the Sources tab's `u` keypress. Public so the app-level Update can
+// explicitly route it back into sourcesTab.Update — without that routing
+// the message goes nowhere, emitPipelineMutated() never fires, and
+// mihomo's config.yaml never gets the new nodes. See model_test.go's
+// TestSubsRefreshDoneTriggersApplyCfg.
+type RefreshDoneMsg struct {
+	Name  string
+	Count int
 }
 
-type refreshErrMsg struct {
-	name string
-	err  error
+// RefreshErrMsg is the failure twin of RefreshDoneMsg. Same routing
+// constraint applies.
+type RefreshErrMsg struct {
+	Name string
+	Err  error
 }
 
 func (m subsModel) View(width, height int, focused bool) string {
