@@ -70,7 +70,13 @@ type PipelineFace interface {
 	// under p.mu. Direct store.Cfg mutation from the TUI goroutine races
 	// with concurrent Assemble().
 	SetMode(mode string) error
+	Mode() string
 	RegenerateControllerSecret() error
+	// Snapshots for read paths — return safe copies under p.mu so the
+	// TUI render/Update goroutine never races with concurrent Pipeline
+	// mutations on store.Cfg.
+	SubscriptionNames() []store.Subscription
+	LocalNodeGroups() []store.LocalNodeGroup
 }
 
 // Deps are wires for sub-pages.
@@ -182,9 +188,11 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	// Service status is pushed by an app-level poller and must reach the
 	// service sub-page regardless of which page is currently focused.
-	// Without this, the user navigating to Service from Core sees stale
-	// status because the snapshot was dropped while Core was active.
-	if _, ok := message.(msg.ServiceStatus); ok {
+	// Skip when SubService is the active page — the page-dispatch switch
+	// below would otherwise call serviceModel.Update twice with the same
+	// message (currently idempotent, but fragile if the handler ever
+	// gains side effects like appending to a log).
+	if _, ok := message.(msg.ServiceStatus); ok && m.current != SubService {
 		m.service, _ = m.service.Update(message)
 	}
 	switch m.current {

@@ -235,6 +235,22 @@ func TestAddLocalGroupNudgesGlobalTargetWhenDirect(t *testing.T) {
 	}
 }
 
+// TestAddDisabledSubscriptionDoesNotSetActiveSource — round-3 regression:
+// AddSubscription used to unconditionally claim ActiveSource if the slot
+// was empty. If the caller passed Enabled:false (e.g. `vpnkit subs add
+// --disabled`), the active source would point at a disabled sub →
+// topProxyMembersFor sees no enabled match → 🚀 Proxy degrades to
+// [DIRECT] and traffic silently routes direct.
+func TestAddDisabledSubscriptionDoesNotSetActiveSource(t *testing.T) {
+	p := newTestPipeline(t)
+	if err := p.AddSubscription(store.Subscription{Name: "x", URL: "https://x", Enabled: false}); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("disabled-first-add must NOT set ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
 // TestAddSubscriptionSetsActiveSourceWhenEmpty — rc.7 first-source nudge
 // for ActiveSource. Mirror of the GlobalTarget nudge: the very first sub
 // added (when ActiveSource is empty) should claim the slot.
@@ -297,6 +313,25 @@ func TestToggleDisableActiveSubscriptionClearsActiveSource(t *testing.T) {
 	}
 	if p.store.Cfg.ActiveSource != "" {
 		t.Errorf("re-enable should not silently restore ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestSetModeValidatesMode — SetMode must reject anything that isn't
+// one of the three canonical modes. emitRules quietly falls through to
+// ModeRule semantics on garbage input, so without validation a typo in
+// a future CLI / config-import path could silently route differently
+// than the user intended.
+func TestSetModeValidatesMode(t *testing.T) {
+	p := newTestPipeline(t)
+	for _, ok := range []string{"rule", "global", "direct"} {
+		if err := p.SetMode(ok); err != nil {
+			t.Errorf("SetMode(%q) should succeed, got %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "Rule", "globl", "rules", "RULE"} {
+		if err := p.SetMode(bad); err == nil {
+			t.Errorf("SetMode(%q) must error, got nil", bad)
+		}
 	}
 }
 

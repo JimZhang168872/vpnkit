@@ -270,10 +270,11 @@ func (p *Pipeline) AddSubscription(sub store.Subscription) error {
 	if p.store.Cfg.GlobalTarget == "DIRECT" && firstProxySource(p.store) == sub.Name {
 		p.store.Cfg.GlobalTarget = sub.Name + "-auto"
 	}
-	// First-source rc.7 nudge: if no ActiveSource yet, take it. New
-	// subscriptions on an existing install don't displace the current
-	// active.
-	if p.store.Cfg.ActiveSource == "" {
+	// First-source rc.7 nudge: if no ActiveSource yet AND the new sub is
+	// enabled, take it. Adding a `--disabled` sub or one that's flagged
+	// off must NOT claim ActiveSource — Assemble would then point
+	// 🚀 Proxy at a name that isn't in proxy-groups → degrade to DIRECT.
+	if p.store.Cfg.ActiveSource == "" && sub.Enabled {
 		p.store.Cfg.ActiveSource = sub.Name
 	}
 	p.mu.Unlock()
@@ -333,7 +334,18 @@ func (p *Pipeline) ActiveSource() string {
 // on the bubbletea goroutine while a background Assemble() running
 // under p.mu read the same field — race-detector flag and torn state
 // possible.
+//
+// Validates against the canonical set; invalid values are rejected
+// rather than silently fall-through to ModeRule behavior in emitRules.
+// The current TUI hardcodes the three values, but PipelineFace is a
+// public surface and future callers (CLI, scripted automation, future
+// TUI bugs) shouldn't be able to poison the store with garbage.
 func (p *Pipeline) SetMode(mode string) error {
+	switch mode {
+	case "rule", "global", "direct":
+	default:
+		return fmt.Errorf("invalid mode %q: must be rule, global, or direct", mode)
+	}
 	p.mu.Lock()
 	p.store.Cfg.Mode = mode
 	p.mu.Unlock()
@@ -353,6 +365,15 @@ func (p *Pipeline) RegenerateControllerSecret() error {
 	p.store.Cfg.ControllerSecret = hex.EncodeToString(buf)
 	p.mu.Unlock()
 	return p.store.Save()
+}
+
+// Mode returns the current routing mode under p.mu. Used by routing
+// sub-page in place of direct store.Cfg.Mode read which races with
+// Pipeline mutations.
+func (p *Pipeline) Mode() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.store.Cfg.Mode
 }
 
 // SourceKind labels `name` as "subscription", "local", or "(unknown)".

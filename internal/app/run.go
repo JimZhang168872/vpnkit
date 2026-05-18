@@ -123,7 +123,11 @@ func Run(version string) error {
 			Service: svc,
 		})()
 		if configChanged {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			// Derive from shutdownCtx so an early user quit doesn't leak
+			// this goroutine for up to 10 seconds while applyCfg waits
+			// on its own timer. prog.Send below is a documented no-op
+			// after prog.Run() exits, so there's no lost-message concern.
+			ctx, cancel := context.WithTimeout(shutdownCtx, 10*time.Second)
 			_ = applyCfg(ctx)
 			cancel()
 		}
