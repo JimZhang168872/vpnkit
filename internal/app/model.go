@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"vpnkit/internal/api"
@@ -73,17 +72,6 @@ type Model struct {
 	// appFocus is the global focus level (Bug N). MainSidebar → ↑/↓ cycles
 	// top tabs; TabBody → ↑/↓ delegates to active tab's nav.
 	appFocus AppFocus
-
-	// proxyNames is the deduped union of mihomo proxy names + group names
-	// from the latest /proxies snapshot. Used by Settings → Extensions for
-	// autocomplete hints. Held by pointer because bubbletea copies Model by
-	// value (a sync.Mutex embedded directly would fail go vet copylocks).
-	proxyNames *proxyNamesState
-}
-
-type proxyNamesState struct {
-	mu    sync.Mutex
-	names []string
 }
 
 // AppFocus exposes the app-level focus state (for tests / rendering).
@@ -153,44 +141,6 @@ func (m Model) shiftFocusRight() Model {
 	return m
 }
 
-// CurrentProxyNames returns the latest known set of mihomo proxy + group
-// names. Safe for concurrent reads; returns a defensive copy.
-func (m *Model) CurrentProxyNames() []string {
-	if m == nil || m.proxyNames == nil {
-		return nil
-	}
-	m.proxyNames.mu.Lock()
-	defer m.proxyNames.mu.Unlock()
-	out := make([]string, len(m.proxyNames.names))
-	copy(out, m.proxyNames.names)
-	return out
-}
-
-// recordProxyNames captures the deduped union of group names and their
-// member proxy names from the latest snapshot.
-func (m *Model) recordProxyNames(snap ProxiesSnapshot) {
-	if m.proxyNames == nil {
-		return
-	}
-	m.proxyNames.mu.Lock()
-	defer m.proxyNames.mu.Unlock()
-	m.proxyNames.names = m.proxyNames.names[:0]
-	seen := map[string]bool{}
-	add := func(name string) {
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		m.proxyNames.names = append(m.proxyNames.names, name)
-	}
-	for name, g := range snap.Groups {
-		add(name)
-		for _, n := range g.All {
-			add(n)
-		}
-	}
-}
-
 // NewModel constructs the initial model. client may be nil during tests.
 func NewModel(client *api.Client, settingsDeps tabsettings.Deps, applyCfg func(context.Context) error) Model {
 	stubs := [NumTabs]stub.Model{}
@@ -212,7 +162,6 @@ func NewModel(client *api.Client, settingsDeps tabsettings.Deps, applyCfg func(c
 		stubs:          stubs,
 		apiClient:      client,
 		applyCfg:       applyCfg,
-		proxyNames:     &proxyNamesState{},
 	}
 }
 

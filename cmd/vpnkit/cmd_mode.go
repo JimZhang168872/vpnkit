@@ -45,7 +45,7 @@ func runMode(out io.Writer, c *api.Client, args []string, jsonOut bool) error {
 	}
 
 	// Trigger a config rewrite + mihomo reload.
-	pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitConfig+"/extensions.toml")
+	pl := app.NewPipeline(st, p.MihomoConfigFile())
 	if err := pl.Assemble(); err != nil {
 		return fmt.Errorf("assemble: %w", err)
 	}

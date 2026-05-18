@@ -161,33 +161,6 @@ func TestReadMihomoVersionMissing(t *testing.T) {
 	}
 }
 
-// --- splitCSVCmd tests ---
-
-func TestSplitCSVCmd(t *testing.T) {
-	cases := []struct {
-		input string
-		want  []string
-	}{
-		{"a,b,c", []string{"a", "b", "c"}},
-		{"a, b , c", []string{"a", "b", "c"}},
-		{"", []string{}},
-		{"a", []string{"a"}},
-		{",,,", []string{}},
-	}
-	for _, tc := range cases {
-		got := splitCSVCmd(tc.input)
-		if len(got) != len(tc.want) {
-			t.Errorf("splitCSVCmd(%q) = %v, want %v", tc.input, got, tc.want)
-			continue
-		}
-		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("splitCSVCmd(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
-			}
-		}
-	}
-}
-
 // --- writeJSON error path ---
 
 func TestWriteJSONUnmarshalable(t *testing.T) {
@@ -211,18 +184,6 @@ func TestSubsListEmpty(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("expected empty output, got: %s", buf.String())
-	}
-}
-
-// --- extensionsPath ---
-
-func TestExtensionsPath(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	p := extensionsPath()
-	if !strings.HasSuffix(p, "extensions.toml") {
-		t.Errorf("extensionsPath = %q, want suffix extensions.toml", p)
 	}
 }
 
@@ -721,207 +682,6 @@ func TestDispatchLocalRulesUnknown(t *testing.T) {
 	})
 }
 
-// --- dispatchGroup happy paths ---
-
-func TestDispatchGroupList(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() { dispatchGroup([]string{"ls"}) })
-}
-
-func TestDispatchGroupAdd(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() {
-		dispatchGroup([]string{"add", "G1", "--type=select", "--proxies=A,B"})
-	})
-}
-
-func TestDispatchGroupRm(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() {
-		dispatchGroup([]string{"add", "G2", "--type=select", "--proxies=A"})
-	})
-	mustNotPanic(t, func() {
-		dispatchGroup([]string{"rm", "G2"})
-	})
-}
-
-func TestDispatchGroupUnknown(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustPanicWith(t, "dieUserErr", func() {
-		dispatchGroup([]string{"bogus"})
-	})
-}
-
-// --- dispatchChain happy paths ---
-
-func TestDispatchChainList(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() { dispatchChain([]string{"ls"}) })
-}
-
-func TestDispatchChainSet(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() { dispatchChain([]string{"set", "NodeA", "NodeB"}) })
-}
-
-func TestDispatchChainUnset(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustNotPanic(t, func() { dispatchChain([]string{"set", "NodeX", "NodeY"}) })
-	mustNotPanic(t, func() { dispatchChain([]string{"unset", "NodeX"}) })
-}
-
-func TestDispatchChainUnknown(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustPanicWith(t, "dieUserErr", func() {
-		dispatchChain([]string{"bogus"})
-	})
-}
-
-// --- runGroupLs text path + runGroupAdd update path ---
-
-func TestRunGroupLsText(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	path := extensionsPath()
-	var buf bytes.Buffer
-	// Add a group so the text path is exercised.
-	if err := runGroupAdd(&buf, path, groupAddOpts{Name: "MyGroup", Type: "select", Proxies: []string{"A"}}); err != nil {
-		t.Fatalf("add: %v", err)
-	}
-	buf.Reset()
-	if err := runGroupLs(&buf, path, false); err != nil {
-		t.Fatalf("ls: %v", err)
-	}
-	if !strings.Contains(buf.String(), "MyGroup") {
-		t.Errorf("expected MyGroup in output: %s", buf.String())
-	}
-}
-
-func TestRunGroupAddUpdate(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	path := extensionsPath()
-	var buf bytes.Buffer
-	// First add.
-	if err := runGroupAdd(&buf, path, groupAddOpts{Name: "G", Type: "select", Proxies: []string{"A"}}); err != nil {
-		t.Fatalf("add: %v", err)
-	}
-	buf.Reset()
-	// Update the same group (should hit "updated:" path).
-	if err := runGroupAdd(&buf, path, groupAddOpts{Name: "G", Type: "url-test", Proxies: []string{"A", "B"}, URL: "http://test.url", Interval: 60}); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	if !strings.Contains(buf.String(), "updated") {
-		t.Errorf("expected 'updated' in output: %s", buf.String())
-	}
-}
-
-func TestRunGroupRmNotFound(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	path := extensionsPath()
-	var buf bytes.Buffer
-	if err := runGroupRm(&buf, path, "nonexistent"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "no group") {
-		t.Errorf("expected 'no group' message: %s", buf.String())
-	}
-}
-
-// --- runChainLs text path + runChainUnset not-found ---
-
-func TestRunChainLsText(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	path := extensionsPath()
-	var buf bytes.Buffer
-	if err := runChainSet(&buf, path, "A", "B"); err != nil {
-		t.Fatalf("set: %v", err)
-	}
-	buf.Reset()
-	if err := runChainLs(&buf, path, false); err != nil {
-		t.Fatalf("ls: %v", err)
-	}
-	if !strings.Contains(buf.String(), "A") || !strings.Contains(buf.String(), "B") {
-		t.Errorf("expected A→B in output: %s", buf.String())
-	}
-}
-
-func TestRunChainUnsetNotFound(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-
-	path := extensionsPath()
-	var buf bytes.Buffer
-	if err := runChainUnset(&buf, path, "nothere"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "no chain for") {
-		t.Errorf("expected 'no chain for' message: %s", buf.String())
-	}
-}
-
-// --- runExtApply error paths ---
-
-func TestRunExtApplyReassembleError(t *testing.T) {
-	var buf bytes.Buffer
-	err := runExtApply(&buf, runExtApplyDeps{
-		Reassemble: func() error { return fmt.Errorf("assemble failed") },
-		Reload:     func() error { return nil },
-	})
-	if err == nil || !strings.Contains(err.Error(), "reassemble") {
-		t.Errorf("expected reassemble error, got %v", err)
-	}
-}
-
-func TestRunExtApplyReloadError(t *testing.T) {
-	var buf bytes.Buffer
-	err := runExtApply(&buf, runExtApplyDeps{
-		Reassemble: func() error { return nil },
-		Reload:     func() error { return fmt.Errorf("reload failed") },
-	})
-	if err == nil || !strings.Contains(err.Error(), "reload") {
-		t.Errorf("expected reload error, got %v", err)
-	}
-}
-
 // --- readMihomoVersion with fake binary ---
 
 func TestReadMihomoVersionFakeBinary(t *testing.T) {
@@ -1019,28 +779,6 @@ func TestAsStringInt(t *testing.T) {
 	if got != "" {
 		t.Errorf("asString(42) = %q, want empty (not a string)", got)
 	}
-}
-
-// --- dispatchChain extra coverage ---
-
-func TestDispatchChainNoArgs(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustPanicWith(t, "dieUserErr", func() { dispatchChain([]string{}) })
-}
-
-func TestDispatchChainListJSON(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	// Add a chain first, then list --json.
-	mustNotPanic(t, func() { dispatchChain([]string{"set", "A", "B"}) })
-	mustNotPanic(t, func() { dispatchChain([]string{"ls", "--json"}) })
 }
 
 // --- runSubsList with subs present ---
@@ -1208,41 +946,6 @@ func TestDispatchUseNoClient(t *testing.T) {
 	_ = runInit(&buf, runInitOpts{})
 	// runUse calls client → connection refused → dieUserErr.
 	mustPanicWith(t, "die", func() { dispatchUse([]string{"grp", "node"}) })
-}
-
-// --- dispatchExt ---
-
-func TestDispatchExtNoArgs(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	// No args → dieUserErr.
-	mustPanicWith(t, "dieUserErr", func() { dispatchExt([]string{}) })
-}
-
-func TestDispatchExtWrongVerb(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	mustPanicWith(t, "dieUserErr", func() { dispatchExt([]string{"bogus"}) })
-}
-
-func TestDispatchExtApplyNoClient(t *testing.T) {
-	_, restore := initEnv(t)
-	defer restore()
-	restoreDie := panicOnDie(t)
-	defer restoreDie()
-
-	var buf bytes.Buffer
-	if err := runInit(&buf, runInitOpts{}); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	// "apply" verb → store.Load succeeds → loadClient fails → dieRuntime.
-	mustPanicWith(t, "die", func() { dispatchExt([]string{"apply"}) })
 }
 
 // TestDispatchUpdateNetworkFail exercises dispatchUpdate when the store

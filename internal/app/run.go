@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -57,7 +56,7 @@ func Run(version string) error {
 	// absent, bootstrap will create it from scratch.
 	configChanged, _ := ensureConfigSecurity(st, p.MihomoConfigFile())
 
-	pl := NewPipeline(st, p.MihomoConfigFile(), filepath.Join(p.VpnkitConfig, "extensions.toml"))
+	pl := NewPipeline(st, p.MihomoConfigFile())
 
 	// Closure that subscription-update + startup-reload paths use to push config
 	// changes into the live mihomo. Tries hot reload first, restarts the
@@ -70,22 +69,12 @@ func Run(version string) error {
 		return applyConfig(ctx, client, svc)
 	}
 
-	// modelRef is set just below; closures captured into settingsDeps read
-	// through it to break the chicken-and-egg between Deps and Model.
-	var modelRef *Model
 	settingsDeps := tabsettings.Deps{
-		Paths:          p,
-		Store:          st,
-		Service:        svc,
-		APIClient:      client,
-		ExtensionsPath: filepath.Join(p.VpnkitConfig, "extensions.toml"),
-		Pipeline:       pl,
-		ProxyNames: func() []string {
-			if modelRef == nil {
-				return nil
-			}
-			return modelRef.CurrentProxyNames()
-		},
+		Paths:     p,
+		Store:     st,
+		Service:   svc,
+		APIClient: client,
+		Pipeline:  pl,
 		ApplyFunc: func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -94,7 +83,6 @@ func Run(version string) error {
 	}
 	model := NewModel(client, settingsDeps, applyCfg)
 	model.WirePipeline(pl)
-	modelRef = &model
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	go func() {

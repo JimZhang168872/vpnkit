@@ -3,13 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
 	"vpnkit/internal/assembler"
 	"vpnkit/internal/config"
-	"vpnkit/internal/extensions"
 	"vpnkit/internal/groups"
 	"vpnkit/internal/localnodes"
 	"vpnkit/internal/localrules"
@@ -23,7 +21,6 @@ import (
 type Pipeline struct {
 	store          *store.Store
 	configYAMLPath string
-	extensionsPath string
 
 	mu         sync.Mutex
 	localNodes *localnodes.Manager
@@ -38,11 +35,10 @@ type Pipeline struct {
 }
 
 // NewPipeline constructs a Pipeline and loads existing local state from the store.
-func NewPipeline(st *store.Store, configYAMLPath, extensionsPath string) *Pipeline {
+func NewPipeline(st *store.Store, configYAMLPath string) *Pipeline {
 	pl := &Pipeline{
 		store:          st,
 		configYAMLPath: configYAMLPath,
-		extensionsPath: extensionsPath,
 		localNodes:     localnodes.New(),
 		localRules:     localrules.New(),
 		subResults:     map[string]*subscription.Result{},
@@ -158,14 +154,6 @@ func (p *Pipeline) Assemble() error {
 		}
 		localGroups = append(localGroups, groups.NewLocalNodesGroupForGroup(g.Name, p.localNodes))
 	}
-	// extensions.Load returns (Extensions{}, nil) for a missing file, so the
-	// blank identifier is safe for that case. Non-nil errors indicate parse
-	// failures (corrupt TOML), which we surface to stderr rather than silently
-	// assembling without user-defined extensions.
-	ext, err := extensions.Load(p.extensionsPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "vpnkit: extensions load failed (using none): %v\n", err)
-	}
 	cfg := p.store.Cfg
 	p.mu.Unlock()
 
@@ -175,7 +163,6 @@ func (p *Pipeline) Assemble() error {
 		Subscriptions:    subs,
 		LocalGroups:      localGroups,
 		LocalRules:       p.localRules.All(),
-		Extensions:       ext,
 		MixedPort:        cfg.MixedPort,
 		ControllerPort:   cfg.ControllerPort,
 		ControllerSecret: cfg.ControllerSecret,

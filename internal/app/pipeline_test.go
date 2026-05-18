@@ -17,8 +17,7 @@ func newTestPipeline(t *testing.T) *Pipeline {
 		t.Fatalf("store.Load: %v", err)
 	}
 	cfgPath := filepath.Join(dir, "config.yaml")
-	extPath := filepath.Join(dir, "extensions.toml")
-	return NewPipeline(st, cfgPath, extPath)
+	return NewPipeline(st, cfgPath)
 }
 
 func TestPipelineLocalNodeGroupsCRUD(t *testing.T) {
@@ -151,11 +150,10 @@ func TestPipelineDeleteLocalGroupForce(t *testing.T) {
 func TestPipelineSaveLocalGroupViaRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	extPath := filepath.Join(dir, "extensions.toml")
 	storePath := filepath.Join(dir, "config.toml")
 
 	st, _ := store.Load(storePath)
-	p := NewPipeline(st, cfgPath, extPath)
+	p := NewPipeline(st, cfgPath)
 	_ = p.AddLocalGroup("home")
 
 	// Add node with Group + Via directly via localnodes.Manager then SaveLocal.
@@ -173,7 +171,7 @@ func TestPipelineSaveLocalGroupViaRoundTrip(t *testing.T) {
 
 	// Reload from disk and verify Group + Via are persisted.
 	st2, _ := store.Load(storePath)
-	p2 := NewPipeline(st2, cfgPath, extPath)
+	p2 := NewPipeline(st2, cfgPath)
 	all := p2.LocalNodes().All()
 	if len(all) != 1 {
 		t.Fatalf("expected 1 node after reload, got %d", len(all))
