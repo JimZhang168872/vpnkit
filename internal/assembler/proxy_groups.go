@@ -11,12 +11,38 @@ const (
 	healthInterval = 300
 )
 
-// emitProxyGroups builds the full proxy-groups slice: per-subscription
-// select+url-test pairs, one select+url-test per local-nodes group, and the
-// three top-level routing groups (🚀 Proxy / 🎯 Direct / 🛑 Reject).
-func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarget string) []any {
+// emitProxyGroups builds the full proxy-groups slice:
+//
+//   - One <name> Selector + <name>-auto URLTest per enabled subscription
+//     AND per enabled local-nodes group. Symmetrical; mihomo doesn't
+//     distinguish source kind.
+//   - Top-level 🚀 Proxy Selector whose members come ONLY from the active
+//     source (+ DIRECT). MATCH,🚀 Proxy in the emitted rules then routes
+//     unmatched traffic to the active source's url-test best pick.
+//   - 🎯 Direct + 🛑 Reject helper selectors so template rules that
+//     reference them resolve cleanly.
+//
+// Non-active sources are still emitted as their own proxy-groups so the
+// user can switch active without re-assembling. They're just not part of
+// 🚀 Proxy's membership.
+func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, activeSource, globalTarget string) []any {
 	out := []any{}
-	topProxies := []string{}
+
+	emitPair := func(name string, nodes []string) {
+		autoName := name + "-auto"
+		out = append(out, map[string]any{
+			"name":    name,
+			"type":    "select",
+			"proxies": append([]string{autoName}, nodes...),
+		})
+		out = append(out, map[string]any{
+			"name":     autoName,
+			"type":     "url-test",
+			"proxies":  nodes,
+			"url":      healthURL,
+			"interval": healthInterval,
+		})
+	}
 
 	// Subscription groups (each → <name> select + <name>-auto url-test).
 	for _, g := range subs {
@@ -27,23 +53,9 @@ func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarg
 		if len(nodes) == 0 {
 			continue
 		}
-		autoName := g.Name() + "-auto"
-		out = append(out, map[string]any{
-			"name":    g.Name(),
-			"type":    "select",
-			"proxies": append([]string{autoName}, nodes...),
-		})
-		out = append(out, map[string]any{
-			"name":     autoName,
-			"type":     "url-test",
-			"proxies":  nodes,
-			"url":      healthURL,
-			"interval": healthInterval,
-		})
-		topProxies = append(topProxies, autoName, g.Name())
+		emitPair(g.Name(), nodes)
 	}
-
-	// Local-nodes groups (symmetric with subs: <name> select + <name>-auto url-test).
+	// Local-nodes groups (symmetric with subs).
 	for _, lg := range localGroups {
 		if !lg.Enabled() {
 			continue
@@ -52,26 +64,16 @@ func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarg
 		if len(nodes) == 0 {
 			continue
 		}
-		autoName := lg.Name() + "-auto"
-		out = append(out, map[string]any{
-			"name":    lg.Name(),
-			"type":    "select",
-			"proxies": append([]string{autoName}, nodes...),
-		})
-		out = append(out, map[string]any{
-			"name":     autoName,
-			"type":     "url-test",
-			"proxies":  nodes,
-			"url":      healthURL,
-			"interval": healthInterval,
-		})
-		topProxies = append(topProxies, autoName, lg.Name())
+		emitPair(lg.Name(), nodes)
 	}
 
-	topProxies = append(topProxies, "DIRECT")
-
-	// GlobalTarget goes first so mihomo picks it as the select default.
-	topProxies = withTargetFirst(topProxies, globalTarget)
+	// 🚀 Proxy's members come ONLY from the active source. Other sources
+	// remain in the config but stay out of the top-level Selector to keep
+	// MATCH routing deterministic per the user's "选谁用谁" intent.
+	topProxies := topProxyMembersFor(activeSource, subs, localGroups)
+	if globalTarget != "" {
+		topProxies = withTargetFirst(topProxies, globalTarget)
+	}
 
 	out = append(out,
 		map[string]any{"name": topLevelProxyGroup, "type": "select", "proxies": topProxies},
@@ -79,6 +81,38 @@ func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarg
 		map[string]any{"name": "🛑 Reject", "type": "select", "proxies": []string{"REJECT", "DIRECT"}},
 	)
 	return out
+}
+
+// topProxyMembersFor returns the 🚀 Proxy Selector's member list for the
+// given active source: [<active>-auto, <active>, DIRECT].
+//
+// If the active source name doesn't match any enabled source (e.g. user
+// removed it without picking a replacement), or is empty, fall back to
+// [DIRECT] — at least traffic doesn't break, and the user gets a visible
+// "no proxy active" signal.
+func topProxyMembersFor(activeSource string, subs, localGroups []groups.Group) []string {
+	if activeSource == "" {
+		return []string{"DIRECT"}
+	}
+	found := false
+	for _, g := range subs {
+		if g.Enabled() && g.Name() == activeSource {
+			found = true
+			break
+		}
+	}
+	if !found {
+		for _, lg := range localGroups {
+			if lg.Enabled() && lg.Name() == activeSource {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return []string{"DIRECT"}
+	}
+	return []string{activeSource + "-auto", activeSource, "DIRECT"}
 }
 
 func nodeNames(g groups.Group) []string {

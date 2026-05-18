@@ -571,3 +571,97 @@ enabled = true
 		t.Errorf("local-only nudge: got %q, want Local-auto", st.Cfg.GlobalTarget)
 	}
 }
+
+// TestLoadDerivesActiveSourceFromGlobalTargetOnUpgrade — rc.6 → rc.7
+// migration. User on rc.6 had `global_target = "boost-auto"`, meaning
+// boost-auto was 🚀 Proxy's default member. Under rc.7 the equivalent is
+// `active_source = "boost"`. Auto-derive on first rc.7 launch.
+func TestLoadDerivesActiveSourceFromGlobalTargetOnUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	rc6 := `schema_version = 2
+mode = "rule"
+global_target = "boost-auto"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "boost"
+url = "https://x.example.com/sub"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(rc6), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Cfg.ActiveSource != "boost" {
+		t.Errorf("expected derived ActiveSource=boost, got %q", st.Cfg.ActiveSource)
+	}
+}
+
+// TestLoadFallsBackToFirstSourceWhenGlobalTargetIsNodeRef — global_target
+// can point at a leaf node like "boost:HK-01" (when user manually picked
+// one in TUI). That's not a clean derivation for ActiveSource. Fall back
+// to first-enabled-source.
+func TestLoadFallsBackToFirstSourceWhenGlobalTargetIsNodeRef(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	rc6 := `schema_version = 2
+mode = "rule"
+global_target = "boost:HK-01"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "doge"
+url = "https://x"
+enabled = true
+
+[[subscriptions]]
+name = "boost"
+url = "https://y"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(rc6), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := Load(path)
+	// doge is first enabled → wins. (User can switch via `vpnkit active`.)
+	if st.Cfg.ActiveSource != "doge" {
+		t.Errorf("expected fallback ActiveSource=doge, got %q", st.Cfg.ActiveSource)
+	}
+}
+
+// TestLoadPreservesExplicitActiveSource — once the user explicitly sets
+// ActiveSource (via CLI/TUI), Load must never overwrite it on future
+// boots even if global_target says something else.
+func TestLoadPreservesExplicitActiveSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "boost-auto"
+active_source = "Local"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "boost"
+url = "https://x"
+enabled = true
+
+[[local_node_groups]]
+name = "Local"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := Load(path)
+	if st.Cfg.ActiveSource != "Local" {
+		t.Errorf("explicit ActiveSource clobbered: got %q", st.Cfg.ActiveSource)
+	}
+}

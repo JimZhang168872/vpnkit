@@ -39,6 +39,11 @@ type Deps struct {
 	GetSubNodes    func(name string) []SubNode
 	GetLocalGroups func() []store.LocalNodeGroup
 	GetLocalNodes  func(group string) []SubNode
+	// GetActiveSource is the rc.7+ active-source name (the source that
+	// drives 🚀 Proxy + rules). May be "" on a fresh install. Used to
+	// decorate the active group with a ★ marker so the user can see at a
+	// glance which source MATCH routes through.
+	GetActiveSource func() string
 }
 
 // Model is the Groups tab.
@@ -255,7 +260,14 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 	leftFocused := focused && m.subFocus == SubFocusLeft
 	rightFocused := focused && m.subFocus == SubFocusRight
 
-	// Left pane: group list with current "now" annotation.
+	// Left pane: group list with current "now" annotation. The active
+	// source (whose nodes back 🚀 Proxy + whose rules drive routing) gets
+	// a ★ marker so the user can see at a glance which one MATCH routes
+	// through.
+	active := ""
+	if m.deps.GetActiveSource != nil {
+		active = m.deps.GetActiveSource()
+	}
 	leftRows := []string{header, ""}
 	curStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	for i, g := range m.groups {
@@ -266,7 +278,11 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 			short := strings.TrimPrefix(now, g.name+":")
 			nowLabel = lipgloss.NewStyle().Faint(true).Render(" → " + short)
 		}
-		line := viewport.TruncateDisplay(g.name+count, leftW-6)
+		activeBadge := ""
+		if g.name == active {
+			activeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(" ★")
+		}
+		line := viewport.TruncateDisplay(g.name+count, leftW-8) + activeBadge
 		if i == m.cursor {
 			if leftFocused {
 				leftRows = append(leftRows, curStyle.Render("▶ ")+line+nowLabel)

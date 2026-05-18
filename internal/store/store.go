@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,8 +82,19 @@ type Config struct {
 	UITheme          string `toml:"ui_theme"`
 	ServiceMode      string `toml:"service_mode,omitempty"`
 
-	Mode         string `toml:"mode"`
+	Mode string `toml:"mode"`
+	// GlobalTarget overrides which 🚀 Proxy Selector member becomes the
+	// "now" default. With the rc.7+ active-source model, this is normally
+	// derived from ActiveSource ("<active>-auto"). Kept as a separate
+	// field for advanced overrides and backwards-compat migration.
 	GlobalTarget string `toml:"global_target"`
+	// ActiveSource (rc.7+) names the one source (subscription OR local-
+	// node group) whose rules drive routing AND whose nodes back 🚀 Proxy.
+	// Empty falls back to "first enabled subscription, else first enabled
+	// local group". User intent "选谁用谁" — flip the active source and
+	// the entire rules + proxy graph follows. See assembler.Input for
+	// details.
+	ActiveSource string `toml:"active_source,omitempty"`
 
 	Subscriptions   []Subscription   `toml:"subscriptions"`
 	LocalNodes      []LocalNode      `toml:"local_nodes"`
@@ -250,12 +262,60 @@ func Load(path string) (*Store, error) {
 			changed = true
 		}
 	}
+	// ActiveSource (rc.7) — auto-derive on first launch under the new
+	// model. Two cases trigger:
+	//   1. Fresh install: nothing in the store yet → pick first enabled
+	//      source.
+	//   2. Upgrading from rc.6 with `global_target = "<name>-auto"` →
+	//      strip the suffix to back-derive the source name. Guarantees
+	//      rc.6 users land on the same active source they were already
+	//      routing through, no manual config touch needed.
+	if s.Cfg.ActiveSource == "" {
+		if derived := deriveActiveFromGlobalTarget(s.Cfg.GlobalTarget); derived != "" && sourceExists(&s.Cfg, derived) {
+			s.Cfg.ActiveSource = derived
+			changed = true
+		} else if first := firstEnabledProxySource(&s.Cfg); first != "" {
+			s.Cfg.ActiveSource = first
+			changed = true
+		}
+	}
 	if changed {
 		if err := s.Save(); err != nil {
 			return nil, err
 		}
 	}
 	return s, nil
+}
+
+// deriveActiveFromGlobalTarget converts rc.6's `global_target =
+// "<name>-auto"` form back to the source name. Returns "" if the target
+// doesn't have the `-auto` suffix (e.g. user pointed at a specific node
+// like "boost:HK-01" — no clean derivation, leave to firstEnabled).
+func deriveActiveFromGlobalTarget(gt string) string {
+	const suffix = "-auto"
+	if !strings.HasSuffix(gt, suffix) {
+		return ""
+	}
+	return strings.TrimSuffix(gt, suffix)
+}
+
+// sourceExists checks whether `name` matches any enabled subscription or
+// local-node group. Used to validate a derived ActiveSource before
+// trusting it — otherwise a rc.6 user who removed the original sub but
+// kept the stale `global_target` could end up with an ActiveSource that
+// no longer corresponds to anything routable.
+func sourceExists(cfg *Config, name string) bool {
+	for _, s := range cfg.Subscriptions {
+		if s.Enabled && s.Name == name {
+			return true
+		}
+	}
+	for _, g := range cfg.LocalNodeGroups {
+		if g.Enabled && g.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // firstEnabledProxySource returns the name of the first enabled proxy

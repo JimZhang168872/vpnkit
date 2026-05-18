@@ -22,6 +22,7 @@ const (
 	SubService
 	SubController
 	SubRouting
+	SubActive
 	SubRules
 	SubCache
 	SubAbout
@@ -48,6 +49,7 @@ var SubPageNames = [NumSubPages]string{
 	"Service",
 	"External Controller",
 	"Routing",
+	"Active Source",
 	"Rule Template",
 	"Cache",
 	"About",
@@ -60,6 +62,9 @@ type PipelineFace interface {
 	RefreshSubscription(ctx context.Context, name string) (int, error)
 	Assemble() error
 	SaveLocal() error
+	// rc.7 active-source picker (Settings → Active Source sub-page).
+	ActiveSource() string
+	SetActiveSource(name string) error
 }
 
 // Deps are wires for sub-pages.
@@ -85,6 +90,7 @@ type Model struct {
 	service    serviceModel
 	core       coreModel
 	routing    routingModel
+	active     activeModel
 }
 
 // Focus exposes the active focus state (for tests / rendering).
@@ -118,6 +124,7 @@ func New(deps Deps) Model {
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
 		routing:    newRouting(deps.Store, deps.ApplyFunc),
+		active:     newActive(deps.Store, deps.Pipeline, deps.ApplyFunc),
 	}
 }
 
@@ -129,7 +136,7 @@ func (m Model) SelectedPage() SubPage { return m.current }
 // level to switch between sub-pages. Add new sub-pages with internal nav
 // here.
 func subPageOwnsArrows(p SubPage) bool {
-	return p == SubRouting || p == SubRules
+	return p == SubRouting || p == SubRules || p == SubActive
 }
 
 func (Model) Init() tea.Cmd { return nil }
@@ -182,6 +189,8 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		m.core, cmd = m.core.Update(message)
 	case SubRouting:
 		m.routing, cmd = m.routing.Update(message)
+	case SubActive:
+		m.active, cmd = m.active.Update(message)
 	}
 	return m, cmd
 }
@@ -219,6 +228,8 @@ func (m Model) ViewFocused(width, height int, tabBodyFocused bool) string {
 		body = m.core.View(bodyWidth, height)
 	case SubRouting:
 		body = m.routing.ViewFocused(bodyWidth, height, contentFocused)
+	case SubActive:
+		body = m.active.ViewFocused(bodyWidth, height, contentFocused)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, side, body)
 }
