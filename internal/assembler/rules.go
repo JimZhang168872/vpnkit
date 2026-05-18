@@ -19,9 +19,13 @@ var reservedTargets = map[string]bool{
 //
 // Mode=global → single MATCH,🚀 Proxy (user rules not emitted).
 // Mode=direct → single MATCH,🎯 Direct.
-// Mode=rule   → local rules, then per-subscription rules (with target
-// rewriting), then MATCH,🚀 Proxy fallback.
-func emitRules(mode Mode, locals []localrules.Rule, subs []groups.Group) []any {
+// Mode=rule   → local rules (user override) → per-subscription rules
+//               (with target rewriting) → templateRules (baseline like
+//               loyalsoldier's CN/GFW split) → MATCH,🚀 Proxy fallback.
+//
+// templateRules comes pre-trimmed from Assemble (trailing MATCH stripped
+// so emitRules' own MATCH stays the sole catch-all).
+func emitRules(mode Mode, locals []localrules.Rule, subs []groups.Group, templateRules []any) []any {
 	if mode == ModeGlobal {
 		return []any{"MATCH,🚀 Proxy"}
 	}
@@ -58,7 +62,13 @@ func emitRules(mode Mode, locals []localrules.Rule, subs []groups.Group) []any {
 			out = append(out, rewritten.Render())
 		}
 	}
-	// 3. MATCH fallback
+	// 3. template baseline (RULE-SET → reject / direct / proxy; GEOIP,CN
+	// etc.). Trailing MATCH was already stripped in Assemble so it can't
+	// short-circuit subscription rules above OR the fallback below.
+	out = append(out, templateRules...)
+	// 4. MATCH fallback — unmatched traffic flows through 🚀 Proxy. Whether
+	// that resolves to a proxy or DIRECT depends on which member 🚀 Proxy
+	// is set to (GlobalTarget controls the default).
 	out = append(out, "MATCH,🚀 Proxy")
 	return out
 }

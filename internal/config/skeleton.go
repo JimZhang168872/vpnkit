@@ -34,6 +34,13 @@ func BuildSkeleton(in SkeletonInput) ([]byte, error) {
 	if in.LogLevel == "" {
 		in.LogLevel = "info"
 	}
+	// Empty input ⇒ same baseline pipeline.Assemble picks for stores that
+	// don't pin a template. Keeps bootstrap-time skeleton structurally
+	// identical to the first reassemble pipeline.Assemble produces a few
+	// milliseconds later.
+	if in.RuleTemplate == "" {
+		in.RuleTemplate = "loyalsoldier"
+	}
 
 	template, err := rules.Load(in.RuleTemplate)
 	if err != nil {

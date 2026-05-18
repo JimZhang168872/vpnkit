@@ -183,3 +183,54 @@ func TestPipelineSaveLocalGroupViaRoundTrip(t *testing.T) {
 		t.Errorf("Via round-trip: got %q want \"doge:JP-1\"", all[0].Via)
 	}
 }
+
+// TestAddSubscriptionNudgesGlobalTargetWhenDirect regresses the bug where
+// fresh installs left GlobalTarget=DIRECT after the first sub was added,
+// so MATCH,🚀 Proxy resolved to direct connections. After this nudge, the
+// first sub auto-becomes the default proxy choice.
+func TestAddSubscriptionNudgesGlobalTargetWhenDirect(t *testing.T) {
+	p := newTestPipeline(t)
+	// initial: post-migration DIRECT default
+	if p.store.Cfg.GlobalTarget != "DIRECT" {
+		t.Fatalf("setup: expected GlobalTarget=DIRECT, got %q", p.store.Cfg.GlobalTarget)
+	}
+	if err := p.AddSubscription(store.Subscription{Name: "doge", URL: "https://x", Enabled: true}); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if got := p.store.Cfg.GlobalTarget; got != "doge-auto" {
+		t.Errorf("first sub should nudge GlobalTarget → doge-auto, got %q", got)
+	}
+	// Second sub must NOT overwrite — user already has a default choice.
+	if err := p.AddSubscription(store.Subscription{Name: "boost", URL: "https://y", Enabled: true}); err != nil {
+		t.Fatalf("AddSubscription #2: %v", err)
+	}
+	if got := p.store.Cfg.GlobalTarget; got != "doge-auto" {
+		t.Errorf("second sub must not overwrite GlobalTarget, got %q", got)
+	}
+}
+
+// TestAddSubscriptionPreservesExplicitTarget — if the user has already
+// set GlobalTarget to a specific proxy (via `vpnkit target` or TUI), the
+// nudge must NOT clobber it on the next AddSubscription.
+func TestAddSubscriptionPreservesExplicitTarget(t *testing.T) {
+	p := newTestPipeline(t)
+	p.store.Cfg.GlobalTarget = "doge-auto" // user already picked
+	if err := p.AddSubscription(store.Subscription{Name: "boost", URL: "https://y", Enabled: true}); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if got := p.store.Cfg.GlobalTarget; got != "doge-auto" {
+		t.Errorf("user's target must be preserved, got %q", got)
+	}
+}
+
+// TestAddLocalGroupNudgesGlobalTargetWhenDirect — same first-source nudge
+// for users who only use hand-entered local nodes (no subscriptions).
+func TestAddLocalGroupNudgesGlobalTargetWhenDirect(t *testing.T) {
+	p := newTestPipeline(t)
+	if err := p.AddLocalGroup("home"); err != nil {
+		t.Fatalf("AddLocalGroup: %v", err)
+	}
+	if got := p.store.Cfg.GlobalTarget; got != "home-auto" {
+		t.Errorf("first local group should nudge GlobalTarget → home-auto, got %q", got)
+	}
+}
