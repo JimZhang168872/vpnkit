@@ -13,8 +13,19 @@ import (
 )
 
 func dispatchLocalGroups(args []string) {
-	if len(args) == 0 {
-		dieUserErr("vpnkit local-groups: usage: vpnkit local-groups <list|add|rm|enable|disable|rename>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		fmt.Println(`vpnkit local-groups — manage local-node groups
+
+  list | ls [--json]            show all groups (with node counts)
+  add <name>                    create a new group (validates reserved/collision)
+  rm <name> [--force]           delete (require --force if non-empty)
+  enable <name>                 idempotent set enabled=true
+  disable <name>                idempotent set enabled=false
+  rename <old> <new>            move group + all its nodes (validates new name)`)
+		if len(args) == 0 {
+			dieUserErr("(see usage above)")
+		}
+		return
 	}
 	sub, rest := args[0], args[1:]
 	if sub != "list" && sub != "ls" {

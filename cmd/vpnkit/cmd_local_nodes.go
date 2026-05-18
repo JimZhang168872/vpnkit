@@ -18,8 +18,18 @@ import (
 )
 
 func dispatchLocalNodes(args []string) {
-	if len(args) == 0 {
-		dieUserErr("vpnkit local-nodes: usage: vpnkit local-nodes <list|add|rm|edit|mv>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		fmt.Println(`vpnkit local-nodes — manage hand-entered proxy nodes
+
+  list | ls [--json]                                  show all local nodes
+  add <uri> [--group=NAME] [--via=PROXY]             parse and add a proxy URI
+  rm <name | group:name>                              delete one node
+  edit <name | group:name> key=val [key=val ...]      modify in place
+  mv  <name | group:name> <new-group>                 move node between groups`)
+		if len(args) == 0 {
+			dieUserErr("(see usage above)")
+		}
+		return
 	}
 	sub, rest := args[0], args[1:]
 	if sub != "list" && sub != "ls" {

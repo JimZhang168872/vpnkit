@@ -331,10 +331,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(v, m.keys.PrevTab):
 			m.activeTab = (m.activeTab + NumTabs - 1) % NumTabs
 		case key.Matches(v, m.keys.Help):
-			// Statusbar is single-line; the verbose hint was truncated
-			// at 60 cols. Use a terse mnemonic instead; full help is
-			// in docs/USAGE.md.
-			m.flash = "Keys: 1-7 tab • /filter • a add • t test • q quit"
+			// 60-col statusbar right-budget is ~37 chars after the
+			// left dashboard segment + 1 col gap; keep the help under
+			// 30 chars so it fits without truncation. Full help is in
+			// docs/USAGE.md.
+			m.flash = "1-7:tab /:filter q:quit"
 		case key.Matches(v, m.keys.Mode):
 			// Direct users to the canonical UI for mode changes.
 			m.flash = "Cycle mode in Settings → Routing or `vpnkit mode [rule|global|direct]`"

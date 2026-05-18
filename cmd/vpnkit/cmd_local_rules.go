@@ -14,8 +14,22 @@ import (
 )
 
 func dispatchLocalRules(args []string) {
-	if len(args) == 0 {
-		dieUserErr("vpnkit local-rules: usage: vpnkit local-rules <list|add|rm|move>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		fmt.Println(`vpnkit local-rules — manage routing rule overrides (prepended to subscription rules)
+
+  list | ls [--json]                          show in current order
+  add <type> <payload> <target>               append a rule (validates type + payload + target)
+  rm <idx>                                    delete by 0-indexed position
+  move <from> <to>                            reorder
+
+  Valid types: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, DOMAIN-REGEX,
+               DOMAIN-WILDCARD, GEOSITE, GEOIP, IP-CIDR, IP-CIDR6,
+               IP-SUFFIX, IP-ASN, SRC-IP-CIDR, DST-PORT, SRC-PORT,
+               PROCESS-NAME, PROCESS-PATH, RULE-SET, MATCH, FINAL`)
+		if len(args) == 0 {
+			dieUserErr("(see usage above)")
+		}
+		return
 	}
 	sub, rest := args[0], args[1:]
 	if sub != "list" && sub != "ls" {

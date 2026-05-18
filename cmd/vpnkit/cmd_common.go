@@ -25,6 +25,15 @@ func loadClient() (*api.Client, *store.Store, error) {
 	return api.New(url, st.Cfg.ControllerSecret), st, nil
 }
 
+// isHelpArg reports whether s is a help request token. Used by every
+// category dispatcher to honor `vpnkit subs --help` / `local-nodes -h`
+// / `local-rules help` — pre-rc.7 these all returned "unknown verb",
+// contradicting the top-level help text which advertised "use --help
+// on a subverb for usage."
+func isHelpArg(s string) bool {
+	return s == "--help" || s == "-h" || s == "help"
+}
+
 // rejectJSONOnMutation aborts with a clear user error when args contains
 // `--json`. Mutation verbs (subs add/rm, local-rules add/rm/move,
 // local-nodes add/rm/edit/mv, local-groups add/rm/enable/disable/rename)

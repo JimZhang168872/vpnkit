@@ -18,8 +18,19 @@ import (
 )
 
 func dispatchSubs(args []string) {
-	if len(args) == 0 {
-		dieUserErr("vpnkit subs: usage: vpnkit subs <list|add|rm|enable|disable|update>")
+	if len(args) == 0 || isHelpArg(args[0]) {
+		fmt.Println(`vpnkit subs — manage subscription feeds
+
+  list | ls [--json]                show all subscriptions
+  add <name> <url> [--ua=...]       register a feed (validates name + URL scheme)
+  rm <name>                         delete (clears active_source if it matched)
+  enable <name>                     idempotent set enabled=true
+  disable <name>                    idempotent set enabled=false (clears active_source if matched)
+  update [<name>...]                fetch + parse + cache (default: all enabled)`)
+		if len(args) == 0 {
+			dieUserErr("(see usage above)")
+		}
+		return
 	}
 	sub, rest := args[0], args[1:]
 	// Reject --json on mutation subverbs (list/ls are the only read ones).
