@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"vpnkit/internal/groups"
+	"vpnkit/internal/localnodes"
 	"vpnkit/internal/localrules"
 	"vpnkit/internal/subscription"
 	"vpnkit/internal/subscription/proto"
@@ -185,6 +186,183 @@ func TestAssembleMinimalTemplate(t *testing.T) {
 	}
 	if idxLocal > idxTemplate {
 		t.Errorf("local rule must come before template rule:\nlocal at %d, template at %d", idxLocal, idxTemplate)
+	}
+}
+
+// ─── active-source model tests (rc.7+) ───────────────────────────────────
+//
+// vpnkit's rules model: one "active source" (subscription OR local-node
+// group) drives routing. The active source's own rules are emitted; if it
+// has none (or it's a local group, which never carries rules), the rule
+// template (loyalsoldier by default) fills in. User local-rules are
+// always prepended so they apply regardless of active source.
+
+// TestActiveSourceEmitsOnlyActiveSubscriptionRules — with two subscriptions
+// `doge` and `boost`, and ActiveSource="boost", only boost's rules
+// must appear in the output. doge's rules are completely ignored even
+// though doge is otherwise enabled and present in proxy-groups.
+func TestActiveSourceEmitsOnlyActiveSubscriptionRules(t *testing.T) {
+	doge := groups.NewSubscriptionGroup("doge", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "HK-A", "type": "ss"}},
+		Raw: map[string]any{
+			"rules": []any{"DOMAIN-SUFFIX,doge-only.example,🚀 Proxy"},
+		},
+	})
+	boost := groups.NewSubscriptionGroup("boost", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "SG-1", "type": "ss"}},
+		Raw: map[string]any{
+			"rules": []any{"DOMAIN-SUFFIX,boost-only.example,🚀 Proxy"},
+		},
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "boost",
+		Subscriptions:    []groups.Group{doge, boost},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+	})
+	s := string(out)
+	if !strings.Contains(s, "boost-only.example") {
+		t.Errorf("active sub's rules must be present:\n%s", s)
+	}
+	if strings.Contains(s, "doge-only.example") {
+		t.Errorf("inactive sub's rules must NOT leak into output:\n%s", s)
+	}
+}
+
+// TestActiveSourceFallsBackToTemplateWhenSubHasNoRules — a subscription
+// that returned only proxies (no rules section) must trigger the
+// loyalsoldier template fallback. Critical for "subs only carrying nodes
+// but no routing" providers and for hand-entered single-URI subs.
+func TestActiveSourceFallsBackToTemplateWhenSubHasNoRules(t *testing.T) {
+	bare := groups.NewSubscriptionGroup("bare", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "X", "type": "ss"}},
+		Raw:     map[string]any{}, // no "rules" key
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "bare",
+		Subscriptions:    []groups.Group{bare},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+		RuleTemplate:     "loyalsoldier",
+	})
+	s := string(out)
+	if !strings.Contains(s, "GEOIP,CN") {
+		t.Errorf("template fallback (loyalsoldier) must kick in when active sub has no rules:\n%s", s)
+	}
+}
+
+// TestActiveSourceLocalGroupAlwaysUsesTemplate — local-node groups never
+// carry their own rules (they're collections of user-entered URIs), so
+// when active=local-group the template fallback is the only routing
+// source besides user local-rules.
+func TestActiveSourceLocalGroupAlwaysUsesTemplate(t *testing.T) {
+	mgr := localnodes.New()
+	_ = mgr.Add(localnodes.Node{
+		Name: "jim-hy2", Group: "Local",
+		Proto: "hysteria2", Server: "1.2.3.4", Port: 443,
+		Fields: map[string]any{"password": "x"},
+	})
+	local := groups.NewLocalNodesGroupForGroup("Local", mgr)
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "Local",
+		LocalGroups:      []groups.Group{local},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+		RuleTemplate:     "loyalsoldier",
+	})
+	s := string(out)
+	if !strings.Contains(s, "GEOIP,CN") {
+		t.Errorf("local-group active source must emit template rules:\n%s", s)
+	}
+}
+
+// TestActiveSourceLocalRulesAlwaysPrepended — the user's CLI/TUI
+// local-rules win over the active sub's rules regardless. Per user's
+// rc.7 design: "用户加的规则在选中节点上永远生效". When active sub has its
+// own rules, the template is intentionally NOT emitted (active sub's
+// rules are the routing source of truth).
+func TestActiveSourceLocalRulesAlwaysPrepended(t *testing.T) {
+	boost := groups.NewSubscriptionGroup("boost", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "SG-1", "type": "ss"}},
+		Raw: map[string]any{
+			"rules": []any{"DOMAIN-SUFFIX,boost-rule.example,🚀 Proxy"},
+		},
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "boost",
+		Subscriptions:    []groups.Group{boost},
+		LocalRules:       []localrules.Rule{{Type: "DOMAIN-SUFFIX", Payload: "user-rule.example", Target: "DIRECT"}},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+		RuleTemplate:     "loyalsoldier",
+	})
+	s := string(out)
+	idxLocal := strings.Index(s, "DOMAIN-SUFFIX,user-rule.example,DIRECT")
+	idxSub := strings.Index(s, "DOMAIN-SUFFIX,boost-rule.example")
+	idxMatch := strings.Index(s, "MATCH,\U0001F680 Proxy")
+	if idxLocal < 0 || idxSub < 0 || idxMatch < 0 {
+		t.Fatalf("missing rules:\n%s", s)
+	}
+	if !(idxLocal < idxSub && idxSub < idxMatch) {
+		t.Errorf("expected order local < sub < MATCH; got %d %d %d", idxLocal, idxSub, idxMatch)
+	}
+	// Template MUST NOT emit when active sub provides its own rules —
+	// "选谁用谁": the active sub's intent overrides the template.
+	if strings.Contains(s, "GEOIP,CN") {
+		t.Errorf("template should NOT emit when active sub has its own rules:\n%s", s)
+	}
+}
+
+// TestActiveSourceTopProxyMembersAreOnlyActive — 🚀 Proxy Selector
+// members come from the active source only (+ DIRECT), so MATCH traffic
+// routes to active. Other groups (doge, doge-auto, ...) are still emitted
+// as separate proxy-groups so the user can switch active without
+// re-assembling, but they're not part of 🚀 Proxy's membership.
+func TestActiveSourceTopProxyMembersAreOnlyActive(t *testing.T) {
+	doge := groups.NewSubscriptionGroup("doge", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "HK-A", "type": "ss"}},
+	})
+	boost := groups.NewSubscriptionGroup("boost", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "SG-1", "type": "ss"}},
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "boost",
+		Subscriptions:    []groups.Group{doge, boost},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+	})
+	s := string(out)
+	// Find the 🚀 Proxy group definition and look at its `proxies:` line.
+	// Crude but adequate — full YAML round-trip would over-couple to layout.
+	// yaml.v3 quotes the emoji-bearing name; match either quoted or bare.
+	topIdx := strings.Index(s, "\"\U0001F680 Proxy\"")
+	if topIdx < 0 {
+		topIdx = strings.Index(s, "\U0001F680 Proxy")
+	}
+	if topIdx < 0 {
+		t.Fatalf("no 🚀 Proxy group in output:\n%s", s)
+	}
+	rest := s[topIdx:]
+	endIdx := strings.Index(rest[1:], "- name:") // next proxy-group entry
+	if endIdx < 0 {
+		endIdx = len(rest)
+	}
+	topBlock := rest[:endIdx+1]
+	if !strings.Contains(topBlock, "boost-auto") {
+		t.Errorf("🚀 Proxy should contain active source `boost-auto`:\n%s", topBlock)
+	}
+	if strings.Contains(topBlock, "doge-auto") || strings.Contains(topBlock, "- doge\n") {
+		t.Errorf("🚀 Proxy should NOT contain inactive source `doge`:\n%s", topBlock)
 	}
 }
 

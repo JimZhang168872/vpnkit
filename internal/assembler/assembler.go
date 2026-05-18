@@ -26,7 +26,24 @@ const (
 
 // Input is the full Assemble payload. Pure value — no I/O.
 type Input struct {
-	Mode             Mode
+	Mode Mode
+	// ActiveSource names the single source (subscription OR local-node
+	// group) whose nodes back 🚀 Proxy AND whose rules drive routing.
+	// One-at-a-time model added in rc.7 (replaces the rc.6- merge-all
+	// semantics):
+	//   - If ActiveSource matches an enabled subscription that carries
+	//     rules → emit those rules (with target rewriting).
+	//   - If ActiveSource matches a local-nodes group (which never carries
+	//     rules), OR a subscription that returned no rules → fall back to
+	//     the RuleTemplate (loyalsoldier / minimal / etc.).
+	//   - User LocalRules are always prepended regardless.
+	// Empty ActiveSource falls back to "first enabled source" by insertion
+	// order so a fresh install with one sub Just Works.
+	ActiveSource string
+	// GlobalTarget is the *member* the top-level 🚀 Proxy Selector
+	// defaults to. With the rc.7+ active-source model this is computed
+	// from ActiveSource ("<active>-auto") unless the caller wants to
+	// override it for tests / advanced TUI flows.
 	GlobalTarget     string
 	Subscriptions    []groups.Group
 	LocalGroups      []groups.Group // one Group per enabled local-nodes-group
@@ -70,8 +87,16 @@ func Assemble(in Input) ([]byte, error) {
 		doc["authentication"] = []string{in.ProxyUser + ":" + in.ProxyPass}
 	}
 
+	// Resolve the active source if the caller didn't specify one — first
+	// enabled subscription wins, falling back to the first enabled local
+	// group. Mirrors the runtime first-source nudge so a fresh install
+	// with one sub never sees an empty 🚀 Proxy.
+	if in.ActiveSource == "" {
+		in.ActiveSource = firstEnabledSourceName(in.Subscriptions, in.LocalGroups)
+	}
+
 	doc["proxies"] = emitProxies(in.Subscriptions, in.LocalGroups)
-	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalGroups, in.GlobalTarget)
+	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalGroups, in.ActiveSource, in.GlobalTarget)
 
 	// Bake the rule template (rule-providers + baseline rules) into every
 	// emit so vpnkit's reassembles preserve the rules mihomo downloaded
@@ -105,7 +130,7 @@ func Assemble(in Input) ([]byte, error) {
 			templateRules = templateRules[:len(templateRules)-1]
 		}
 	}
-	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions, templateRules)
+	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions, in.ActiveSource, templateRules)
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -125,6 +150,24 @@ func Assemble(in Input) ([]byte, error) {
 		`\U0001F6D1`, "🛑",
 	).Replace(buf.String())
 	return []byte(result), nil
+}
+
+// firstEnabledSourceName picks a sensible default ActiveSource when the
+// caller didn't set one. Subscriptions take priority over local groups so
+// "I have a paid sub" → routes through it; "I only have hand-entered
+// nodes" → routes through them. Returns "" if no source is enabled.
+func firstEnabledSourceName(subs []groups.Group, locals []groups.Group) string {
+	for _, g := range subs {
+		if g.Enabled() {
+			return g.Name()
+		}
+	}
+	for _, g := range locals {
+		if g.Enabled() {
+			return g.Name()
+		}
+	}
+	return ""
 }
 
 func mihomoGeoxURL() map[string]string {
