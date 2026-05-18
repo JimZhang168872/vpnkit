@@ -13,10 +13,18 @@ import (
 // ParseURI dispatches on the URI's scheme to one of the protocol-specific
 // parsers. Names are taken from the URI fragment (#name) when present,
 // otherwise a stable fallback derived from server:port is used.
+//
+// Many real-world proxy URIs (hysteria2 / trojan / etc.) carry literal '/'
+// in the userinfo password — RFC 3986 says these should be %2F-encoded,
+// but Shadowrocket / Clash / NekoBox all accept the lenient form so other
+// providers emit it too. Go's net/url.Parse takes the strict path and
+// treats the '/' as the start of the URL path, mangling the host. We
+// preprocess to make life easier for everyone.
 func ParseURI(raw string) (Node, error) {
 	if i := strings.Index(raw, "://"); i < 0 {
 		return Node{}, errors.New("parse: missing scheme")
 	}
+	raw = escapeUserinfoSlashes(raw)
 	u, err := url.Parse(raw)
 	if err != nil {
 		return Node{}, fmt.Errorf("parse: %w", err)
@@ -37,6 +45,44 @@ func ParseURI(raw string) (Node, error) {
 	default:
 		return Node{}, fmt.Errorf("parse: unsupported scheme %q", u.Scheme)
 	}
+}
+
+// escapeUserinfoSlashes percent-encodes any '/' that sits in the userinfo
+// segment of a URI (between "<scheme>://" and the last '@' before the
+// authority terminator). Other characters are left alone — this is
+// specifically about Go's net/url.Parse misreading '/' as the path start.
+//
+// Authority terminator is the first '?' or '#' (or end-of-string). '/' is
+// NOT a terminator here because it might be the very character we're
+// escaping. We use the LAST '@' inside that window as the userinfo end
+// since '@' can legitimately appear in userinfo (rare, but possible per
+// the RFC's allowed sub-delims).
+//
+// If there's no '@', there's no userinfo, and we leave the string alone.
+func escapeUserinfoSlashes(raw string) string {
+	schemeIdx := strings.Index(raw, "://")
+	if schemeIdx < 0 {
+		return raw
+	}
+	authStart := schemeIdx + 3
+	authEnd := len(raw)
+	for i := authStart; i < len(raw); i++ {
+		if c := raw[i]; c == '?' || c == '#' {
+			authEnd = i
+			break
+		}
+	}
+	authority := raw[authStart:authEnd]
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return raw
+	}
+	userinfo := authority[:at]
+	if !strings.ContainsRune(userinfo, '/') {
+		return raw
+	}
+	fixed := strings.ReplaceAll(userinfo, "/", "%2F")
+	return raw[:authStart] + fixed + authority[at:] + raw[authEnd:]
 }
 
 func nameOrFallback(u *url.URL) string {
