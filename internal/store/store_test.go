@@ -427,3 +427,147 @@ func TestLoadDefaultGlobalTargetIsDirect(t *testing.T) {
 		t.Errorf("default GlobalTarget should be DIRECT, got %q", st.Cfg.GlobalTarget)
 	}
 }
+
+// TestLoadBumpsDirectGlobalTargetWhenSourcesExist covers the upgrade
+// scenario where:
+//   1. User installed an early rc (rc.4 or before): GlobalTarget = "🚀 Proxy"
+//      and they added a subscription "doge". MATCH worked fine because
+//      🚀 Proxy resolved to whatever member they picked.
+//   2. They upgraded to rc.6 → rc.6's store.Load migrated "🚀 Proxy" →
+//      "DIRECT" (fixing the self-loop bug). But their *existing* sub means
+//      MATCH now resolves to DIRECT, breaking traffic.
+//   3. AddSubscription/AddLocalGroup's first-source nudge doesn't fire on
+//      upgrade because the source already existed.
+//
+// Fix: when Load() sees GlobalTarget="DIRECT" AND at least one enabled
+// proxy source, bump GlobalTarget to that source's -auto. Persist so the
+// migration runs exactly once and survives restarts.
+func TestLoadBumpsDirectGlobalTargetWhenSourcesExist(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	// rc.6-shaped store: DIRECT + existing sub.
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "DIRECT"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "doge"
+url = "https://x.example.com/sub"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Cfg.GlobalTarget != "doge-auto" {
+		t.Errorf("GlobalTarget bump: got %q, want doge-auto", st.Cfg.GlobalTarget)
+	}
+	// Persistence check.
+	st2, _ := Load(path)
+	if st2.Cfg.GlobalTarget != "doge-auto" {
+		t.Errorf("bump didn't persist; second load got %q", st2.Cfg.GlobalTarget)
+	}
+}
+
+// TestLoadKeepsDirectWhenNoSources — user with no proxies should stay on
+// DIRECT (the only sensible default until they add a proxy source).
+func TestLoadKeepsDirectWhenNoSources(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	st, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Cfg.GlobalTarget != "DIRECT" {
+		t.Errorf("no-sources default: got %q, want DIRECT", st.Cfg.GlobalTarget)
+	}
+}
+
+// TestLoadPreservesExplicitNonDirectTarget — once the user picks a specific
+// target via `vpnkit target xxx`, Load() must never clobber it on a future
+// boot.
+func TestLoadPreservesExplicitNonDirectTarget(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "boost-auto"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "doge"
+url = "https://x.example.com/sub"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := Load(path)
+	if st.Cfg.GlobalTarget != "boost-auto" {
+		t.Errorf("explicit target clobbered: got %q, want boost-auto", st.Cfg.GlobalTarget)
+	}
+}
+
+// TestLoadPrefersSubscriptionOverLocalGroup — when both kinds of sources
+// exist, the first subscription wins (preserves the existing insertion
+// order semantics).
+func TestLoadPrefersFirstSubscriptionWhenBothExist(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "DIRECT"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[subscriptions]]
+name = "doge"
+url = "https://x"
+enabled = true
+
+[[local_node_groups]]
+name = "home"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := Load(path)
+	if st.Cfg.GlobalTarget != "doge-auto" {
+		t.Errorf("first-source prefers sub: got %q, want doge-auto", st.Cfg.GlobalTarget)
+	}
+}
+
+// TestLoadUsesLocalGroupWhenNoSubscriptions — a user with only local-nodes
+// groups gets nudged to the first local group's auto.
+func TestLoadUsesLocalGroupWhenNoSubscriptions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := `schema_version = 2
+mode = "rule"
+global_target = "DIRECT"
+mixed_port = 7890
+controller_port = 9090
+controller_secret = "x"
+
+[[local_node_groups]]
+name = "Local"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := Load(path)
+	if st.Cfg.GlobalTarget != "Local-auto" {
+		t.Errorf("local-only nudge: got %q, want Local-auto", st.Cfg.GlobalTarget)
+	}
+}
