@@ -9,28 +9,41 @@ import (
 
 func TestRenderBash(t *testing.T) {
 	got := Render(Options{Shell: "bash", Port: 7890, NoProxy: "localhost,127.0.0.1"})
-	// Lowercase variants — historical convention, curl/wget/git read these.
+	// Values are single-quoted (rc.7+) so shell metachars in
+	// URL-encoded passwords don't get expanded by `eval`. Old tests
+	// asserted unquoted output.
 	for _, want := range []string{
-		"export http_proxy=http://127.0.0.1:7890",
-		"export https_proxy=http://127.0.0.1:7890",
-		"export all_proxy=socks5h://127.0.0.1:7890",
-		"export no_proxy=localhost,127.0.0.1",
+		"export http_proxy='http://127.0.0.1:7890'",
+		"export https_proxy='http://127.0.0.1:7890'",
+		"export all_proxy='socks5h://127.0.0.1:7890'",
+		"export no_proxy='localhost,127.0.0.1'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	// Uppercase variants — Go programs (http.ProxyFromEnvironment) and many
-	// Java/JVM libs only read these.
 	for _, want := range []string{
-		"export HTTP_PROXY=http://127.0.0.1:7890",
-		"export HTTPS_PROXY=http://127.0.0.1:7890",
-		"export ALL_PROXY=socks5h://127.0.0.1:7890",
-		"export NO_PROXY=localhost,127.0.0.1",
+		"export HTTP_PROXY='http://127.0.0.1:7890'",
+		"export HTTPS_PROXY='http://127.0.0.1:7890'",
+		"export ALL_PROXY='socks5h://127.0.0.1:7890'",
+		"export NO_PROXY='localhost,127.0.0.1'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+// TestRenderBashShellQuotesAgainstMetacharExpansion — regression for
+// QA-r5 issue: `eval "$(vpnkit env)"` used to expand `$ss` in a password
+// like `f$ss` to empty, silently corrupting auth. Single-quoting fixes it.
+func TestRenderBashShellQuotesAgainstMetacharExpansion(t *testing.T) {
+	got := Render(Options{Shell: "bash", Port: 7890, User: "alice", Pass: "f$ss`x"})
+	// Single quotes wrap the value verbatim; the `$ss` substring inside
+	// is now literal, not a shell var.
+	if !strings.Contains(got, "'http://alice:f$ss%60x@127.0.0.1:7890'") &&
+		!strings.Contains(got, "'http://alice:f$ss`x@127.0.0.1:7890'") {
+		t.Errorf("password with shell meta not single-quoted properly:\n%s", got)
 	}
 }
 
@@ -83,7 +96,7 @@ func TestRenderFunctionsFish(t *testing.T) {
 
 func TestRenderFish(t *testing.T) {
 	got := Render(Options{Shell: "fish", Port: 7890})
-	if !strings.Contains(got, "set -gx http_proxy http://127.0.0.1:7890") {
+	if !strings.Contains(got, "set -gx http_proxy 'http://127.0.0.1:7890'") {
 		t.Errorf("fish output: %s", got)
 	}
 }
@@ -98,9 +111,9 @@ func TestRenderUnsetSmokeTest(t *testing.T) {
 func TestRenderBashWithAuth(t *testing.T) {
 	got := Render(Options{Shell: "bash", Port: 7890, User: "alice", Pass: "p4ss"})
 	for _, want := range []string{
-		"export http_proxy=http://alice:p4ss@127.0.0.1:7890",
-		"export https_proxy=http://alice:p4ss@127.0.0.1:7890",
-		"export all_proxy=socks5h://alice:p4ss@127.0.0.1:7890",
+		"export http_proxy='http://alice:p4ss@127.0.0.1:7890'",
+		"export https_proxy='http://alice:p4ss@127.0.0.1:7890'",
+		"export all_proxy='socks5h://alice:p4ss@127.0.0.1:7890'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)

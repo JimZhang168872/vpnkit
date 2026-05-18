@@ -114,17 +114,16 @@ func Window(total, cursor, maxRows int) (start, end int) {
 }
 
 // Indicator renders "[m-n/total]" for a footer. Returns empty string when
-// total is 0 (nothing to indicate). Cursor is informational only — it
-// affects nothing; callers can pass 0.
+// total is 0 (nothing to indicate). The `start` argument is now ignored —
+// pre-rc.7 callers passed 0 here, which produced a stuck "[1-N/total]"
+// regardless of scroll position. Both endpoints are derived from
+// Window(total, cursor, maxRows) so the indicator tracks the actual
+// visible window.
 func Indicator(start, total, maxRows, cursor int) string {
+	_ = start // ignored — kept for backwards-compat with old call sites
 	if total <= 0 {
 		return ""
 	}
-	_, end := Window(total, cursor, maxRows)
-	// Display 1-indexed range.
-	displayStart := start + 1
-	if displayStart < 1 {
-		displayStart = 1
-	}
-	return fmt.Sprintf("[%d-%d/%d]", displayStart, end, total)
+	winStart, end := Window(total, cursor, maxRows)
+	return fmt.Sprintf("[%d-%d/%d]", winStart+1, end, total)
 }

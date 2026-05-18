@@ -78,15 +78,19 @@ func Validate(r Rule) error {
 	if r.Target == "" {
 		return errors.New("localrules: target required")
 	}
-	// Reject embedded control characters in payload/target — they break
-	// the emitted YAML and lead to opaque mihomo reload failures. Each
-	// rule is a single line, so any raw \n / \r / \t in payload would
-	// split the rule mid-emission and the rest of the file would be
-	// rejected as a parse error.
+	// Reject embedded control characters and commas in payload/target.
+	// Each emitted mihomo rule is `Type,Payload,Target` — a comma in
+	// payload would split the rule into 4+ fields, which mihomo
+	// mis-parses (4th onward becomes "extra options" and the route
+	// silently goes to a different target). Control chars break YAML
+	// emission entirely.
 	for _, s := range []string{r.Payload, r.Target} {
 		for _, c := range s {
 			if (c < 0x20 && c != 0) || c == 0x7f {
 				return fmt.Errorf("localrules: control character (0x%02x) in payload/target", c)
+			}
+			if c == ',' {
+				return fmt.Errorf("localrules: comma in payload/target %q — rule lines are comma-delimited; an embedded comma corrupts mihomo parsing", s)
 			}
 		}
 	}

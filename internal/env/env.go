@@ -70,14 +70,35 @@ func Render(o Options) string {
 	}
 	var b strings.Builder
 	for _, p := range pairs {
+		// Single-quote the value so shell metacharacters (`$`, backtick,
+		// etc.) inside the URL-encoded basic-auth pass aren't expanded
+		// when the user runs `eval "$(vpnkit env)"`. url.UserPassword
+		// only encodes URL-reserved chars, NOT shell-active ones, so a
+		// password like `f$ss` would silently lose the `$ss` portion
+		// (shell expands $ss to "").
+		quoted := shellQuote(p.val, o.Shell)
 		switch o.Shell {
 		case "fish":
-			fmt.Fprintf(&b, "set -gx %s %s\n", p.name, p.val)
+			fmt.Fprintf(&b, "set -gx %s %s\n", p.name, quoted)
 		default:
-			fmt.Fprintf(&b, "export %s=%s\n", p.name, p.val)
+			fmt.Fprintf(&b, "export %s=%s\n", p.name, quoted)
 		}
 	}
 	return b.String()
+}
+
+// shellQuote wraps val in single quotes for bash/zsh and POSIX-compatible
+// shells. Any embedded single quote becomes `'\''` (close-quote, escaped
+// quote, reopen). fish uses the same single-quote behavior. Output is
+// always safe to embed verbatim in `export NAME=...` / `set -gx NAME ...`.
+func shellQuote(val, shell string) string {
+	// Single-quote escaping is uniform across bash/zsh/fish for this
+	// pattern. fish actually accepts double-quotes with `\$` escaping
+	// too, but single-quote is simpler and works in every case we emit.
+	if !strings.ContainsAny(val, "'") {
+		return "'" + val + "'"
+	}
+	return "'" + strings.ReplaceAll(val, "'", `'\''`) + "'"
 }
 
 func renderUnset(shell string) string {

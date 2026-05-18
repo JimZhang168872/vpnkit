@@ -31,7 +31,12 @@ func runInit(out io.Writer, opts runInitOpts) error {
 
 	fmt.Fprintln(out, "🛠️  vpnkit init")
 
-	// Step 0: if --force, back up any existing store before re-creating it.
+	// Step 0: if --force, back up the existing store AND remove the
+	// stale mihomo config.yaml. Without the YAML wipe, the next launch
+	// re-uses the OLD proxy-groups even though the store is empty —
+	// users get "I reset everything but mihomo still routes through
+	// my deleted subscription." The Step-2 branch below will then
+	// rebuild a fresh skeleton from the (now empty) store.
 	if opts.Force {
 		if _, err := os.Stat(p.VpnkitConfigFile()); err == nil {
 			// UnixNano so two init --force calls within the same second
@@ -43,6 +48,16 @@ func runInit(out io.Writer, opts runInitOpts) error {
 				return fmt.Errorf("back up existing store: %w", err)
 			}
 			fmt.Fprintf(out, "🗄️  backed up old store to %s\n", bak)
+		}
+		// Also stash the old mihomo config.yaml alongside, so a freshly
+		// generated skeleton can land cleanly without inheriting stale
+		// proxy/proxy-groups/rules sections.
+		if _, err := os.Stat(p.MihomoConfigFile()); err == nil {
+			bak := fmt.Sprintf("%s.bak.%d", p.MihomoConfigFile(), time.Now().UnixNano())
+			if err := os.Rename(p.MihomoConfigFile(), bak); err != nil {
+				return fmt.Errorf("back up old mihomo config.yaml: %w", err)
+			}
+			fmt.Fprintf(out, "🗄️  backed up old mihomo config.yaml to %s\n", bak)
 		}
 	}
 

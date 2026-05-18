@@ -13,6 +13,7 @@ import (
 	"vpnkit/internal/app"
 	"vpnkit/internal/localnodes"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/sources"
 	"vpnkit/internal/store"
 )
 
@@ -72,6 +73,13 @@ func dispatchLocalNodes(args []string) {
 		// nodes mihomo will refuse to dial.
 		if node.Port < 1 || node.Port > 65535 {
 			dieUserErr("port %d out of range (must be 1-65535)", node.Port)
+		}
+		// Block shell metacharacters in the URI's #fragment (which
+		// becomes node.Name). Users with `ss://...#$(whoami)` URIs
+		// would otherwise persist an unsafe name that downstream scripts
+		// might interpolate into shell commands.
+		if err := sources.ValidateNodeName(node.Name); err != nil {
+			dieUserErr("node name from URI fragment: %v", err)
 		}
 		if *groupFlag != "" {
 			node.Group = *groupFlag
@@ -214,21 +222,13 @@ func dispatchLocalNodes(args []string) {
 			k, v := parts[0], parts[1]
 			switch k {
 			case "name":
-				if v == "" {
-					dieUserErr("name cannot be empty")
-				}
-				// Reject control chars + maxlen. Reuse the same
-				// validation surface as new nodes/sources where possible.
-				// We don't apply the FULL validateSourceName here because
-				// node names historically allow `:`/`-`/etc. that group
-				// names don't — keep it narrow.
-				if len(v) > maxSourceNameLen {
-					dieUserErr("name too long (%d > %d chars)", len(v), maxSourceNameLen)
-				}
-				for _, r := range v {
-					if r < 0x20 || r == 0x7f {
-						dieUserErr("name contains control character (0x%02x)", r)
-					}
+				// sources.ValidateNodeName is the looser sibling of
+				// ValidateName — accepts emoji/space/parens (consistent
+				// with subscription feed names) but blocks shell
+				// metacharacters and control chars to defend against
+				// `$(whoami)` round-tripping through scripts.
+				if err := sources.ValidateNodeName(v); err != nil {
+					dieUserErr("%v", err)
 				}
 				// Duplicate (group, name) check — would otherwise create
 				// two `[[local_nodes]]` blocks with the same key, leaving

@@ -85,3 +85,31 @@ func ValidateName(name string) error {
 	}
 	return nil
 }
+
+// ValidateNodeName is a looser sibling of ValidateName for hand-entered
+// local-node names. Subscription feeds frequently use emoji, spaces and
+// parentheses ("🇯🇵 日本JP1", "美国直连(IEPL)", etc.) — accepting those
+// verbatim from feeds means CLI-added node names should ALSO allow them
+// for visual consistency. But shell metacharacters and control chars
+// are still rejected so a user-entered `$(whoami)` doesn't round-trip
+// into scripts.
+func ValidateNodeName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+	if len(name) > MaxNameLen {
+		return fmt.Errorf("name too long (%d > %d chars)", len(name), MaxNameLen)
+	}
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("name %q starts with `-` — looks like a CLI flag", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("name contains control character (0x%02x)", r)
+		}
+		if strings.ContainsRune(shellMetaChars, r) {
+			return fmt.Errorf("name contains shell metacharacter %q — unsafe for scripts that interpolate the name", r)
+		}
+	}
+	return nil
+}
