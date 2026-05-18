@@ -19,6 +19,13 @@ type groupSwitchMsg struct {
 	err   error
 }
 
+// delayErrMsg surfaces failures from the Groups tab `t` (delay test) cmd.
+// Success comes back as DelayResults — only errors take this path.
+type delayErrMsg struct {
+	group string
+	err   error
+}
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -151,6 +158,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r":
 				m.groupsTab.Refresh()
 				return m, nil
+			case "t":
+				// Trigger a group-wide delay test against the highlighted
+				// group. Async — the result lands as msg.DelayResults in the
+				// app-level handler below and is forwarded to groupsTab.
+				group := m.groupsTab.SelectedGroup()
+				if group == "" || m.apiClient == nil {
+					return m, nil
+				}
+				m.flash = "⏱  testing " + group + "…"
+				client := m.apiClient
+				return m, func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					defer cancel()
+					results, err := client.GroupDelay(ctx, group, "https://www.gstatic.com/generate_204", 5000)
+					if err != nil {
+						return delayErrMsg{group: group, err: err}
+					}
+					// Re-namespace to "<group>:<name>" so it matches what
+					// groups.View() keys on.
+					nsResults := make(map[string]int, len(results))
+					for n, d := range results {
+						nsResults[group+":"+n] = d
+					}
+					return DelayResults{Group: group, Results: nsResults}
+				}
 			case "enter":
 				// Switch the selected group's `now` to the highlighted node
 				// (only meaningful with right-pane focus, but allow from left
@@ -238,12 +270,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
-	case ProxiesSnapshot, DelayResults:
-		if snap, ok := msg.(ProxiesSnapshot); ok {
-			// Forward to groupsTab so it can mirror each group's `now` for
-			// the right-pane node highlight.
-			m.groupsTab, _ = m.groupsTab.Update(snap)
-		}
+	case ProxiesSnapshot:
+		// Forward to groupsTab so it can mirror each group's `now` for the
+		// right-pane node highlight.
+		m.groupsTab, _ = m.groupsTab.Update(v)
+	case DelayResults:
+		// Forward to groupsTab so per-node delay overlays render. Also
+		// clear the "⏱  testing …" flash that the `t` handler set.
+		m.groupsTab, _ = m.groupsTab.Update(v)
+		m.flash = fmt.Sprintf("✓ %s: tested %d nodes", v.Group, len(v.Results))
+		return m, nil
+	case delayErrMsg:
+		m.flash = "❌ delay " + v.group + ": " + v.err.Error()
+		return m, nil
 	case groupSwitchMsg:
 		if v.err != nil {
 			m.flash = "❌ " + v.group + " → " + v.node + ": " + v.err.Error()
