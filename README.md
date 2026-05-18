@@ -148,8 +148,7 @@ user-managed groups (e.g. `home`, `office`). Each enabled local group emits
 its own `<group>` (select) + `<group>-auto` (url-test) pair — exactly
 symmetric with subscriptions. Hand-entered nodes carry a `Via` field that
 writes through to mihomo's `dialer-proxy`, so you can build per-node
-chains directly in the form (Shadowrocket-style) without touching the
-extensions overlay.
+chains directly in the form (Shadowrocket-style).
 
 ```
 proxies: each node renamed "<group>:<original-name>" so cross-group
@@ -179,21 +178,17 @@ and stored at mode 0600 in `~/.config/vpnkit/config.toml`. The systemd-user
 unit is also mode 0600 to keep proxy credentials in `Environment=` lines off
 world-readable disk.
 
-## Extensions: chains & custom groups
+## Chained egress for local nodes
 
-Chain one subscription node through another (multi-hop egress, `dialer-proxy`)
-and add your own proxy-groups. Edits persist in
-`~/.config/vpnkit/extensions.toml` and survive subscription updates.
+Set `Via` on a local node (Sources › Local Nodes → `a` or `e`, last field of
+the form) to make mihomo dial through another proxy/group — equivalent to
+mihomo's `dialer-proxy` field. Stored on the node itself, so it survives
+subscription updates and travels with the node when you move it between
+local groups.
 
-```bash
-vpnkit chain set "US-1" "JP-Relay"        # US-1 egress now hops through JP-Relay
-vpnkit chain unset "US-1"
-vpnkit group add "Stream" --type select --proxies "US-1,JP-1,DIRECT"
-vpnkit ext apply                          # reassemble + reload mihomo
 ```
-
-In the TUI: Settings → Extensions. `c` toggles to Chains, `g` to Groups,
-`a/e/d` add/edit/delete the highlighted row, `r` reassembles + reloads.
+Via: doge-auto              # any subscription/local node name OR group name
+```
 
 ## CLI
 
@@ -215,9 +210,6 @@ In the TUI: Settings → Extensions. `c` toggles to Chains, `g` to Groups,
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
 | `vpnkit init [--force]` | regenerate config skeleton (`--force` backs up existing) |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
-| `vpnkit chain ls/set/unset` | manage dialer-proxy chains |
-| `vpnkit group ls/add/rm` | manage custom proxy-groups |
-| `vpnkit ext apply` | reassemble + reload mihomo with current extensions |
 
 All read commands accept `--json` for scripting. Exit codes: `0` ok,
 `1` user error, `2` runtime error.
@@ -232,18 +224,20 @@ All read commands accept `--json` for scripting. Exit codes: `0` ok,
 [5] 🔗 Connections    live connections (`x` close, `/` filter)
 [6] 📓 Logs           mihomo log tail
 [7] ⚙  Settings       Mihomo Core / Service / External Controller / Routing /
-                      Rule Template / Extensions / Cache / About sub-pages
+                      Rule Template / Cache / About sub-pages
 ```
 
 Keys:
 - `↑↓` navigate · `←` back / sidebar focus · `→` content focus / drill-in · `Enter` activate · `q` quit
 - `1`–`7` jump to tab · `Tab`/`Shift+Tab` cycle
 - **Sources › Subscriptions**: `a` add · `d` delete · `u` update now · `e` toggle enabled
-- **Sources › Local Nodes**: `a` add URI · `d` delete
+- **Sources › Local Nodes**: `a` add (proto-driven form) · `e` edit · `d` delete · `u` paste URI ·
+  `N`/`D`/`E`/`T` new/delete/rename/toggle group · `←/→` switch group (when no form open)
+- **Add/Edit Node form**: `Tab/↑↓` navigate fields · `Enter` save · `Esc` cancel ·
+  `←/→` on Proto field cycles ss / vmess / vless / trojan / hysteria2 / tuic
 - **Rules › Live**: `/` filter · `u` refresh providers · `Tab` switch to Local Rules
 - **Rules › Local Rules**: `d` delete · `K/J` move up/down · `Tab` back to Live
 - **Settings › Routing**: `↑↓ Enter` pick mode · global target editable via `vpnkit target`
-- **Settings → Extensions**: `c` chains / `g` groups · `a/e/d` add/edit/delete · `r` apply
 
 ## Layout
 
@@ -252,7 +246,6 @@ Keys:
 | `~/.local/bin/vpnkit` | this binary |
 | `~/.local/bin/mihomo` | managed mihomo core |
 | `~/.config/vpnkit/config.toml` | subscriptions, local nodes, local rules, ports, creds (schema v2) |
-| `~/.config/vpnkit/extensions.toml` | chains + custom proxy-groups overlay |
 | `~/.config/mihomo/config.yaml` | assembled mihomo config (regenerated on each mutation) |
 | `~/.config/mihomo/*.mmdb / *.dat` | GeoIP / GeoSite data files (pre-seeded by bootstrap) |
 | `~/.config/systemd/user/mihomo.service` | systemd-user unit (mode 0600; forwards your HTTPS_PROXY) |

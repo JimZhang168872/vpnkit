@@ -137,7 +137,7 @@ v1.0.0-rc.3 把之前单一的 `local` 组泛化为用户命名的多组（如 `
 `office`）。每个启用的本地组都生成自己的 `<group>` (select) + `<group>-auto`
 (url-test) — 跟订阅完全对称。手填节点带 `Via` 字段，直接写入 mihomo
 的 `dialer-proxy`，所以可以在表单里 inline 设置每节点链式代理
-（Shadowrocket 风格），不用额外动 extensions overlay。
+（Shadowrocket 风格）。
 
 ```
 proxies: 每个节点重命名 "<group>:<original-name>"，跨组重名不冲突
@@ -167,21 +167,16 @@ mihomo 三道锁：
 systemd-user unit 也是 mode 0600 — 防止 `Environment=` 里的代理凭据
 （含密码的 socks5://user:pass@…）被其他本地用户读到。
 
-## Extensions：链式代理 + 自定义代理组
+## 本地节点链式出站（Via 字段）
 
-把一个订阅节点串到另一个上游节点（多跳出站，mihomo `dialer-proxy`），或者
-新增自己的 proxy-group。配置存 `~/.config/vpnkit/extensions.toml`，**订阅更
-新不会丢**。
+Sources › Local Nodes 的 Add/Edit 表单最后一个字段就是 `Via`：填上任何
+mihomo 已知的代理名或代理组名，节点出站时会先走那个上游 —— 等价于 mihomo
+的 `dialer-proxy` 字段。Via 写在节点上，订阅更新不丢，节点在本地组之间
+移动时跟着走。
 
-```bash
-vpnkit chain set "US-1" "JP-Relay"        # US-1 出站先经过 JP-Relay
-vpnkit chain unset "US-1"
-vpnkit group add "Stream" --type select --proxies "US-1,JP-1,DIRECT"
-vpnkit ext apply                          # 重 assemble + reload mihomo
 ```
-
-TUI：Settings → Extensions。`c` chains，`g` groups。`a/e/d` 增/改/删，
-`r` 触发 reassemble + reload。
+Via: doge-auto              # 任何订阅/本地节点名 或 组名
+```
 
 ## 命令行
 
@@ -203,9 +198,6 @@ TUI：Settings → Extensions。`c` chains，`g` groups。`a/e/d` 增/改/删，
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | 升级 vpnkit + mihomo |
 | `vpnkit init [--force]` | 重建配置骨架（`--force` 会备份旧 store） |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | 停服务，删 vpnkit 全部文件 |
-| `vpnkit chain ls/set/unset` | 管理 dialer-proxy 链 |
-| `vpnkit group ls/add/rm` | 管理自定义代理组 |
-| `vpnkit ext apply` | 用当前 extensions 重 assemble + reload mihomo |
 
 只读命令接受 `--json`。退出码：`0` 成功、`1` 用户错、`2` 运行时错。
 
@@ -219,18 +211,20 @@ TUI：Settings → Extensions。`c` chains，`g` groups。`a/e/d` 增/改/删，
 [5] 🔗 Connections    实时连接（`x` 关、`/` 过滤）
 [6] 📓 Logs           mihomo 日志
 [7] ⚙  Settings       Mihomo Core / Service / External Controller / Routing /
-                       Rule Template / Extensions / Cache / About 子页
+                       Rule Template / Cache / About 子页
 ```
 
 按键：
 - `↑↓` 移动 · `←` 退/sidebar focus · `→` content focus / 进 · `Enter` 激活 · `q` 退出
 - `1`-`7` 跳 tab · `Tab`/`Shift+Tab` 循环
 - **Sources › Subscriptions**：`a` 添加 · `d` 删 · `u` 拉一次 · `e` 启/禁
-- **Sources › Local Nodes**：`a` 粘 URI · `d` 删
+- **Sources › Local Nodes**：`a` 添加（proto 表单）· `e` 编辑 · `d` 删 · `u` 粘 URI ·
+  `N`/`D`/`E`/`T` 新建/删/重命名/启停 group · `←/→` 切换 group（无表单时）
+- **添加/编辑节点表单**：`Tab/↑↓` 切字段 · `Enter` 保存 · `Esc` 取消 ·
+  Proto 字段上按 `←/→` 循环 ss / vmess / vless / trojan / hysteria2 / tuic
 - **Rules › Live**：`/` 过滤 · `u` 刷新 providers · `Tab` 切 Local Rules
 - **Rules › Local Rules**：`d` 删 · `K/J` 上下移 · `Tab` 切回 Live
 - **Settings › Routing**：`↑↓ Enter` 选模式；global target 走 CLI 改
-- **Settings → Extensions**：`c` chains / `g` groups · `a/e/d` 增/改/删 · `r` 应用
 
 ## 目录布局
 
@@ -239,7 +233,6 @@ TUI：Settings → Extensions。`c` chains，`g` groups。`a/e/d` 增/改/删，
 | `~/.local/bin/vpnkit` | 本程序 |
 | `~/.local/bin/mihomo` | 受管 mihomo |
 | `~/.config/vpnkit/config.toml` | 订阅、本地节点、本地规则、端口、凭据（schema v2） |
-| `~/.config/vpnkit/extensions.toml` | 链式代理 + 自定义代理组覆盖层 |
 | `~/.config/mihomo/config.yaml` | 组装的 mihomo 配置（每次 mutation 重写） |
 | `~/.config/mihomo/*.mmdb / *.dat` | GeoIP / GeoSite 数据（bootstrap 预下） |
 | `~/.config/systemd/user/mihomo.service` | systemd-user unit（mode 0600；转发 HTTPS_PROXY） |

@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.0.0-rc.4 — 2026-05-18
+
+### Fixed
+
+- **Local Nodes `[e]` edit**: rc.3 advertised `[e] edit` in the list help
+  but the Update handler had no case for it, so pressing `e` did nothing.
+  Now opens the proto-driven form pre-filled with the highlighted node's
+  current values; save updates the node in place (rename supported, name
+  collision rolls back).
+
+### Changed
+
+- **Add/Edit Local Node form shortcuts** moved off `Ctrl+P` / `Ctrl+U`
+  (potential terminal conflicts). New scheme:
+  - Proto field has focus → `←/→` cycles through ss / vmess / vless /
+    trojan / hysteria2 / tuic. Common fields (name, group, server, port,
+    via) carry over across proto changes.
+  - URI paste mode is entered from the list with `u` (unchanged).
+
+### Removed
+
+- **Settings → Extensions sub-page** and the `internal/extensions` package:
+  chain proxies are now first-class on local nodes via the `Via` field, and
+  the user opted out of the custom-`proxy-group` builder UI.
+  `~/.config/vpnkit/extensions.toml` on disk is silently ignored; safe to
+  delete manually.
+- **CLI**: `vpnkit chain`, `vpnkit group`, `vpnkit ext` subcommands.
+- **API**: `app.NewPipeline` signature is now `(st, configYAMLPath)` — the
+  trailing `extensionsPath` argument is gone.
+
+---
+
 ## v1.0.0-rc.3 — 2026-05-18
 
 ### Added
