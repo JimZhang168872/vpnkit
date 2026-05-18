@@ -79,6 +79,9 @@ func main() {
 		case "target":
 			dispatchTarget(os.Args[2:])
 			return
+		case "active":
+			dispatchActive(os.Args[2:])
+			return
 		}
 	}
 	if err := app.Run(version); err != nil {
