@@ -22,8 +22,10 @@ type stubPipeline struct {
 func (s *stubPipeline) RefreshSubscription(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
-func (s *stubPipeline) Assemble() error  { return nil }
-func (s *stubPipeline) SaveLocal() error { return nil }
+func (s *stubPipeline) Assemble() error              { return nil }
+func (s *stubPipeline) SaveLocal() error             { return nil }
+func (s *stubPipeline) SetMode(_ string) error       { return nil }
+func (s *stubPipeline) RegenerateControllerSecret() error { return nil }
 func (s *stubPipeline) ActiveSource() string {
 	return s.current
 }

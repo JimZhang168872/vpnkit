@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"vpnkit/internal/netx"
 )
 
 // defaultUA mimics a recent mihomo build's outbound UA. Many subscription
@@ -42,7 +44,18 @@ func Fetch(ctx context.Context, url, ua string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", ua)
-	resp, err := http.DefaultClient.Do(req)
+	// Use SmartClient: it auto-falls-back to NoProxyClient when no env
+	// proxy is set or when the env proxy is unreachable. Critical here
+	// because users frequently have `HTTPS_PROXY=http://127.0.0.1:7890`
+	// (mihomo's mixed-port) exported in their shell. With
+	// http.DefaultClient, subscription fetches would route through
+	// mihomo — but mihomo's first launch needs subscriptions to load,
+	// and mihomo may be down / bootstrapping / waiting on the very
+	// subscription we're fetching. Result: confusing "connection refused"
+	// chain that's actually "loop through self." SmartClient probes the
+	// proxy first and falls back to direct connection on failure.
+	client := netx.SmartClient(0)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

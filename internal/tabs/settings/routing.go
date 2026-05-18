@@ -13,18 +13,21 @@ import (
 // It exposes: Mode (Rule/Global/Direct) and Global Target.
 type routingModel struct {
 	st        *store.Store
+	pl        PipelineFace
 	applyFunc func() error
 
 	// cursor: 0 = Mode row, 1+ = GlobalTarget rows.
 	cursor   int
 	modeOpts []string
 	numModes int
+	flash    string // surfaces Save / apply errors
 }
 
-func newRouting(st *store.Store, applyFunc func() error) routingModel {
+func newRouting(st *store.Store, pl PipelineFace, applyFunc func() error) routingModel {
 	modes := []string{"rule", "global", "direct"}
 	return routingModel{
 		st:        st,
+		pl:        pl,
 		applyFunc: applyFunc,
 		modeOpts:  modes,
 		numModes:  len(modes),
@@ -49,13 +52,21 @@ func (m routingModel) Update(message tea.Msg) (routingModel, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter", " ":
-			// Selecting a mode row sets Mode.
-			if m.cursor < m.numModes {
-				m.st.Cfg.Mode = m.modeOpts[m.cursor]
-				_ = m.st.Save()
-				if m.applyFunc != nil {
-					_ = m.applyFunc()
+			// Route the mutation through Pipeline so it serializes under
+			// p.mu — direct store.Cfg writes race with concurrent Assemble.
+			if m.cursor < m.numModes && m.pl != nil {
+				mode := m.modeOpts[m.cursor]
+				if err := m.pl.SetMode(mode); err != nil {
+					m.flash = "❌ save mode: " + err.Error()
+					return m, nil
 				}
+				if m.applyFunc != nil {
+					if err := m.applyFunc(); err != nil {
+						m.flash = "⚠️  mode saved, mihomo reload failed: " + err.Error()
+						return m, nil
+					}
+				}
+				m.flash = "✅ mode → " + mode
 			}
 		}
 	}
@@ -119,6 +130,9 @@ func (m routingModel) ViewFocused(width, height int, focused bool) string {
 		lipgloss.NewStyle().Faint(true).Render("  (edit via `vpnkit target set <name>` CLI)"),
 	)
 
+	if m.flash != "" {
+		rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(m.flash))
+	}
 	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] navigate  [Enter/Space] select"))
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).
 		Render(strings.Join(rows, "\n"))

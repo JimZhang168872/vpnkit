@@ -8,7 +8,25 @@ import (
 	"testing"
 )
 
+// clearProxyEnv removes HTTP(S)_PROXY/ALL_PROXY env vars for the test's
+// lifetime. Required because Fetch uses netx.SmartClient which honors
+// these vars when reachable — the dev machine often has them pointing
+// at a local mihomo on a non-test port, and SmartClient then routes the
+// httptest server's request through that proxy, which can't reach the
+// test's loopback address and times out.
+func clearProxyEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"HTTP_PROXY", "http_proxy",
+		"HTTPS_PROXY", "https_proxy",
+		"ALL_PROXY", "all_proxy",
+	} {
+		t.Setenv(k, "")
+	}
+}
+
 func TestFetchSendsUA(t *testing.T) {
+	clearProxyEnv(t)
 	var seenUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenUA = r.Header.Get("User-Agent")
@@ -35,6 +53,7 @@ func TestFetchSendsUA(t *testing.T) {
 // return the real proxy list. Don't pin the exact version (it'll age
 // faster than the codebase), just enforce the `mihomo/` prefix.
 func TestFetchDefaultUAIsMihomoFamily(t *testing.T) {
+	clearProxyEnv(t)
 	var seenUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenUA = r.Header.Get("User-Agent")
@@ -50,6 +69,7 @@ func TestFetchDefaultUAIsMihomoFamily(t *testing.T) {
 }
 
 func TestFetchHTTPError(t *testing.T) {
+	clearProxyEnv(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))

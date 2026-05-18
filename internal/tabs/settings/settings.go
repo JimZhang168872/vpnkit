@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"vpnkit/internal/api"
+	"vpnkit/internal/msg"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
@@ -65,6 +66,11 @@ type PipelineFace interface {
 	// rc.7 active-source picker (Settings → Active Source sub-page).
 	ActiveSource() string
 	SetActiveSource(name string) error
+	// Routing knobs — routed through Pipeline so mutation is serialized
+	// under p.mu. Direct store.Cfg mutation from the TUI goroutine races
+	// with concurrent Assemble().
+	SetMode(mode string) error
+	RegenerateControllerSecret() error
 }
 
 // Deps are wires for sub-pages.
@@ -120,10 +126,10 @@ func New(deps Deps) Model {
 		about:      newAbout(),
 		cache:      newCache(deps.Paths),
 		rules:      newRules(deps.Store),
-		controller: newController(deps.Store),
+		controller: newController(deps.Store, deps.Pipeline),
 		service:    newService(deps.Service),
 		core:       newCore(deps.Paths, deps.Store),
-		routing:    newRouting(deps.Store, deps.ApplyFunc),
+		routing:    newRouting(deps.Store, deps.Pipeline, deps.ApplyFunc),
 		active:     newActive(deps.Store, deps.Pipeline, deps.ApplyFunc),
 	}
 }
@@ -174,6 +180,13 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
+	// Service status is pushed by an app-level poller and must reach the
+	// service sub-page regardless of which page is currently focused.
+	// Without this, the user navigating to Service from Core sees stale
+	// status because the snapshot was dropped while Core was active.
+	if _, ok := message.(msg.ServiceStatus); ok {
+		m.service, _ = m.service.Update(message)
+	}
 	switch m.current {
 	case SubAbout:
 		m.about, cmd = m.about.Update(message)

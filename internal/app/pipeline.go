@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -323,6 +325,34 @@ func (p *Pipeline) ActiveSource() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.store.Cfg.ActiveSource
+}
+
+// SetMode persists the routing mode ("rule" / "global" / "direct")
+// under p.mu so concurrent reads from Assemble see a consistent value.
+// Without this, the Settings → Routing TUI tab mutated store.Cfg.Mode
+// on the bubbletea goroutine while a background Assemble() running
+// under p.mu read the same field — race-detector flag and torn state
+// possible.
+func (p *Pipeline) SetMode(mode string) error {
+	p.mu.Lock()
+	p.store.Cfg.Mode = mode
+	p.mu.Unlock()
+	return p.store.Save()
+}
+
+// RegenerateControllerSecret rolls a fresh 32-char hex token into
+// store.Cfg.ControllerSecret under p.mu. Mihomo doesn't pick it up
+// until the next service restart — caller's responsibility to surface
+// that nuance to the user. Same concurrency reasoning as SetMode.
+func (p *Pipeline) RegenerateControllerSecret() error {
+	buf := make([]byte, 16)
+	if _, err := cryptorand.Read(buf); err != nil {
+		return fmt.Errorf("rand: %w", err)
+	}
+	p.mu.Lock()
+	p.store.Cfg.ControllerSecret = hex.EncodeToString(buf)
+	p.mu.Unlock()
+	return p.store.Save()
 }
 
 // SourceKind labels `name` as "subscription", "local", or "(unknown)".

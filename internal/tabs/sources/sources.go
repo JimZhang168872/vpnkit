@@ -603,7 +603,9 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 						}
 						m.flash = "added " + n.Group + ":" + n.Name
 					}
-					_ = m.deps.Pipeline.SaveLocal()
+					if err := m.deps.Pipeline.SaveLocal(); err != nil {
+						m.flash = "save: " + err.Error()
+					}
 					m.nodes = mgr.All()
 					m.form = nil
 					return m, emitPipelineMutated()
@@ -656,7 +658,9 @@ func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
 						}
 						m.flash = "added node"
 						m.nodes = pl.LocalNodes().All()
-						_ = pl.SaveLocal()
+						if err := pl.SaveLocal(); err != nil {
+							m.flash = "save: " + err.Error()
+						}
 						m.form = nil
 						return m, emitPipelineMutated()
 					}
