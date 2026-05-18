@@ -658,6 +658,17 @@ func (p *Pipeline) RenameLocalGroup(oldName, newName string) error {
 			return fmt.Errorf("local group %q already exists", newName)
 		}
 	}
+	// Cross-namespace collision: rename used to bypass the same-name
+	// check that AddSubscription / AddLocalGroup enforce. A user could
+	// add local group `foo`, then rename it to match an existing
+	// subscription `bar`, and end up with both colliding in the
+	// assembled proxy-groups namespace. Re-apply the guard here.
+	for _, s := range p.store.Cfg.Subscriptions {
+		if s.Name == newName {
+			p.mu.Unlock()
+			return fmt.Errorf("name %q already used by a subscription — sources share the routing namespace, pick a different name", newName)
+		}
+	}
 	idx := -1
 	for i, g := range p.store.Cfg.LocalNodeGroups {
 		if g.Name == oldName {

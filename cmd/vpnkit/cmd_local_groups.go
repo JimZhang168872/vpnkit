@@ -94,6 +94,11 @@ func dispatchLocalGroups(args []string) {
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-groups rename <old> <new>")
 		}
+		// Same validation as `local-groups add` — pre-rc.7 rename was a
+		// loophole around every guard (reserved names, cross-namespace).
+		if err := validateSourceName(rest[1]); err != nil {
+			dieUserErr("%v", err)
+		}
 		if err := pl.RenameLocalGroup(rest[0], rest[1]); err != nil {
 			dieUserErr("%v", err)
 		}

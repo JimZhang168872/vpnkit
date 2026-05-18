@@ -7,16 +7,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type aboutModel struct{}
+type aboutModel struct {
+	version string // vpnkit ldflags-baked version, or "dev" / "" in source builds
+}
 
-func newAbout() aboutModel { return aboutModel{} }
+func newAbout(version string) aboutModel {
+	if version == "" {
+		version = "dev"
+	}
+	return aboutModel{version: version}
+}
 
 func (m aboutModel) Update(tea.Msg) (aboutModel, tea.Cmd) { return m, nil }
 
 func (m aboutModel) View(width, height int) string {
 	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Render("About")
 	body := header + "\n\n" +
-		"  vpnkit — TUI for managing the mihomo proxy core (non-root).\n" +
+		"  vpnkit " + m.version + " — TUI for managing the mihomo proxy core (non-root).\n" +
 		"\n" +
 		"  Built with Go " + runtime.Version() + " · bubbletea · lipgloss.\n" +
 		"  License: MIT (vpnkit) · GPL-3.0 (mihomo upstream).\n" +

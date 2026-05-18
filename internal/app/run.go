@@ -95,6 +95,7 @@ func Run(version string) error {
 		Service:   svc,
 		APIClient: client,
 		Pipeline:  pl,
+		Version:   version,
 		ApplyFunc: func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

@@ -40,13 +40,14 @@ func main() {
 		case "ip":
 			dispatchIP(os.Args[2:])
 			return
-		// Mutation verbs hold a POSIX flock on the config so concurrent
-		// `vpnkit X &` workers can't race read-modify-write of the
-		// config.toml. Read-only verbs (status/ip/groups/nodes/env) skip
-		// the lock — they tolerate stale snapshots and contention would
-		// only slow them down.
+		// Verbs that mutate the config file hold a POSIX flock on the
+		// config so concurrent `vpnkit X &` workers can't race
+		// read-modify-write. Read-only subverbs (`list`, `ls`, no-arg
+		// `target` / `active` / `mode` show forms) bypass the lock to
+		// avoid starving when a long mutation runs — they tolerate
+		// reading slightly-stale state.
 		case "mode":
-			withStoreLock(func() { dispatchMode(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchMode(os.Args[2:]) })
 			return
 		case "groups":
 			dispatchGroups(os.Args[2:])
@@ -70,22 +71,22 @@ func main() {
 			dispatchUpdate(os.Args[2:])
 			return
 		case "subs":
-			withStoreLock(func() { dispatchSubs(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchSubs(os.Args[2:]) })
 			return
 		case "local-groups":
-			withStoreLock(func() { dispatchLocalGroups(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchLocalGroups(os.Args[2:]) })
 			return
 		case "local-nodes":
-			withStoreLock(func() { dispatchLocalNodes(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchLocalNodes(os.Args[2:]) })
 			return
 		case "local-rules":
-			withStoreLock(func() { dispatchLocalRules(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchLocalRules(os.Args[2:]) })
 			return
 		case "target":
-			withStoreLock(func() { dispatchTarget(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchTarget(os.Args[2:]) })
 			return
 		case "active":
-			withStoreLock(func() { dispatchActive(os.Args[2:]) })
+			lockIfMutating(os.Args[2:], func() { dispatchActive(os.Args[2:]) })
 			return
 		default:
 			// CL4 from QA: unknown verbs used to drop into the TUI which

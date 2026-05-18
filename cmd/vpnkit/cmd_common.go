@@ -25,6 +25,28 @@ func loadClient() (*api.Client, *store.Store, error) {
 	return api.New(url, st.Cfg.ControllerSecret), st, nil
 }
 
+// lockIfMutating is a wrapper that only acquires the store flock when
+// args[0] indicates a mutation. Read-only subverbs (`list`/`ls`, no-arg
+// show forms of `target`/`active`/`mode`) bypass the lock so they don't
+// starve when a long-running mutation holds the exclusive lock.
+//
+// Heuristic: if args is empty (= show form of a verb that supports it)
+// OR args[0] is "list"/"ls"/"show", treat as read-only. Otherwise lock.
+func lockIfMutating(args []string, fn func()) {
+	if len(args) == 0 {
+		fn()
+		return
+	}
+	switch args[0] {
+	case "list", "ls", "show", "--json":
+		// "--json" alone (`subs --json`) means "list as JSON" for the
+		// list-default verbs. Read-only.
+		fn()
+		return
+	}
+	withStoreLock(fn)
+}
+
 // withStoreLock acquires a POSIX advisory lock on the config file before
 // invoking fn, and releases it after. Used to serialize CLI mutators so
 // concurrent `vpnkit subs add &` workers don't race their read-modify-

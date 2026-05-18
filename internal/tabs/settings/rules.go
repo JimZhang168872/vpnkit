@@ -18,6 +18,7 @@ type rulesModel struct {
 	store *store.Store
 	list  []string
 	idx   int
+	flash string
 }
 
 func newRules(s *store.Store) rulesModel {
@@ -51,7 +52,11 @@ func (m rulesModel) Update(message tea.Msg) (rulesModel, tea.Cmd) {
 	case "enter", " ":
 		if m.store != nil && m.idx < len(m.list) {
 			m.store.Cfg.LegacyRuleTemplate = m.list[m.idx]
-			_ = m.store.Save()
+			if err := m.store.Save(); err != nil {
+				m.flash = "❌ save template: " + err.Error()
+			} else {
+				m.flash = "✅ template → " + m.list[m.idx]
+			}
 		}
 	}
 	return m, nil
@@ -89,6 +94,9 @@ func (m rulesModel) ViewFocused(width, height int, focused bool) string {
 		} else {
 			rows = append(rows, "  "+line)
 		}
+	}
+	if m.flash != "" {
+		rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render(m.flash))
 	}
 	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] navigate  [Enter/Space] select"))
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).

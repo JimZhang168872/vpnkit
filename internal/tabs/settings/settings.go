@@ -86,6 +86,7 @@ type Deps struct {
 	Service   service.Manager
 	APIClient *api.Client
 	Pipeline  PipelineFace // v1 multi-source pipeline; nil until wired in run.go
+	Version   string       // vpnkit ldflags version — rendered on About sub-page
 	ApplyFunc func() error // reassemble + reload mihomo; nil in tests
 }
 
@@ -129,7 +130,7 @@ func (m Model) InputOpen() bool { return false }
 func New(deps Deps) Model {
 	return Model{
 		deps:       deps,
-		about:      newAbout(),
+		about:      newAbout(deps.Version),
 		cache:      newCache(deps.Paths),
 		rules:      newRules(deps.Store),
 		controller: newController(deps.Store, deps.Pipeline),

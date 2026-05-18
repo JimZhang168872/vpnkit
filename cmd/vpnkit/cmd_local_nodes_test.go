@@ -255,30 +255,34 @@ func TestLocalNodesAddFlagFirstOrder(t *testing.T) {
 	}
 }
 
-func TestLocalNodesMvAutoCreatesTargetGroup(t *testing.T) {
+// TestLocalNodesMvRejectsUnknownGroup — round-2 QA found that mv to a
+// nonexistent group used to silently auto-create it, which let a typo
+// birth a phantom group that escaped every reserved-name / cross-
+// namespace guard (`mv n1 DIRECT` would create a `DIRECT` local-group).
+// Now it must reject explicitly so users `local-groups add` first.
+func TestLocalNodesMvRejectsUnknownGroup(t *testing.T) {
 	_, restore := initEnv(t)
 	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
 	var buf bytes.Buffer
 	if err := runInit(&buf, runInitOpts{}); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	dispatchLocalGroups([]string{"add", "home"})
 	dispatchLocalNodes([]string{"add", "ss://YWVzLTI1Ni1nY206TXlQYXNzMTIz@1.2.3.4:8388#HK-A", "--group=home"})
-	// mv to a group that does NOT exist yet.
-	dispatchLocalNodes([]string{"mv", "HK-A", "freshgroup"})
+	mustPanicWith(t, "does not exist", func() {
+		dispatchLocalNodes([]string{"mv", "HK-A", "freshgroup"})
+	})
+	// Verify node was NOT moved and group was NOT created.
 	st, _ := store.Load(paths.Resolve().VpnkitConfigFile())
-	if st.Cfg.LocalNodes[0].Group != "freshgroup" {
-		t.Errorf("Group not set: %+v", st.Cfg.LocalNodes[0])
+	if st.Cfg.LocalNodes[0].Group != "home" {
+		t.Errorf("Group should remain home after failed mv: %+v", st.Cfg.LocalNodes[0])
 	}
-	hasFresh := false
 	for _, g := range st.Cfg.LocalNodeGroups {
 		if g.Name == "freshgroup" {
-			hasFresh = true
-			break
+			t.Errorf("freshgroup must NOT be auto-created: %+v", st.Cfg.LocalNodeGroups)
 		}
-	}
-	if !hasFresh {
-		t.Errorf("expected auto-created 'freshgroup', got %+v", st.Cfg.LocalNodeGroups)
 	}
 }
 

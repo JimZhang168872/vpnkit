@@ -67,6 +67,12 @@ func dispatchLocalNodes(args []string) {
 		if err != nil {
 			dieUserErr("parse: %v", err)
 		}
+		// ParseURI accepts port 0 / 65536+ via net/url's lax parse —
+		// reject explicitly so the assembled YAML doesn't contain
+		// nodes mihomo will refuse to dial.
+		if node.Port < 1 || node.Port > 65535 {
+			dieUserErr("port %d out of range (must be 1-65535)", node.Port)
+		}
 		if *groupFlag != "" {
 			node.Group = *groupFlag
 		} else {
@@ -140,15 +146,11 @@ func dispatchLocalNodes(args []string) {
 			dieUserErr("local node %q not found", rest[0])
 		}
 		newGroup := rest[1]
-		for i := range st.Cfg.LocalNodes {
-			if st.Cfg.LocalNodes[i].Name == name && st.Cfg.LocalNodes[i].Group == group {
-				st.Cfg.LocalNodes[i].Group = newGroup
-				break
-			}
-		}
-		// Auto-create the target group if it doesn't exist, so the node
-		// doesn't end up orphaned (the assembler would skip a node whose
-		// Group has no matching LocalNodeGroup entry).
+		// Require the target group to exist explicitly. Auto-creating
+		// (pre-rc.7) meant a typo in the group name silently birthed a
+		// brand-new group that escaped every reserved-name / cross-
+		// namespace guard — `mv n1 DIRECT` would happily create a
+		// `DIRECT` local-group.
 		hasGroup := false
 		targetEnabled := true
 		for _, g := range st.Cfg.LocalNodeGroups {
@@ -159,14 +161,18 @@ func dispatchLocalNodes(args []string) {
 			}
 		}
 		if !hasGroup {
-			st.Cfg.LocalNodeGroups = append(st.Cfg.LocalNodeGroups, store.LocalNodeGroup{
-				Name: newGroup, Enabled: true,
-			})
+			dieUserErr("destination group %q does not exist — create it first with `vpnkit local-groups add %s`", newGroup, newGroup)
+		}
+		for i := range st.Cfg.LocalNodes {
+			if st.Cfg.LocalNodes[i].Name == name && st.Cfg.LocalNodes[i].Group == group {
+				st.Cfg.LocalNodes[i].Group = newGroup
+				break
+			}
 		}
 		// Warn (not refuse) when moving into a disabled group — node
 		// becomes unroutable until the group is re-enabled. Without this
 		// the user gets silent "why isn't my node showing up" later.
-		if hasGroup && !targetEnabled {
+		if !targetEnabled {
 			fmt.Fprintf(os.Stderr, "⚠️  group %q is disabled — node %q is now unroutable until you `vpnkit local-groups enable %s`\n",
 				newGroup, name, newGroup)
 		}
@@ -217,6 +223,9 @@ func dispatchLocalNodes(args []string) {
 				p, err := strconv.Atoi(v)
 				if err != nil {
 					dieUserErr("port must be int: %v", err)
+				}
+				if p < 1 || p > 65535 {
+					dieUserErr("port %d out of range (must be 1-65535)", p)
 				}
 				target.Port = p
 			default:

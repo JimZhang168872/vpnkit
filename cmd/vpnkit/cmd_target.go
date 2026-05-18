@@ -59,11 +59,17 @@ func validateTarget(st *store.Store, target string) error {
 	}
 	for _, s := range st.Cfg.Subscriptions {
 		if s.Name == base {
+			if !s.Enabled {
+				return fmt.Errorf("subscription %q is disabled — enable it first (`vpnkit subs enable %s`) or pick a different target", base, base)
+			}
 			return nil
 		}
 	}
 	for _, g := range st.Cfg.LocalNodeGroups {
 		if g.Name == base {
+			if !g.Enabled {
+				return fmt.Errorf("local group %q is disabled — enable it first (`vpnkit local-groups enable %s`) or pick a different target", base, base)
+			}
 			return nil
 		}
 	}

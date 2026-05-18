@@ -505,6 +505,15 @@ func (m *localNodesModel) filteredNodes() []localnodes.Node {
 func (m localNodesModel) formOpen() bool { return m.form != nil }
 
 func (m localNodesModel) Update(message tea.Msg) (localNodesModel, tea.Cmd) {
+	// Auto-clear the in-body flash on every keystroke that arrives
+	// while no form is open. Without this, success messages like
+	// "added node" stuck in the right pane indefinitely (QA r2
+	// HIGH-2). Setting a NEW flash AFTER this point inside the same
+	// Update call overwrites the cleared value, so the action's own
+	// message remains visible for one frame.
+	if _, isKey := message.(tea.KeyMsg); isKey && m.form == nil {
+		m.flash = ""
+	}
 	if m.form != nil {
 		if km, ok := message.(tea.KeyMsg); ok {
 			switch m.form.mode {

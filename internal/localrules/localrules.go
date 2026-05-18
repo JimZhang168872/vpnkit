@@ -6,6 +6,8 @@ package localrules
 import (
 	"errors"
 	"fmt"
+	"net"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -75,6 +77,59 @@ func Validate(r Rule) error {
 	}
 	if r.Target == "" {
 		return errors.New("localrules: target required")
+	}
+	// Reject embedded control characters in payload/target — they break
+	// the emitted YAML and lead to opaque mihomo reload failures. Each
+	// rule is a single line, so any raw \n / \r / \t in payload would
+	// split the rule mid-emission and the rest of the file would be
+	// rejected as a parse error.
+	for _, s := range []string{r.Payload, r.Target} {
+		for _, c := range s {
+			if (c < 0x20 && c != 0) || c == 0x7f {
+				return fmt.Errorf("localrules: control character (0x%02x) in payload/target", c)
+			}
+		}
+	}
+	// Per-type payload validation — catches garbage at add time rather
+	// than after mihomo refuses to reload the whole config later.
+	switch r.Type {
+	case "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR":
+		if _, _, err := net.ParseCIDR(r.Payload); err != nil {
+			return fmt.Errorf("localrules: %s payload %q is not a valid CIDR: %v", r.Type, r.Payload, err)
+		}
+	case "DOMAIN-REGEX":
+		if _, err := regexp.Compile(r.Payload); err != nil {
+			return fmt.Errorf("localrules: DOMAIN-REGEX payload %q is not a valid regexp: %v", r.Payload, err)
+		}
+	case "DST-PORT", "SRC-PORT":
+		if err := validatePortPayload(r.Payload); err != nil {
+			return fmt.Errorf("localrules: %s: %v", r.Type, err)
+		}
+	}
+	return nil
+}
+
+// validatePortPayload accepts "80" or "80-443"; rejects non-numeric and
+// out-of-range values.
+func validatePortPayload(p string) error {
+	parts := strings.SplitN(p, "-", 2)
+	for _, part := range parts {
+		if part == "" {
+			return fmt.Errorf("empty port component in %q", p)
+		}
+		n := 0
+		for _, c := range part {
+			if c < '0' || c > '9' {
+				return fmt.Errorf("port %q not numeric", part)
+			}
+			n = n*10 + int(c-'0')
+			if n > 65535 {
+				return fmt.Errorf("port %s out of range (1-65535)", part)
+			}
+		}
+		if n < 1 {
+			return fmt.Errorf("port %s out of range (1-65535)", part)
+		}
 	}
 	return nil
 }
