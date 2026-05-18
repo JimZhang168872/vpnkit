@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"vpnkit/internal/app"
 	"vpnkit/internal/localrules"
 	"vpnkit/internal/paths"
 	"vpnkit/internal/store"
@@ -22,6 +23,8 @@ func dispatchLocalRules(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit local-rules: %v", err)
 	}
+	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	mutated := false
 	switch sub {
 	case "list", "ls":
 		jsonOut := false
@@ -43,6 +46,7 @@ func dispatchLocalRules(args []string) {
 		if err := st.Save(); err != nil {
 			dieRuntime("%v", err)
 		}
+		mutated = true
 	case "rm", "remove":
 		if len(rest) < 1 {
 			dieUserErr("usage: vpnkit local-rules rm <idx>")
@@ -57,6 +61,7 @@ func dispatchLocalRules(args []string) {
 		if err := st.Save(); err != nil {
 			dieRuntime("%v", err)
 		}
+		mutated = true
 	case "move":
 		if len(rest) < 2 {
 			dieUserErr("usage: vpnkit local-rules move <from> <to>")
@@ -75,8 +80,12 @@ func dispatchLocalRules(args []string) {
 		if err := st.Save(); err != nil {
 			dieRuntime("%v", err)
 		}
+		mutated = true
 	default:
 		dieUserErr("vpnkit local-rules: unknown verb %q", sub)
+	}
+	if mutated {
+		applyMutation(pl)
 	}
 }
 

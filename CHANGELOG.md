@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **Sources mutations didn't reload mihomo** (the bug behind `❌ delay
+  Local: group "Local" not found in /proxies`). TUI Sources tab CRUD
+  (subscription add/rm/enable/disable/update, local-node add/rm/edit/mv,
+  local-group add/rm/enable/disable/rename) wrote the store to disk but
+  never regenerated `~/.config/mihomo/config.yaml` and never reloaded
+  the running mihomo. Result: every subsequent `vpnkit use` /
+  `vpnkit test` / TUI `t` got a 404 from the mihomo controller because
+  the new group/node didn't exist in mihomo's runtime state.
+  - TUI `PipelineMutatedMsg` handler now invokes `applyCfg` async after
+    every Sources mutation, with `⏳ reloading mihomo…` → `✓ mihomo
+    reloaded` / `❌ apply: …` flash.
+  - CLI `vpnkit subs / local-groups / local-nodes / local-rules` each
+    call the new `applyMutation` helper at the end of mutating verbs.
+    Best-effort reload — if mihomo isn't running, the new config.yaml
+    is still written to disk and picked up on next launch (with a
+    stderr note so the user knows the reload was skipped).
 - **Proxy URI parse failure when password contains literal `/`**. Real-world
   hysteria2 / trojan URIs from gulujili.xyz and other providers ship the
   password with unescaped `/` (RFC 3986 says `%2F`, but lenient form is

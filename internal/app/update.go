@@ -26,6 +26,12 @@ type delayErrMsg struct {
 	err   error
 }
 
+// pipelineAppliedMsg reports the outcome of the async applyCfg fired after
+// every Sources tab mutation. Drives the success/error flash.
+type pipelineAppliedMsg struct {
+	err error
+}
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -298,11 +304,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case LogLine:
 		m.logsTab, _ = m.logsTab.Update(msg)
 	case tabsources.PipelineMutatedMsg:
-		// Sources tab mutated the pipeline state (subscription/local-node
-		// added/removed/refreshed/toggled). Refresh Groups so its sub/node
-		// counts and node lists reflect the change. Other tabs read live
-		// from the pipeline closures and need no nudge.
+		// Sources mutations (subs / local-node / local-group CRUD) change
+		// the assembled mihomo config — must rewrite config.yaml AND
+		// reload (or restart) the running mihomo, else the controller has
+		// no idea about the new group / node, and follow-up actions like
+		// delay test or `Enter` to switch will fail with 404. The flash
+		// reports the apply outcome so the user can tell things landed.
 		m.groupsTab.Refresh()
+		if m.applyCfg == nil {
+			return m, nil
+		}
+		applyCfg := m.applyCfg
+		m.flash = "⏳ reloading mihomo…"
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			err := applyCfg(ctx)
+			return pipelineAppliedMsg{err: err}
+		}
+	case pipelineAppliedMsg:
+		if v.err != nil {
+			m.flash = "❌ apply: " + v.err.Error()
+		} else {
+			m.flash = "✓ mihomo reloaded"
+		}
 		return m, nil
 	case BootstrapProgressMsg:
 		switch v.Phase {
