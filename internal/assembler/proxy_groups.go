@@ -74,7 +74,7 @@ func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, globalTarg
 	topProxies = withTargetFirst(topProxies, globalTarget)
 
 	out = append(out,
-		map[string]any{"name": "🚀 Proxy", "type": "select", "proxies": topProxies},
+		map[string]any{"name": topLevelProxyGroup, "type": "select", "proxies": topProxies},
 		map[string]any{"name": "🎯 Direct", "type": "select", "proxies": []string{"DIRECT"}},
 		map[string]any{"name": "🛑 Reject", "type": "select", "proxies": []string{"REJECT", "DIRECT"}},
 	)
@@ -91,11 +91,28 @@ func nodeNames(g groups.Group) []string {
 	return out
 }
 
-// withTargetFirst moves target to index 0. Defensive: Assemble fills a
-// default GlobalTarget before calling, so target=="" should be unreachable;
-// the guard keeps the function safe for direct unit testing.
+// withTargetFirst moves target to index 0 so mihomo treats it as the
+// Selector's default member.
+//
+// Critical safety guard: refuses to emit the top-level group's own name
+// ("🚀 Proxy") into its member list. Older vpnkit installs (rc.x) had
+// store.Cfg.GlobalTarget = "🚀 Proxy" as the default, which without this
+// guard produced a self-referential proxy-group:
+//
+//   - name: 🚀 Proxy
+//     type: select
+//     proxies: [🚀 Proxy, doge-auto, doge, ...]   ← cycle!
+//
+// mihomo refuses to load that config:
+//   Parse config error: loop is detected in ProxyGroup, please check
+//   following ProxyGroups: [🚀 Proxy]
+//
+// store.Load also migrates this away on disk, but the assembler-level
+// guard is the choke point — it stays correct regardless of how
+// GlobalTarget got into the input (TUI form, CLI `vpnkit target`, a
+// future migration that misses an edge case, hand-edited store.toml).
 func withTargetFirst(list []string, target string) []string {
-	if target == "" {
+	if target == "" || target == topLevelProxyGroup {
 		return list
 	}
 	for i, x := range list {
@@ -107,3 +124,9 @@ func withTargetFirst(list []string, target string) []string {
 	// will accept the value even if it's a leaf proxy.
 	return append([]string{target}, list...)
 }
+
+// topLevelProxyGroup names the synthetic Selector group that vpnkit
+// always emits as the entry point. Centralized as a constant so the
+// self-reference guard in withTargetFirst stays in sync with the literal
+// emitted in emitProxyGroups below.
+const topLevelProxyGroup = "🚀 Proxy"

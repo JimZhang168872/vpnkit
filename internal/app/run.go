@@ -58,6 +58,26 @@ func Run(version string) error {
 
 	pl := NewPipeline(st, p.MihomoConfigFile())
 
+	// Force-reassemble config.yaml from the current store on every launch.
+	// Cheap (one Marshal + AtomicWrite) and protects against three classes
+	// of "config drift" the user can't easily recover from manually:
+	//
+	//   1. Lazy store migration (e.g. GlobalTarget "🚀 Proxy" → "DIRECT"
+	//      in rc.6) changed the in-memory store but the on-disk
+	//      config.yaml still reflects the pre-migration state.
+	//   2. A previous vpnkit version emitted a config mihomo refuses
+	//      (the self-loop bug). The store is fine; the YAML needs a
+	//      fresh emit from the corrected assembler.
+	//   3. User hand-edited config.yaml and broke it. Reassemble
+	//      overwrites with vpnkit's authoritative view from store.toml.
+	//
+	// Errors are logged and execution continues — bootstrap will still
+	// try to start mihomo with whatever's on disk, and the user will see
+	// the failure surface via service status / Dashboard.
+	if err := pl.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "vpnkit: startup reassemble failed (%v) — mihomo may load a stale config\n", err)
+	}
+
 	// Closure that subscription-update + startup-reload paths use to push config
 	// changes into the live mihomo. Tries hot reload first, restarts the
 	// service on any error (e.g. controller-secret drift between store.toml

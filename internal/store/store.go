@@ -174,8 +174,15 @@ func Load(path string) (*Store, error) {
 		s.Cfg.Mode = "rule"
 		changed = true
 	}
-	if s.Cfg.GlobalTarget == "" {
-		s.Cfg.GlobalTarget = "🚀 Proxy"
+	// GlobalTarget is the *member* the top-level "🚀 Proxy" Selector
+	// defaults to. It MUST NOT equal "🚀 Proxy" itself — that creates a
+	// self-referential proxy-group which mihomo refuses to load (
+	// "Parse config error: loop is detected in ProxyGroup"). Older vpnkit
+	// (≤ rc.5) wrote "🚀 Proxy" as the default; migrate any persisted
+	// instance — including newly-loaded empty stores — to "DIRECT", which
+	// is the safest "no traffic forwarded" default.
+	if s.Cfg.GlobalTarget == "" || s.Cfg.GlobalTarget == "🚀 Proxy" {
+		s.Cfg.GlobalTarget = "DIRECT"
 		changed = true
 	}
 	if s.Cfg.Subscriptions == nil {
@@ -274,7 +281,7 @@ func defaults() Config {
 		ProxyPass:        randHex(16),
 		UITheme:          "default",
 		Mode:             "rule",
-		GlobalTarget:     "🚀 Proxy",
+		GlobalTarget:     "DIRECT",
 		Subscriptions:   []Subscription{},
 		LocalNodes:      []LocalNode{},
 		LocalNodeGroups: []LocalNodeGroup{},

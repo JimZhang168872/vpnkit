@@ -4,6 +4,27 @@
 
 ### Fixed
 
+- **`🚀 Proxy` self-loop crash at mihomo startup.** Old vpnkit
+  (≤ rc.5) defaulted `store.Cfg.GlobalTarget` to `"🚀 Proxy"` — the
+  name of the top-level Selector group itself. The assembler then
+  emitted that name into its own member list, producing:
+  ```
+  - name: 🚀 Proxy
+    type: select
+    proxies: [🚀 Proxy, doge-auto, doge, Local-auto, Local, DIRECT]
+                ↑ self-reference
+  ```
+  mihomo refuses to load this config with `Parse config error: loop
+  is detected in ProxyGroup, please check following ProxyGroups: [🚀
+  Proxy]` and crashes in a tight restart loop until `Start request
+  repeated too quickly` hits.
+  - **Three layers of defense:**
+    1. `assembler.withTargetFirst` refuses to inject `"🚀 Proxy"` into
+       any list — the choke point regardless of input source.
+    2. `store.Load` migrates persisted `"🚀 Proxy"` → `"DIRECT"` and
+       persists the change. New stores default to `"DIRECT"`.
+    3. `app.Run` force-reassembles `config.yaml` on every launch so a
+       drifted on-disk YAML can't outlive the store migration.
 - **Delay test → `connection refused` doesn't tell user mihomo is down.**
   TUI Groups tab `[t]` now detects transport-layer failures (connection
   refused / EOF / Client.Timeout / no route to host) separately from real
