@@ -166,10 +166,10 @@ func dispatchStatus(args []string) {
 	jsonOut, _ := parseFlags(args)
 	c, st, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit status: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit status", err)
 	}
 	if err := runStatus(os.Stdout, c, st, jsonOut); err != nil {
-		dieRuntime("vpnkit status: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit status", err)
 	}
 }
 
@@ -177,11 +177,24 @@ func dispatchIP(args []string) {
 	jsonOut, _ := parseFlags(args)
 	c, st, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit ip: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit ip", err)
 	}
 	if err := runIP(os.Stdout, c, st, "", jsonOut); err != nil {
-		dieRuntime("vpnkit ip: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit ip", err)
 	}
+}
+
+// dieJSONOrText keeps the JSON contract on read-verb failures. When the
+// caller asked for `--json` we emit `{"error": "..."}` to stdout (so
+// consumer scripts parsing the JSON still get parseable input) AND
+// exit non-zero. In text mode we fall back to the plain stderr path
+// that's been the convention pre-rc.7.
+func dieJSONOrText(jsonOut bool, prefix string, err error) {
+	if jsonOut {
+		fmt.Fprintf(os.Stdout, `{"error":%q}`+"\n", prefix+": "+err.Error())
+		os.Exit(2)
+	}
+	dieRuntime("%s: %v", prefix, err)
 }
 
 func dispatchMode(args []string) {

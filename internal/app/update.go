@@ -291,12 +291,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				v.String() == "tab" || v.String() == "shift+tab" || v.String() == "q" || v.String() == "ctrl+c" {
 				// Fall through to global cascade.
 			} else {
+				// Up/Down within Settings = sub-page navigation. Clear
+				// stale flash so help/mode hints set on one sub-page
+				// don't haunt the next one. Keys that intentionally set
+				// a new flash (handled inside sub-page Update) write to
+				// m.flash AFTER this clear, so the new flash wins.
+				if v.String() == "up" || v.String() == "down" || v.String() == "k" || v.String() == "j" {
+					m.flash = ""
+				}
 				var c tea.Cmd
 				m.settingsTab, c = m.settingsTab.Update(msg)
 				return m, c
 			}
 		}
-		// Global key cascade.
+		// Global key cascade. Tab changes clear the statusbar flash —
+		// pre-rc.7 a stale flash from one tab persisted forever across
+		// navigation (e.g. press `?` on Dashboard, switch tabs, the
+		// keymap text would haunt every other tab's statusbar).
+		prevTab := m.activeTab
 		switch {
 		case key.Matches(v, m.keys.Quit):
 			return m, tea.Quit
@@ -332,6 +344,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = "Restart mihomo in Settings → Service (press r there) or `systemctl --user restart mihomo`"
 		case key.Matches(v, m.keys.Palette):
 			m.flash = "Command palette: not implemented yet"
+		}
+		// Clear the stale flash on any successful tab change. The
+		// global keymap handlers above (?, m, r, :) DELIBERATELY set
+		// m.flash AFTER this conditional fires (they don't change
+		// activeTab), so this only clears on genuine navigation. Keeps
+		// help / mode hints visible while preventing them from
+		// haunting every other tab the user visits next.
+		if m.activeTab != prevTab {
+			m.flash = ""
 		}
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
