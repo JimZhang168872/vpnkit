@@ -13,6 +13,7 @@ import (
 
 	"vpnkit/internal/app"
 	"vpnkit/internal/paths"
+	"vpnkit/internal/sources"
 	"vpnkit/internal/store"
 )
 
@@ -38,15 +39,16 @@ func dispatchSubs(args []string) {
 			dieRuntime("%v", err)
 		}
 	case "add":
-		// Pre-extract --ua so it works in any argv position. flag.Parse
-		// stops at the first non-flag positional, which means
-		// `subs add foo url --ua=X` silently drops --ua, and
-		// `subs add foo --ua=X url` even stores `--ua=X` as the URL.
-		// Both are confirmed user traps from QA. Strip the flag pair
-		// out before parsing positionals.
 		ua, posArgs := extractUAFlag(rest)
 		if len(posArgs) < 2 {
 			dieUserErr("usage: vpnkit subs add <name> <url> [--ua=...]")
+		}
+		// Reject extra positional args — silently dropping them
+		// (pre-rc.7) made `subs add foo URL garbage1 garbage2` rc=0
+		// with garbage1/garbage2 invisibly discarded. Users typing
+		// shell-quoted things would assume their input was honored.
+		if len(posArgs) > 2 {
+			dieUserErr("subs add takes exactly 2 positional args (name, url); got %d: %v", len(posArgs), posArgs)
 		}
 		if err := runSubsAdd(st, posArgs[0], posArgs[1], ua); err != nil {
 			dieUserErr("%v", err)
@@ -184,28 +186,11 @@ func runSubsToggle(st *store.Store, name string, enabled bool) error {
 
 var _ = strings.TrimSpace // silence unused import if any future change drops usage
 
-// reservedSourceNames cannot be used as a subscription / local-group name
-// because they're mihomo built-in policy targets — colliding with them
-// produces ambiguous routing in the assembled config.yaml. Matched
-// case-INsensitively at validation time (mihomo policies are uppercase
-// but a lowercase "direct" sub gets routed differently than DIRECT,
-// producing a confusing two-targets state).
-var reservedSourceNames = map[string]bool{
-	"DIRECT":      true,
-	"REJECT":      true,
-	"REJECT-DROP": true,
-	"PASS":        true,
-	"COMPATIBLE":  true,
-	"GLOBAL":      true,
-	"🚀 PROXY":   true,
-	"🎯 DIRECT":  true,
-	"🛑 REJECT":  true,
-}
-
-// maxSourceNameLen caps subscription / local-group names. Long names
-// (1000+ chars) used to round-trip into the assembled YAML and produce
-// pathological proxy-group entries.
-const maxSourceNameLen = 64
+// maxSourceNameLen is re-exported here for the local-nodes edit path
+// which uses a slightly different validation (allows `:` because node
+// names historically used colons). Source-name validation itself lives
+// in internal/sources.
+const maxSourceNameLen = sources.MaxNameLen
 
 // validSubSchemes are the URL schemes a subscription URL can use.
 // HTTP(S) for hosted clash YAML feeds; the single-URI schemes
@@ -255,42 +240,10 @@ func schemeOf(url string) string {
 	return url
 }
 
-// validateSourceName rejects names that would corrupt the routing
-// namespace:
-//   - empty / whitespace-only
-//   - control characters (\x00..\x1f, \x7f) — newline / NUL silently
-//     truncate or break the emitted YAML
-//   - `/` `:` — used as path separator / `<src>:<node>` syntax
-//   - leading or trailing whitespace
-//   - longer than maxSourceNameLen
-//   - matching a mihomo built-in (case-insensitive)
-//
-// Subscriptions and local-node groups share this namespace (both emit
-// `<name>` and `<name>-auto` proxy-groups), so cross-collisions are
-// rejected at the call site, not here.
-func validateSourceName(name string) error {
-	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("name cannot be empty or whitespace")
-	}
-	if name != strings.TrimSpace(name) {
-		return fmt.Errorf("name %q has leading or trailing whitespace", name)
-	}
-	if len(name) > maxSourceNameLen {
-		return fmt.Errorf("name too long (%d > %d chars)", len(name), maxSourceNameLen)
-	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("name contains control character (0x%02x)", r)
-		}
-		if r == '/' || r == ':' {
-			return fmt.Errorf("name contains reserved character %q (used in <src>:<node> / path syntax)", r)
-		}
-	}
-	if reservedSourceNames[strings.ToUpper(name)] {
-		return fmt.Errorf("name %q is reserved by mihomo (case-insensitive) — pick a different one", name)
-	}
-	return nil
-}
+// validateSourceName delegates to internal/sources so CLI and TUI share
+// one validation surface. Keep this wrapper so existing call sites don't
+// have to change.
+func validateSourceName(name string) error { return sources.ValidateName(name) }
 
 // extractUAFlag walks `args` and pulls out a `--ua=VALUE` or `--ua VALUE`
 // pair from any position. Returns the UA value (or "" if not found) and

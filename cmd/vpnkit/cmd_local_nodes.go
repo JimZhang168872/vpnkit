@@ -202,6 +202,10 @@ func dispatchLocalNodes(args []string) {
 		if target == nil {
 			dieUserErr("local node %q not found", rest[0])
 		}
+		// Snapshot current (group, name) so collision checks compare
+		// against the OTHER nodes, not the target itself. Renaming a
+		// node to its own current name is a no-op, not a collision.
+		origGroup, origName := target.Group, target.Name
 		for _, kv := range rest[1:] {
 			parts := strings.SplitN(kv, "=", 2)
 			if len(parts) != 2 {
@@ -210,8 +214,59 @@ func dispatchLocalNodes(args []string) {
 			k, v := parts[0], parts[1]
 			switch k {
 			case "name":
+				if v == "" {
+					dieUserErr("name cannot be empty")
+				}
+				// Reject control chars + maxlen. Reuse the same
+				// validation surface as new nodes/sources where possible.
+				// We don't apply the FULL validateSourceName here because
+				// node names historically allow `:`/`-`/etc. that group
+				// names don't — keep it narrow.
+				if len(v) > maxSourceNameLen {
+					dieUserErr("name too long (%d > %d chars)", len(v), maxSourceNameLen)
+				}
+				for _, r := range v {
+					if r < 0x20 || r == 0x7f {
+						dieUserErr("name contains control character (0x%02x)", r)
+					}
+				}
+				// Duplicate (group, name) check — would otherwise create
+				// two `[[local_nodes]]` blocks with the same key, leaving
+				// the second one unreachable via `rm`/`edit` until the
+				// user hand-edits the TOML.
+				for _, n := range st.Cfg.LocalNodes {
+					if n.Group == target.Group && n.Name == v && !(n.Group == origGroup && n.Name == origName) {
+						dieUserErr("local node %q already exists in group %q", v, target.Group)
+					}
+				}
 				target.Name = v
 			case "group":
+				// Target group must exist (same rule as `mv` — pre-rc.7
+				// `edit group=` silently moved into a non-existent group
+				// which would then orphan the node).
+				hasGroup := false
+				targetEnabled := true
+				for _, g := range st.Cfg.LocalNodeGroups {
+					if g.Name == v {
+						hasGroup = true
+						targetEnabled = g.Enabled
+						break
+					}
+				}
+				if !hasGroup {
+					dieUserErr("destination group %q does not exist — create it first with `vpnkit local-groups add %s`", v, v)
+				}
+				// Also reject duplicate (group, name) when MOVING to a
+				// group that already has a node with target.Name.
+				for _, n := range st.Cfg.LocalNodes {
+					if n.Group == v && n.Name == target.Name && !(n.Group == origGroup && n.Name == origName) {
+						dieUserErr("local node %q already exists in group %q", target.Name, v)
+					}
+				}
+				if !targetEnabled {
+					fmt.Fprintf(os.Stderr, "⚠️  group %q is disabled — node %q is now unroutable until you `vpnkit local-groups enable %s`\n",
+						v, target.Name, v)
+				}
 				target.Group = v
 			case "via":
 				target.Via = v

@@ -29,6 +29,9 @@ func dispatchTarget(args []string) {
 		fmt.Println(st.Cfg.GlobalTarget)
 		return
 	}
+	if len(args) > 1 {
+		dieUserErr("vpnkit target takes 0 or 1 args; got %d: %v", len(args), args)
+	}
 	target := args[0]
 	if err := validateTarget(st, target); err != nil {
 		dieUserErr("%v", err)

@@ -392,10 +392,24 @@ func (f *localNodeForm) commitFieldForm() (localnodes.Node, error) {
 	if err != nil {
 		return n, fmt.Errorf("port must be int: %w", err)
 	}
+	if p < 1 || p > 65535 {
+		return n, fmt.Errorf("port %d out of range (must be 1-65535)", p)
+	}
 	n.Port = p
 
 	if n.Group == "" {
 		n.Group = "local"
+	}
+
+	// Protocol-specific required fields. Without these checks the form
+	// saves a node that mihomo will refuse to dial (e.g. an ss node with
+	// no password just produces "unable to authenticate"). Catch it at
+	// form-commit time so the user gets a meaningful error not a
+	// downstream cryptic mihomo log.
+	for _, req := range protoRequiredFields(f.proto) {
+		if strings.TrimSpace(values[req]) == "" {
+			return n, fmt.Errorf("%s requires %s", f.proto, req)
+		}
 	}
 
 	for _, d := range defs {
@@ -441,4 +455,27 @@ func (f *localNodeForm) commitFieldForm() (localnodes.Node, error) {
 		n.Fields[d.key] = v
 	}
 	return n, nil
+}
+
+// protoRequiredFields returns the form-field keys that must be non-empty
+// for a given protocol. Mihomo dial-time validation produces opaque
+// errors ("authentication failed") when these are missing, so catch
+// at form-commit. Keys here match the form's field-def keys (see
+// formFieldDefs in this file).
+func protoRequiredFields(proto string) []string {
+	switch proto {
+	case "ss":
+		return []string{"cipher", "password"}
+	case "vmess":
+		return []string{"uuid"}
+	case "vless":
+		return []string{"uuid"}
+	case "trojan":
+		return []string{"password"}
+	case "hysteria2", "hy2":
+		return []string{"password"}
+	case "tuic":
+		return []string{"uuid", "password"}
+	}
+	return nil
 }

@@ -112,6 +112,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		// Logs-tab-specific keys.
+		if m.activeTab == TabLogs {
+			if v.String() == "p" {
+				// `[p] pause/resume` — pre-rc.7 the hint was rendered
+				// but the key was never wired. TogglePause has a
+				// pointer receiver; take the address on this Model's
+				// field so the toggle persists in the returned m.
+				(&m.logsTab).TogglePause()
+				return m, nil
+			}
+		}
 		// Rules-tab-specific keys.
 		if m.activeTab == TabRules {
 			if m.rulesTab.IsFiltering() {

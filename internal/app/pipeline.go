@@ -13,6 +13,7 @@ import (
 	"vpnkit/internal/groups"
 	"vpnkit/internal/localnodes"
 	"vpnkit/internal/localrules"
+	"vpnkit/internal/sources"
 	"vpnkit/internal/store"
 	"vpnkit/internal/subscription"
 )
@@ -259,6 +260,13 @@ func (p *Pipeline) SubscriptionNames() []store.Subscription {
 // through it — without this nudge, they'd have to run `vpnkit target` or
 // pick a member in the Groups tab on every new install.
 func (p *Pipeline) AddSubscription(sub store.Subscription) error {
+	// Name validation MUST happen here, not only at the CLI entry point.
+	// The TUI's Sources tab "add subscription" form also calls this and
+	// previously bypassed validateSourceName, letting names with
+	// reserved chars / shell metas / DIRECT-collisions silently land.
+	if err := sources.ValidateName(sub.Name); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	for _, s := range p.store.Cfg.Subscriptions {
 		if s.Name == sub.Name {
@@ -533,8 +541,8 @@ func (p *Pipeline) LocalNodeGroups() []store.LocalNodeGroup {
 // AddLocalGroup creates a new empty local-nodes group. Returns error if a
 // group with the same name already exists.
 func (p *Pipeline) AddLocalGroup(name string) error {
-	if name == "" {
-		return fmt.Errorf("local group name required")
+	if err := sources.ValidateName(name); err != nil {
+		return err
 	}
 	p.mu.Lock()
 	// (cannot defer Unlock: store.Save acquires its own lock and we must not hold p.mu across I/O)
@@ -644,8 +652,8 @@ func (p *Pipeline) ToggleLocalGroupEnabled(name string) error {
 // Pipeline mutation methods; rename has the largest surface (touches
 // LocalNodeGroups + every LocalNode in the group) so the gap is widest here.
 func (p *Pipeline) RenameLocalGroup(oldName, newName string) error {
-	if newName == "" {
-		return fmt.Errorf("new name required")
+	if err := sources.ValidateName(newName); err != nil {
+		return err
 	}
 	if oldName == newName {
 		return nil

@@ -32,7 +32,7 @@ func dispatchLocalGroups(args []string) {
 		_ = fs.Parse(rest)
 		runLocalGroupsList(os.Stdout, st, jsonOut)
 	case "add":
-		if len(rest) < 1 {
+		if len(rest) != 1 {
 			dieUserErr("usage: vpnkit local-groups add <name>")
 		}
 		name := rest[0]
