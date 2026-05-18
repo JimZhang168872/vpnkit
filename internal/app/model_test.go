@@ -141,6 +141,49 @@ func TestPipelineMutatedTriggersApplyCfg(t *testing.T) {
 	}
 }
 
+// TestSubsRefreshDoneTriggersApplyCfg — regression for "刚 update 完订阅
+// 立刻测延迟，结果 mihomo 不知道这个 group" (user report 2026-05-18 on
+// boostnet + doggygosubs). Root cause: the Sources tab's `u` refresh
+// returned a private `refreshDoneMsg` from the tea.Cmd. The app-level
+// Update switch had no case for it, so it never reached
+// sourcesTab.Update, never fired emitPipelineMutated(), and applyCfg
+// never ran — config.yaml stayed stale and `/proxies` had no new group.
+// Now app/update.go routes RefreshDoneMsg explicitly to sourcesTab so
+// the existing emitPipelineMutated chain fires.
+func TestSubsRefreshDoneTriggersApplyCfg(t *testing.T) {
+	called := make(chan struct{}, 1)
+	applyCfg := func(ctx context.Context) error {
+		called <- struct{}{}
+		return nil
+	}
+	m := NewModel(nil, tabsettings.Deps{}, applyCfg)
+	// Step 1: refresh-done lands on app. The cmd it returns must, when
+	// invoked, produce a PipelineMutatedMsg (so the existing
+	// applyCfg-firing handler kicks in).
+	mm, cmd := m.Update(tabsourcesPkg.RefreshDoneMsg{Name: "boostnet", Count: 50})
+	m = mm.(Model)
+	if cmd == nil {
+		t.Fatal("app must return a cmd from RefreshDoneMsg (chained to PipelineMutatedMsg)")
+	}
+	follow := cmd()
+	if _, ok := follow.(tabsourcesPkg.PipelineMutatedMsg); !ok {
+		t.Fatalf("RefreshDoneMsg should chain to PipelineMutatedMsg; got %T", follow)
+	}
+	// Step 2: feeding that PipelineMutatedMsg back into Update fires
+	// applyCfg (covered by TestPipelineMutatedTriggersApplyCfg too, but
+	// reassert here so the chain is end-to-end verified).
+	_, cmd2 := m.Update(follow)
+	if cmd2 == nil {
+		t.Fatal("PipelineMutatedMsg should produce a cmd that runs applyCfg")
+	}
+	_ = cmd2()
+	select {
+	case <-called:
+	default:
+		t.Error("applyCfg was not invoked at the end of the chain")
+	}
+}
+
 // TestPipelineMutatedNilApplyCfgDoesNotCrash — tests / harnesses may
 // construct a Model without an applyCfg closure. The handler must not
 // panic in that case (degrades to "refresh display only").
