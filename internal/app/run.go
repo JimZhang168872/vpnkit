@@ -105,6 +105,17 @@ func Run(version string) error {
 	model.WirePipeline(pl)
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
+	// Shutdown signal for every background goroutine. Cancelled the
+	// instant prog.Run() returns (user pressed q / Ctrl-C). Without this,
+	// goroutines that hold long-lived HTTP/WebSocket connections to mihomo
+	// (streamTraffic, streamConnections, streamLogs) keep spinning in
+	// 2s-backoff reconnect loops AFTER the TUI exits, preventing the
+	// process from terminating. The streamLogs case is especially nasty:
+	// it has a `tail -F` or `journalctl -f` subprocess attached, which
+	// only dies when its parent context is cancelled.
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	defer shutdownCancel()
+
 	go func() {
 		msg := MaybeBootstrap(BootstrapDeps{
 			Paths:   p,
@@ -112,28 +123,36 @@ func Run(version string) error {
 			Service: svc,
 		})()
 		if configChanged {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			// Derive from shutdownCtx so an early user quit doesn't leak
+			// this goroutine for up to 10 seconds while applyCfg waits
+			// on its own timer. prog.Send below is a documented no-op
+			// after prog.Run() exits, so there's no lost-message concern.
+			ctx, cancel := context.WithTimeout(shutdownCtx, 10*time.Second)
 			_ = applyCfg(ctx)
 			cancel()
 		}
 		prog.Send(msg)
 	}()
-	go pollUpdate(prog, version, p.MihomoBinary())
-	go streamTraffic(prog, client)
-	go pollVersion(prog, client)
-	go pollProxies(prog, client)
-	go streamConnections(prog, client)
-	go pollRules(prog, client)
-	go streamLogs(prog, svc)
-	go pollServiceStatus(prog, svc)
+	go pollUpdate(shutdownCtx, prog, version, p.MihomoBinary())
+	go streamTraffic(shutdownCtx, prog, client)
+	go pollVersion(shutdownCtx, prog, client)
+	go pollProxies(shutdownCtx, prog, client)
+	go streamConnections(shutdownCtx, prog, client)
+	go pollRules(shutdownCtx, prog, client)
+	go streamLogs(shutdownCtx, prog, svc)
+	go pollServiceStatus(shutdownCtx, prog, svc)
 
 	_, err = prog.Run()
+	shutdownCancel() // wake every goroutine; defer would fire too, but be explicit
 	return err
 }
 
-func streamTraffic(prog *tea.Program, client *api.Client) {
+func streamTraffic(shutdown context.Context, prog *tea.Program, client *api.Client) {
 	for {
-		ctx, cancel := context.WithCancel(context.Background())
+		if shutdown.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithCancel(shutdown)
 		ch, errCh := client.Traffic(ctx)
 	loop:
 		for {
@@ -145,18 +164,25 @@ func streamTraffic(prog *tea.Program, client *api.Client) {
 				prog.Send(TrafficMsg(t))
 			case <-errCh:
 				break loop
+			case <-shutdown.Done():
+				cancel()
+				return
 			}
 		}
 		cancel()
-		time.Sleep(2 * time.Second) // backoff before reconnect
+		select {
+		case <-time.After(2 * time.Second):
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
-func pollProxies(prog *tea.Program, client *api.Client) {
+func pollProxies(shutdown context.Context, prog *tea.Program, client *api.Client) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(shutdown, 5*time.Second)
 		proxies, err := client.GetProxies(ctx)
 		cancel()
 		if err == nil {
@@ -166,19 +192,27 @@ func pollProxies(prog *tea.Program, client *api.Client) {
 			}
 			prog.Send(msg.ProxiesSnapshot{Groups: groups})
 		}
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
-func pollVersion(prog *tea.Program, client *api.Client) {
+func pollVersion(shutdown context.Context, prog *tea.Program, client *api.Client) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(shutdown, 5*time.Second)
 		v, err := client.Version(ctx)
 		cancel()
 		prog.Send(VersionMsg{Version: v.Version, Err: err})
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
@@ -186,11 +220,11 @@ func pollVersion(prog *tea.Program, client *api.Client) {
 // pid) and pushes the result to the dashboard. Without this loop the
 // Dashboard's "Status:" line is stuck at the zero value "○ stopped" because
 // no other code path sends msg.ServiceStatus (Bug G).
-func pollServiceStatus(prog *tea.Program, svc service.Manager) {
+func pollServiceStatus(shutdown context.Context, prog *tea.Program, svc service.Manager) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(shutdown, 2*time.Second)
 		st, err := svc.Status(ctx)
 		cancel()
 		if err == nil {
@@ -200,13 +234,20 @@ func pollServiceStatus(prog *tea.Program, svc service.Manager) {
 				Mode:    string(st.Mode),
 			})
 		}
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
-func streamConnections(prog *tea.Program, client *api.Client) {
+func streamConnections(shutdown context.Context, prog *tea.Program, client *api.Client) {
 	for {
-		ctx, cancel := context.WithCancel(context.Background())
+		if shutdown.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithCancel(shutdown)
 		ch, errCh := client.Connections(ctx)
 	loop:
 		for {
@@ -229,18 +270,25 @@ func streamConnections(prog *tea.Program, client *api.Client) {
 				})
 			case <-errCh:
 				break loop
+			case <-shutdown.Done():
+				cancel()
+				return
 			}
 		}
 		cancel()
-		time.Sleep(2 * time.Second)
+		select {
+		case <-time.After(2 * time.Second):
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
-func pollRules(prog *tea.Program, client *api.Client) {
+func pollRules(shutdown context.Context, prog *tea.Program, client *api.Client) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(shutdown, 5*time.Second)
 		rs, errR := client.GetRules(ctx)
 		ps, errP := client.GetRuleProviders(ctx)
 		cancel()
@@ -256,17 +304,31 @@ func pollRules(prog *tea.Program, client *api.Client) {
 			}
 			prog.Send(snap)
 		}
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 
-func streamLogs(prog *tea.Program, svc service.Manager) {
+func streamLogs(shutdown context.Context, prog *tea.Program, svc service.Manager) {
 	for {
-		ctx, cancel := context.WithCancel(context.Background())
+		if shutdown.Err() != nil {
+			return
+		}
+		// Derive from shutdown so canceling propagates to the journalctl/
+		// tail subprocess via exec.CommandContext — that's how we get the
+		// log-streaming process to actually exit when the TUI quits.
+		ctx, cancel := context.WithCancel(shutdown)
 		reader, err := svc.Logs(ctx, true)
 		if err != nil {
 			cancel()
-			time.Sleep(5 * time.Second)
+			select {
+			case <-time.After(5 * time.Second):
+			case <-shutdown.Done():
+				return
+			}
 			continue
 		}
 		scanner := bufio.NewScanner(reader)
@@ -276,7 +338,11 @@ func streamLogs(prog *tea.Program, svc service.Manager) {
 		}
 		reader.Close()
 		cancel()
-		time.Sleep(2 * time.Second)
+		select {
+		case <-time.After(2 * time.Second):
+		case <-shutdown.Done():
+			return
+		}
 	}
 }
 

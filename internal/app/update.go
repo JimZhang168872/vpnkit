@@ -293,6 +293,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
+		// Settings → Service sub-page renders live status from the poll
+		// loop too, so forward the same snapshot. Without this, the
+		// settings tab would have to call mgr.Status synchronously on
+		// every View (blocking systemctl call on the render goroutine).
+		if _, ok := msg.(ServiceStatusMsg); ok {
+			m.settingsTab, _ = m.settingsTab.Update(msg)
+		}
 	case ProxiesSnapshot:
 		// Forward to groupsTab so it can mirror each group's `now` for the
 		// right-pane node highlight.

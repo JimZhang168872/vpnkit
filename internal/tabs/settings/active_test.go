@@ -14,6 +14,7 @@ import (
 // pulling in the heavy app.Pipeline. SetActiveSource records the last
 // call so tests can assert "Enter actually fired the swap".
 type stubPipeline struct {
+	st         *store.Store // backing store — used to satisfy the snapshot methods
 	current    string
 	setCalls   []string
 	setReturns error
@@ -22,8 +23,27 @@ type stubPipeline struct {
 func (s *stubPipeline) RefreshSubscription(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
-func (s *stubPipeline) Assemble() error  { return nil }
-func (s *stubPipeline) SaveLocal() error { return nil }
+func (s *stubPipeline) Assemble() error                   { return nil }
+func (s *stubPipeline) SaveLocal() error                  { return nil }
+func (s *stubPipeline) SetMode(_ string) error            { return nil }
+func (s *stubPipeline) Mode() string                      { return "rule" }
+func (s *stubPipeline) RegenerateControllerSecret() error { return nil }
+func (s *stubPipeline) SubscriptionNames() []store.Subscription {
+	if s.st == nil {
+		return nil
+	}
+	out := make([]store.Subscription, len(s.st.Cfg.Subscriptions))
+	copy(out, s.st.Cfg.Subscriptions)
+	return out
+}
+func (s *stubPipeline) LocalNodeGroups() []store.LocalNodeGroup {
+	if s.st == nil {
+		return nil
+	}
+	out := make([]store.LocalNodeGroup, len(s.st.Cfg.LocalNodeGroups))
+	copy(out, s.st.Cfg.LocalNodeGroups)
+	return out
+}
 func (s *stubPipeline) ActiveSource() string {
 	return s.current
 }
@@ -58,7 +78,7 @@ func activeTestStore(active string) *store.Store {
 
 func TestActiveViewShowsEnabledSources(t *testing.T) {
 	st := activeTestStore("doge")
-	pl := &stubPipeline{current: "doge"}
+	pl := &stubPipeline{st: st, current: "doge"}
 	m := newActive(st, pl, nil)
 	out := m.View(80, 24)
 	for _, want := range []string{"doge", "boost", "Local"} {
@@ -76,7 +96,7 @@ func TestActiveViewShowsEnabledSources(t *testing.T) {
 
 func TestActiveViewMarksCurrentSelection(t *testing.T) {
 	st := activeTestStore("boost")
-	pl := &stubPipeline{current: "boost"}
+	pl := &stubPipeline{st: st, current: "boost"}
 	m := newActive(st, pl, nil)
 	out := m.View(80, 24)
 	// "[x] boost" must appear; "[x] doge" must not.
@@ -92,28 +112,70 @@ func TestActiveViewMarksCurrentSelection(t *testing.T) {
 
 func TestActiveEnterCallsSetActiveSource(t *testing.T) {
 	st := activeTestStore("doge")
-	pl := &stubPipeline{current: "doge"}
+	pl := &stubPipeline{st: st, current: "doge"}
 	called := false
 	m := newActive(st, pl, func() error { called = true; return nil })
 	// Down once → cursor on boost (doge=0, boost=1).
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm
 	if len(pl.setCalls) != 1 || pl.setCalls[0] != "boost" {
 		t.Errorf("Enter should call SetActiveSource(\"boost\"); got %v", pl.setCalls)
 	}
+	// Enter is now async — applyFunc runs inside the tea.Cmd, so we must
+	// invoke the returned Cmd to observe the side effect.
+	if cmd == nil {
+		t.Fatal("Enter should return a tea.Cmd that runs applyFunc asynchronously")
+	}
+	done := cmd()
 	if !called {
-		t.Error("Enter should invoke applyFunc to push the new config to mihomo")
+		t.Error("Enter's cmd should invoke applyFunc to push the new config to mihomo")
+	}
+	// Feed the done msg back so the busy flag clears + flash updates.
+	mm, _ = m.Update(done)
+	m = mm
+	if !strings.Contains(m.View(80, 24), "active → boost") {
+		t.Errorf("flash should confirm switch:\n%s", m.View(80, 24))
 	}
 }
 
 func TestActiveSetErrorIsSurfacedInFlash(t *testing.T) {
 	st := activeTestStore("doge")
-	pl := &stubPipeline{current: "doge", setReturns: errors.New("nope")}
+	pl := &stubPipeline{st: st, current: "doge", setReturns: errors.New("nope")}
 	m := newActive(st, pl, nil)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	out := m.View(80, 24)
 	if !strings.Contains(out, "nope") {
 		t.Errorf("SetActiveSource error should appear in flash:\n%s", out)
+	}
+}
+
+// TestActiveSetSurfacesApplyError — store update can succeed while
+// mihomo reload fails (mihomo down, file write race, etc.). The flash
+// must reflect that mismatch so the user knows their view of "active is
+// boost now" doesn't match what mihomo is actually routing through.
+// Otherwise it's silent split-brain: store says boost, mihomo still
+// routes via the previous active source.
+func TestActiveSetSurfacesApplyError(t *testing.T) {
+	st := activeTestStore("doge")
+	pl := &stubPipeline{st: st, current: "doge"}
+	apply := func() error { return errors.New("mihomo down") }
+	m := newActive(st, pl, apply)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // cursor → boost
+	mm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = mm
+	// Async — run the returned cmd to fire applyFunc, then feed the done
+	// message back so the flash reflects the failure.
+	if cmd != nil {
+		mm, _ = m.Update(cmd())
+		m = mm
+	}
+	out := m.View(80, 24)
+	if !strings.Contains(out, "mihomo down") {
+		t.Errorf("applyFunc error should appear in flash:\n%s", out)
+	}
+	if strings.Contains(out, "✅ active → boost") {
+		t.Errorf("flash must NOT report success when apply failed:\n%s", out)
 	}
 }
 

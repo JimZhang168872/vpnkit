@@ -39,7 +39,7 @@ func makeActiveTestStore(t *testing.T) (*store.Store, string) {
 func TestRunActiveShowText(t *testing.T) {
 	st, _ := makeActiveTestStore(t)
 	var buf bytes.Buffer
-	runActiveShow(&buf, st, false)
+	runActiveShow(&buf, app.NewPipeline(st, filepath.Join(t.TempDir(), "m.yaml")), false)
 	got := strings.TrimSpace(buf.String())
 	if got != "doge  (subscription)" {
 		t.Errorf("text mode: got %q, want %q", got, "doge  (subscription)")
@@ -49,7 +49,7 @@ func TestRunActiveShowText(t *testing.T) {
 func TestRunActiveShowJSON(t *testing.T) {
 	st, _ := makeActiveTestStore(t)
 	var buf bytes.Buffer
-	runActiveShow(&buf, st, true)
+	runActiveShow(&buf, app.NewPipeline(st, filepath.Join(t.TempDir(), "m.yaml")), true)
 	var got map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
@@ -66,7 +66,7 @@ func TestRunActiveShowEmpty(t *testing.T) {
 	st, _ := makeActiveTestStore(t)
 	st.Cfg.ActiveSource = ""
 	var buf bytes.Buffer
-	runActiveShow(&buf, st, false)
+	runActiveShow(&buf, app.NewPipeline(st, filepath.Join(t.TempDir(), "m.yaml")), false)
 	if !strings.Contains(buf.String(), "none") {
 		t.Errorf("empty active: %q", buf.String())
 	}
@@ -79,7 +79,7 @@ func TestRunActiveSetSwitchesSub(t *testing.T) {
 	pl := app.NewPipeline(st, configPath)
 
 	var buf bytes.Buffer
-	if err := runActiveSet(&buf, pl, st, "boost", false); err != nil {
+	if err := runActiveSet(&buf, pl, "boost", false); err != nil {
 		t.Fatalf("runActiveSet: %v", err)
 	}
 	if !strings.Contains(buf.String(), "boost") {
@@ -97,7 +97,7 @@ func TestRunActiveSetLocalGroup(t *testing.T) {
 	pl := app.NewPipeline(st, configPath)
 
 	var buf bytes.Buffer
-	if err := runActiveSet(&buf, pl, st, "Local", false); err != nil {
+	if err := runActiveSet(&buf, pl, "Local", false); err != nil {
 		t.Fatalf("runActiveSet: %v", err)
 	}
 	if !strings.Contains(buf.String(), "(local)") {
@@ -112,7 +112,7 @@ func TestRunActiveSetUnknown(t *testing.T) {
 	st, configPath := makeActiveTestStore(t)
 	pl := app.NewPipeline(st, configPath)
 	var buf bytes.Buffer
-	err := runActiveSet(&buf, pl, st, "nonexistent", false)
+	err := runActiveSet(&buf, pl, "nonexistent", false)
 	if err == nil {
 		t.Fatal("expected error for unknown source, got nil")
 	}

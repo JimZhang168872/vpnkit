@@ -234,3 +234,118 @@ func TestAddLocalGroupNudgesGlobalTargetWhenDirect(t *testing.T) {
 		t.Errorf("first local group should nudge GlobalTarget → home-auto, got %q", got)
 	}
 }
+
+// TestAddDisabledSubscriptionDoesNotSetActiveSource — round-3 regression:
+// AddSubscription used to unconditionally claim ActiveSource if the slot
+// was empty. If the caller passed Enabled:false (e.g. `vpnkit subs add
+// --disabled`), the active source would point at a disabled sub →
+// topProxyMembersFor sees no enabled match → 🚀 Proxy degrades to
+// [DIRECT] and traffic silently routes direct.
+func TestAddDisabledSubscriptionDoesNotSetActiveSource(t *testing.T) {
+	p := newTestPipeline(t)
+	if err := p.AddSubscription(store.Subscription{Name: "x", URL: "https://x", Enabled: false}); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("disabled-first-add must NOT set ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestAddSubscriptionSetsActiveSourceWhenEmpty — rc.7 first-source nudge
+// for ActiveSource. Mirror of the GlobalTarget nudge: the very first sub
+// added (when ActiveSource is empty) should claim the slot.
+func TestAddSubscriptionSetsActiveSourceWhenEmpty(t *testing.T) {
+	p := newTestPipeline(t)
+	if p.store.Cfg.ActiveSource != "" {
+		t.Fatalf("setup: ActiveSource should be empty, got %q", p.store.Cfg.ActiveSource)
+	}
+	if err := p.AddSubscription(store.Subscription{Name: "doge", URL: "https://x", Enabled: true}); err != nil {
+		t.Fatalf("AddSubscription: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "doge" {
+		t.Errorf("first sub should set ActiveSource=doge, got %q", p.store.Cfg.ActiveSource)
+	}
+	// Second sub must not displace.
+	if err := p.AddSubscription(store.Subscription{Name: "boost", URL: "https://y", Enabled: true}); err != nil {
+		t.Fatalf("AddSubscription #2: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "doge" {
+		t.Errorf("second sub must not overwrite ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestDeleteActiveSubscriptionClearsActiveSource — when the active sub is
+// deleted, ActiveSource must be cleared so the next Assemble's
+// firstEnabledSourceName fallback picks a still-valid source instead of
+// emitting a 🚀 Proxy with `[<deleted>-auto, <deleted>, DIRECT]` that
+// mihomo can't satisfy.
+func TestDeleteActiveSubscriptionClearsActiveSource(t *testing.T) {
+	p := newTestPipeline(t)
+	_ = p.AddSubscription(store.Subscription{Name: "doge", URL: "https://x", Enabled: true})
+	_ = p.AddSubscription(store.Subscription{Name: "boost", URL: "https://y", Enabled: true})
+	// At this point doge is active (first-source nudge).
+	if p.store.Cfg.ActiveSource != "doge" {
+		t.Fatalf("setup: ActiveSource should be doge, got %q", p.store.Cfg.ActiveSource)
+	}
+	if err := p.DeleteSubscription("doge"); err != nil {
+		t.Fatalf("DeleteSubscription: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("deleting active sub should clear ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestToggleDisableActiveSubscriptionClearsActiveSource — same as above
+// but via disable instead of delete. A disabled sub isn't in mihomo's
+// proxy-groups, so 🚀 Proxy pointing at it would degrade to DIRECT-only.
+func TestToggleDisableActiveSubscriptionClearsActiveSource(t *testing.T) {
+	p := newTestPipeline(t)
+	_ = p.AddSubscription(store.Subscription{Name: "doge", URL: "https://x", Enabled: true})
+	if err := p.ToggleSubscriptionEnabled("doge"); err != nil {
+		t.Fatalf("ToggleSubscriptionEnabled: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("disabling active sub should clear ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+	// Re-enable should NOT auto-restore — user must explicitly re-select.
+	if err := p.ToggleSubscriptionEnabled("doge"); err != nil {
+		t.Fatalf("ToggleSubscriptionEnabled re-enable: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("re-enable should not silently restore ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}
+
+// TestSetModeValidatesMode — SetMode must reject anything that isn't
+// one of the three canonical modes. emitRules quietly falls through to
+// ModeRule semantics on garbage input, so without validation a typo in
+// a future CLI / config-import path could silently route differently
+// than the user intended.
+func TestSetModeValidatesMode(t *testing.T) {
+	p := newTestPipeline(t)
+	for _, ok := range []string{"rule", "global", "direct"} {
+		if err := p.SetMode(ok); err != nil {
+			t.Errorf("SetMode(%q) should succeed, got %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "Rule", "globl", "rules", "RULE"} {
+		if err := p.SetMode(bad); err == nil {
+			t.Errorf("SetMode(%q) must error, got nil", bad)
+		}
+	}
+}
+
+// TestDeleteActiveLocalGroupClearsActiveSource — local-group equivalent.
+func TestDeleteActiveLocalGroupClearsActiveSource(t *testing.T) {
+	p := newTestPipeline(t)
+	_ = p.AddLocalGroup("home")
+	if p.store.Cfg.ActiveSource != "home" {
+		t.Fatalf("setup: ActiveSource should be home, got %q", p.store.Cfg.ActiveSource)
+	}
+	if err := p.DeleteLocalGroup("home", false); err != nil {
+		t.Fatalf("DeleteLocalGroup: %v", err)
+	}
+	if p.store.Cfg.ActiveSource != "" {
+		t.Errorf("deleting active local group should clear ActiveSource, got %q", p.store.Cfg.ActiveSource)
+	}
+}

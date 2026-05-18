@@ -8,7 +8,6 @@ import (
 
 	"vpnkit/internal/app"
 	"vpnkit/internal/paths"
-	"vpnkit/internal/store"
 )
 
 // dispatchActive implements `vpnkit active [<source-name>] [--json]`.
@@ -31,26 +30,28 @@ func dispatchActive(args []string) {
 	if err != nil {
 		dieRuntime("%v", err)
 	}
+	pl := app.NewPipeline(st, p.MihomoConfigFile())
 	if len(positional) == 0 {
-		runActiveShow(os.Stdout, st, wantJSON)
+		runActiveShow(os.Stdout, pl, wantJSON)
 		return
 	}
 	name := positional[0]
-	pl := app.NewPipeline(st, p.MihomoConfigFile())
-	if err := runActiveSet(os.Stdout, pl, st, name, wantJSON); err != nil {
+	if err := runActiveSet(os.Stdout, pl, name, wantJSON); err != nil {
 		dieUserErr("%v", err)
 	}
 	applyMutation(pl)
 }
 
-// runActiveShow prints the current active source (text or JSON). Pure I/O
-// against the passed writer + store. Testable.
-func runActiveShow(out io.Writer, st *store.Store, wantJSON bool) {
-	name := st.Cfg.ActiveSource
+// runActiveShow prints the current active source (text or JSON). Routes
+// all reads through the Pipeline so they happen under p.mu instead of
+// touching store.Cfg directly (which would race with concurrent
+// mutations on the same pointer).
+func runActiveShow(out io.Writer, pl *app.Pipeline, wantJSON bool) {
+	name := pl.ActiveSource()
 	if wantJSON {
 		_ = json.NewEncoder(out).Encode(map[string]any{
 			"active_source": name,
-			"kind":          activeKind(st, name),
+			"kind":          pl.SourceKind(name),
 		})
 		return
 	}
@@ -58,41 +59,24 @@ func runActiveShow(out io.Writer, st *store.Store, wantJSON bool) {
 		fmt.Fprintln(out, "(none — vpnkit will pick the first enabled source on next assemble)")
 		return
 	}
-	fmt.Fprintf(out, "%s  (%s)\n", name, activeKind(st, name))
+	fmt.Fprintf(out, "%s  (%s)\n", name, pl.SourceKind(name))
 }
 
 // runActiveSet swaps the active source via Pipeline.SetActiveSource and
 // writes a confirmation. Doesn't reload mihomo — that's the caller's
-// responsibility (applyMutation in the CLI dispatcher). Testable.
-func runActiveSet(out io.Writer, pl *app.Pipeline, st *store.Store, name string, wantJSON bool) error {
+// responsibility (applyMutation in the CLI dispatcher).
+func runActiveSet(out io.Writer, pl *app.Pipeline, name string, wantJSON bool) error {
 	if err := pl.SetActiveSource(name); err != nil {
 		return err
 	}
 	if wantJSON {
 		_ = json.NewEncoder(out).Encode(map[string]string{
 			"active_source": name,
-			"kind":          activeKind(st, name),
+			"kind":          pl.SourceKind(name),
 		})
 		return nil
 	}
-	fmt.Fprintf(out, "✅ active_source → %s (%s)\n", name, activeKind(st, name))
+	fmt.Fprintf(out, "✅ active_source → %s (%s)\n", name, pl.SourceKind(name))
 	return nil
 }
 
-// activeKind labels a source name as "subscription" / "local" so users
-// can tell what they're pointing at. Returns "(unknown)" when the name
-// references a source that no longer exists (e.g. user deleted the sub
-// but the active_source field is stale).
-func activeKind(st *store.Store, name string) string {
-	for _, s := range st.Cfg.Subscriptions {
-		if s.Name == name {
-			return "subscription"
-		}
-	}
-	for _, g := range st.Cfg.LocalNodeGroups {
-		if g.Name == name {
-			return "local"
-		}
-	}
-	return "(unknown)"
-}

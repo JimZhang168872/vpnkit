@@ -22,8 +22,15 @@ type UpdateAvailableMsg struct {
 // are swallowed — a missing network shouldn't surface a flash to the user.
 // We delay 2s so the bootstrap status messages have time to settle before
 // any "⚡ update available" line shows up.
-func pollUpdate(prog *tea.Program, vpnkitVer, mihomoBinary string) {
-	time.Sleep(2 * time.Second)
+func pollUpdate(shutdown context.Context, prog *tea.Program, vpnkitVer, mihomoBinary string) {
+	// Brief delay so the bootstrap settles before we hit GitHub. Respect
+	// shutdown — quitting the TUI before the timer fires shouldn't make
+	// this goroutine outlive the process.
+	select {
+	case <-time.After(2 * time.Second):
+	case <-shutdown.Done():
+		return
+	}
 	mihomoVer := readMihomoVersionForCheck(mihomoBinary)
 	info, err := updater.Check(updater.Opts{
 		VpnkitCurrent: vpnkitVer,
