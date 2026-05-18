@@ -25,7 +25,7 @@ func TestSubMenuNavigation(t *testing.T) {
 }
 
 func TestPageEnumNames(t *testing.T) {
-	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubRules, SubCache, SubAbout}
+	expected := []SubPage{SubCore, SubService, SubController, SubRouting, SubActive, SubRules, SubCache, SubAbout}
 	if len(SubPageNames) != len(expected) {
 		t.Fatalf("len(SubPageNames)=%d, want %d", len(SubPageNames), len(expected))
 	}
@@ -50,8 +50,10 @@ func TestFocusResetsOnSubPageChange(t *testing.T) {
 	}
 	m.SetFocus(FocusSidebar)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if m.SelectedPage() != SubRules {
-		t.Errorf("expected SubRules, got %v", m.SelectedPage())
+	// SubActive sits between SubRouting and SubRules now, so one ↓ from
+	// SubRouting lands on SubActive (still an own-arrows page).
+	if m.SelectedPage() != SubActive {
+		t.Errorf("expected SubActive, got %v", m.SelectedPage())
 	}
 	if m.Focus() != FocusSidebar {
 		t.Errorf("focus should remain Sidebar on sub-page change, got %v", m.Focus())

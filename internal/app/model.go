@@ -200,6 +200,7 @@ func (m *Model) WirePipeline(pl *Pipeline) {
 			}
 			return out
 		},
+		GetActiveSource: pl.ActiveSource,
 	})
 	// Sources tab — reuse the PipelineFace interface directly; Pipeline satisfies it.
 	m.sourcesTab = tabsources.New(tabsources.Deps{Pipeline: pl})

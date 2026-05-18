@@ -98,6 +98,53 @@ func TestViewShowsScrollIndicatorOnOverflow(t *testing.T) {
 	}
 }
 
+// TestViewMarksActiveSourceWithStar — rc.7 active source visibility.
+// The left-pane group list must show a `★` next to whichever group is
+// the current GetActiveSource(). Mirror tests below assert it's
+// idempotent: a switch updates the marker on next render.
+func TestViewMarksActiveSourceWithStar(t *testing.T) {
+	active := "boost"
+	deps := Deps{
+		GetSubs: func() []store.Subscription {
+			return []store.Subscription{
+				{Name: "doge", Enabled: true, NodeCount: 1},
+				{Name: "boost", Enabled: true, NodeCount: 1},
+			}
+		},
+		GetSubNodes: func(name string) []SubNode {
+			return []SubNode{{Name: "N", Proto: "ss", Server: "x", Port: 1}}
+		},
+		GetLocalGroups:  func() []store.LocalNodeGroup { return nil },
+		GetLocalNodes:   func(string) []SubNode { return nil },
+		GetActiveSource: func() string { return active },
+	}
+	m := New(deps)
+	m.Refresh()
+	out := m.View(120, 30)
+	// boost is active → should be marked. doge is not.
+	dogeLine := findLine(out, "doge")
+	boostLine := findLine(out, "boost")
+	if strings.Contains(dogeLine, "★") {
+		t.Errorf("doge (inactive) should NOT have ★:\n%s", dogeLine)
+	}
+	if !strings.Contains(boostLine, "★") {
+		t.Errorf("boost (active) should have ★:\n%s", boostLine)
+	}
+}
+
+// findLine returns the first whole line in `out` that contains `needle`.
+// Empty when not found. Used by the marker-rendering tests so the
+// assertion isolates the row of interest (whole-screen contains-checks
+// are too loose to detect "marker on wrong row" bugs).
+func findLine(out, needle string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	return ""
+}
+
 // TestDelayResultsPopulatesPerNodeMap verifies the Update handler stores
 // incoming delay measurements keyed by namespaced node name.
 func TestDelayResultsPopulatesPerNodeMap(t *testing.T) {
