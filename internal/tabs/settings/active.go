@@ -56,10 +56,18 @@ func (m activeModel) Update(message tea.Msg) (activeModel, tea.Cmd) {
 				m.flash = "❌ " + err.Error()
 				return m, nil
 			}
-			m.flash = "✅ active → " + pick
+			// Save succeeded — but the user's perception of "active
+			// changed" only holds if mihomo actually loaded the new
+			// config. If applyFunc errors (mihomo down, file IO failed),
+			// store is updated but mihomo isn't — split-brain. Surface
+			// the failure in flash rather than declaring ✅ prematurely.
 			if m.applyFunc != nil {
-				_ = m.applyFunc()
+				if err := m.applyFunc(); err != nil {
+					m.flash = "⚠️  saved → " + pick + ", but mihomo reload failed: " + err.Error()
+					return m, nil
+				}
 			}
+			m.flash = "✅ active → " + pick
 		}
 	}
 	return m, nil

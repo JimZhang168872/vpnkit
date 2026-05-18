@@ -321,6 +321,49 @@ func TestActiveSourceLocalRulesAlwaysPrepended(t *testing.T) {
 	}
 }
 
+// TestActiveSourceSiblingTargetPassesThrough — intentional behavior
+// pinning. Under rc.7 only the active sub's rules emit, but those rules
+// may reference SIBLING group names (e.g. the active sub `doge` ships a
+// rule `DOMAIN-SUFFIX,x.com,boost`). We pass it through unchanged
+// because:
+//
+//   - The rule is the active source's expressed routing intent.
+//   - The sibling group `boost` is still emitted as its own proxy-group
+//     in the config (emitProxyGroups emits every enabled source), so
+//     mihomo will route x.com through boost successfully.
+//   - It's not the 🚀 Proxy default catch-all that user clicks "active";
+//     it's a per-rule explicit target. Rewriting it would silently
+//     override the rule author's intent.
+//
+// Note this DOES mean active-source isn't a 100% routing monopoly: a
+// crafted rule can divert traffic to an inactive source's nodes. Most
+// real-world subs reference their own internal groups (`Hong-Kong`,
+// `Streaming`) which fall through to the current-group rewrite path,
+// not sibling subs by name, so the practical impact is small.
+func TestActiveSourceSiblingTargetPassesThrough(t *testing.T) {
+	doge := groups.NewSubscriptionGroup("doge", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "HK-A", "type": "ss"}},
+		Raw: map[string]any{
+			"rules": []any{"DOMAIN-SUFFIX,x.com,boost"},
+		},
+	})
+	boost := groups.NewSubscriptionGroup("boost", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "SG-1", "type": "ss"}},
+	})
+	out, _ := Assemble(Input{
+		Mode:             ModeRule,
+		ActiveSource:     "doge",
+		Subscriptions:    []groups.Group{doge, boost},
+		MixedPort:        50595,
+		ControllerPort:   32645,
+		ControllerSecret: "s",
+	})
+	s := string(out)
+	if !strings.Contains(s, "DOMAIN-SUFFIX,x.com,boost") {
+		t.Errorf("sibling-group target should pass through unchanged:\n%s", s)
+	}
+}
+
 // TestActiveSourceTopProxyMembersAreOnlyActive — 🚀 Proxy Selector
 // members come from the active source only (+ DIRECT), so MATCH traffic
 // routes to active. Other groups (doge, doge-auto, ...) are still emitted

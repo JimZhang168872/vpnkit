@@ -285,22 +285,36 @@ func (p *Pipeline) AddSubscription(sub store.Subscription) error {
 // reload to push the new config to mihomo.
 func (p *Pipeline) SetActiveSource(name string) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	// Match the established pattern in AddSubscription / AddLocalGroup:
+	// release p.mu BEFORE calling p.store.Save() so we never hold one
+	// mutex across the I/O that acquires another. Using `defer` here
+	// would hold p.mu through Save(), and any future code that locks
+	// s.mu and then needs p.mu would deadlock (classic ABBA setup —
+	// no concrete trigger today, but cheap to keep the locking
+	// discipline consistent across all mutating methods).
+	found := false
 	for _, s := range p.store.Cfg.Subscriptions {
 		if s.Enabled && s.Name == name {
-			p.store.Cfg.ActiveSource = name
-			p.store.Cfg.GlobalTarget = name + "-auto"
-			return p.store.Save()
+			found = true
+			break
 		}
 	}
-	for _, g := range p.store.Cfg.LocalNodeGroups {
-		if g.Enabled && g.Name == name {
-			p.store.Cfg.ActiveSource = name
-			p.store.Cfg.GlobalTarget = name + "-auto"
-			return p.store.Save()
+	if !found {
+		for _, g := range p.store.Cfg.LocalNodeGroups {
+			if g.Enabled && g.Name == name {
+				found = true
+				break
+			}
 		}
 	}
-	return fmt.Errorf("active source %q is not an enabled subscription or local group", name)
+	if !found {
+		p.mu.Unlock()
+		return fmt.Errorf("active source %q is not an enabled subscription or local group", name)
+	}
+	p.store.Cfg.ActiveSource = name
+	p.store.Cfg.GlobalTarget = name + "-auto"
+	p.mu.Unlock()
+	return p.store.Save()
 }
 
 // ActiveSource returns the currently active source name (for display /
@@ -311,16 +325,48 @@ func (p *Pipeline) ActiveSource() string {
 	return p.store.Cfg.ActiveSource
 }
 
-// firstProxySource returns the name of the first enabled proxy source —
-// subscription or local-nodes-group, in store insertion order. Used by
-// AddSubscription/AddLocalGroup to detect "is this the very first one?"
-// for the GlobalTarget auto-nudge. Caller holds p.mu.
+// SourceKind labels `name` as "subscription", "local", or "(unknown)".
+// Callers needing both the kind label and concurrency-safe reads should
+// use this rather than poking at store.Cfg directly — the latter races
+// with any concurrent mutation through Pipeline.
+func (p *Pipeline) SourceKind(name string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			return "subscription"
+		}
+	}
+	for _, g := range p.store.Cfg.LocalNodeGroups {
+		if g.Name == name {
+			return "local"
+		}
+	}
+	return "(unknown)"
+}
+
+// firstProxySource returns the name of the first ENABLED proxy source —
+// subscription preferred, then local-nodes-group, in store insertion
+// order. Used by AddSubscription/AddLocalGroup to detect "is this the
+// very first usable one?" for the GlobalTarget / ActiveSource auto-nudge.
+// Caller holds p.mu.
+//
+// Earlier versions returned the first item unconditionally (no Enabled
+// check), which meant a disabled subscription at index 0 followed by
+// the just-added new sub at index 1 returned the disabled one's name —
+// the comparison `firstProxySource(st) == sub.Name` failed and the
+// nudge never fired. We always want to point routing at something the
+// user can actually use, so skip disabled entries.
 func firstProxySource(st *store.Store) string {
 	for _, s := range st.Cfg.Subscriptions {
-		return s.Name
+		if s.Enabled {
+			return s.Name
+		}
 	}
 	for _, g := range st.Cfg.LocalNodeGroups {
-		return g.Name
+		if g.Enabled {
+			return g.Name
+		}
 	}
 	return ""
 }
@@ -341,6 +387,15 @@ func (p *Pipeline) DeleteSubscription(name string) error {
 	}
 	p.store.Cfg.Subscriptions = append(p.store.Cfg.Subscriptions[:idx], p.store.Cfg.Subscriptions[idx+1:]...)
 	delete(p.subResults, name)
+	// Clear ActiveSource if we just deleted the active one. Leaving a
+	// stale ActiveSource here would make the next Assemble fall through
+	// topProxyMembersFor's "name doesn't match anything enabled" branch
+	// → 🚀 Proxy contains only DIRECT, and the user sees "all traffic
+	// goes direct" with no flash explaining why. Empty value triggers
+	// firstEnabledSourceName fallback in the assembler.
+	if p.store.Cfg.ActiveSource == name {
+		p.store.Cfg.ActiveSource = ""
+	}
 	p.mu.Unlock()
 	return p.store.Save()
 }
@@ -351,6 +406,12 @@ func (p *Pipeline) ToggleSubscriptionEnabled(name string) error {
 	for i, s := range p.store.Cfg.Subscriptions {
 		if s.Name == name {
 			p.store.Cfg.Subscriptions[i].Enabled = !s.Enabled
+			// If we just disabled the active source, clear ActiveSource so
+			// 🚀 Proxy doesn't end up referencing a disabled group. Same
+			// reasoning as DeleteSubscription.
+			if !p.store.Cfg.Subscriptions[i].Enabled && p.store.Cfg.ActiveSource == name {
+				p.store.Cfg.ActiveSource = ""
+			}
 			p.mu.Unlock()
 			return p.store.Save()
 		}
@@ -474,6 +535,11 @@ func (p *Pipeline) DeleteLocalGroup(name string, force bool) error {
 		p.localNodes.Load(nodes)
 	}
 	// Non-force path: group was empty, nothing in p.localNodes to reload.
+	// Clear ActiveSource if we just removed it — see DeleteSubscription
+	// for why (stale ActiveSource → 🚀 Proxy degrades to DIRECT-only).
+	if p.store.Cfg.ActiveSource == name {
+		p.store.Cfg.ActiveSource = ""
+	}
 	p.mu.Unlock()
 	return p.store.Save()
 }
@@ -485,6 +551,9 @@ func (p *Pipeline) ToggleLocalGroupEnabled(name string) error {
 	for i, g := range p.store.Cfg.LocalNodeGroups {
 		if g.Name == name {
 			p.store.Cfg.LocalNodeGroups[i].Enabled = !g.Enabled
+			if !p.store.Cfg.LocalNodeGroups[i].Enabled && p.store.Cfg.ActiveSource == name {
+				p.store.Cfg.ActiveSource = ""
+			}
 			p.mu.Unlock()
 			return p.store.Save()
 		}

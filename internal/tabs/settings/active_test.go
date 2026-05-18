@@ -117,6 +117,28 @@ func TestActiveSetErrorIsSurfacedInFlash(t *testing.T) {
 	}
 }
 
+// TestActiveSetSurfacesApplyError — store update can succeed while
+// mihomo reload fails (mihomo down, file write race, etc.). The flash
+// must reflect that mismatch so the user knows their view of "active is
+// boost now" doesn't match what mihomo is actually routing through.
+// Otherwise it's silent split-brain: store says boost, mihomo still
+// routes via the previous active source.
+func TestActiveSetSurfacesApplyError(t *testing.T) {
+	st := activeTestStore("doge")
+	pl := &stubPipeline{current: "doge"}
+	apply := func() error { return errors.New("mihomo down") }
+	m := newActive(st, pl, apply)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // cursor → boost
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	out := m.View(80, 24)
+	if !strings.Contains(out, "mihomo down") {
+		t.Errorf("applyFunc error should appear in flash:\n%s", out)
+	}
+	if strings.Contains(out, "✅ active → boost") {
+		t.Errorf("flash must NOT report success when apply failed:\n%s", out)
+	}
+}
+
 // TestActiveDoesNotPanicWithoutStore — defensive: tests / harnesses
 // construct Settings with Deps{} which leaves Store nil. The sub-page
 // must show a placeholder rather than crash.

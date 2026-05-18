@@ -575,7 +575,9 @@ enabled = true
 // TestLoadDerivesActiveSourceFromGlobalTargetOnUpgrade — rc.6 → rc.7
 // migration. User on rc.6 had `global_target = "boost-auto"`, meaning
 // boost-auto was 🚀 Proxy's default member. Under rc.7 the equivalent is
-// `active_source = "boost"`. Auto-derive on first rc.7 launch.
+// `active_source = "boost"`. Auto-derive on first rc.7 launch and
+// persist so a second Load doesn't churn the file (same invariant
+// TestLoadIsIdempotentAfterMigration covers for rc.2→rc.3).
 func TestLoadDerivesActiveSourceFromGlobalTargetOnUpgrade(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	rc6 := `schema_version = 2
@@ -599,6 +601,22 @@ enabled = true
 	}
 	if st.Cfg.ActiveSource != "boost" {
 		t.Errorf("expected derived ActiveSource=boost, got %q", st.Cfg.ActiveSource)
+	}
+	// Idempotency: second Load reads the now-rc.7-shaped file and must
+	// produce identical bytes — the `if ActiveSource == ""` guard skips
+	// derivation. Catches a future regression that re-runs derivation
+	// every Load and churns the file.
+	after1, _ := os.ReadFile(path)
+	st2, err := Load(path)
+	if err != nil {
+		t.Fatalf("second Load: %v", err)
+	}
+	if st2.Cfg.ActiveSource != "boost" {
+		t.Errorf("second Load ActiveSource: got %q", st2.Cfg.ActiveSource)
+	}
+	after2, _ := os.ReadFile(path)
+	if string(after1) != string(after2) {
+		t.Errorf("rc.7 migration not idempotent — second Load modified file:\n=== first ===\n%s\n=== second ===\n%s", after1, after2)
 	}
 }
 
