@@ -13,11 +13,12 @@ package sources
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
-// MaxNameLen caps subscription / local-group names. Pre-rc.7 a 1000-char
-// name silently round-tripped into the assembled YAML and produced
-// pathological proxy-group entries.
+// MaxNameLen caps subscription / local-group names by rune count (not
+// byte length). Chinese names like "美国直连0.5倍率" (8 runes / 22 bytes)
+// shouldn't trigger a misleading "too long (22 > 64 chars)" error.
 const MaxNameLen = 64
 
 // reservedNames is the case-insensitive blocklist of mihomo built-in
@@ -60,8 +61,8 @@ func ValidateName(name string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("name cannot be empty or whitespace")
 	}
-	if len(name) > MaxNameLen {
-		return fmt.Errorf("name too long (%d > %d chars)", len(name), MaxNameLen)
+	if n := utf8.RuneCountInString(name); n > MaxNameLen {
+		return fmt.Errorf("name too long (%d > %d chars)", n, MaxNameLen)
 	}
 	if strings.HasPrefix(name, "-") {
 		return fmt.Errorf("name %q starts with `-` — looks like a CLI flag, pick a different prefix", name)
@@ -97,8 +98,8 @@ func ValidateNodeName(name string) error {
 	if name == "" {
 		return fmt.Errorf("name cannot be empty")
 	}
-	if len(name) > MaxNameLen {
-		return fmt.Errorf("name too long (%d > %d chars)", len(name), MaxNameLen)
+	if n := utf8.RuneCountInString(name); n > MaxNameLen {
+		return fmt.Errorf("name too long (%d > %d chars)", n, MaxNameLen)
 	}
 	if strings.HasPrefix(name, "-") {
 		return fmt.Errorf("name %q starts with `-` — looks like a CLI flag", name)

@@ -24,7 +24,10 @@ func runGroups(out io.Writer, c *api.Client, jsonOut bool) error {
 		Now     string `json:"now"`
 		Members int    `json:"members"`
 	}
-	var rows []entry
+	// Pre-allocate to []entry{} so an empty result marshals to `[]`,
+	// not `null` — round-7 QA caught that naive consumers iterating
+	// `null` get TypeError.
+	rows := []entry{}
 	for name, info := range proxies {
 		if !isUserSelectableType(info.Type) {
 			continue

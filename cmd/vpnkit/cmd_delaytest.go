@@ -104,10 +104,10 @@ func dispatchTest(args []string) {
 	}
 	c, _, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit test: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit test", err)
 	}
 	if err := runTest(os.Stdout, c, group, node, testURL, timeoutMs, jsonOut); err != nil {
-		dieRuntime("vpnkit test: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit test", err)
 	}
 }
 

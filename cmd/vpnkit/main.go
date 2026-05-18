@@ -212,10 +212,10 @@ func dispatchGroups(args []string) {
 	jsonOut, _ := parseFlags(args)
 	c, _, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit groups: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit groups", err)
 	}
 	if err := runGroups(os.Stdout, c, jsonOut); err != nil {
-		dieRuntime("vpnkit groups: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit groups", err)
 	}
 }
 
@@ -226,10 +226,10 @@ func dispatchNodes(args []string) {
 	}
 	c, _, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit nodes: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit nodes", err)
 	}
 	if err := runNodes(os.Stdout, c, rest[0], jsonOut); err != nil {
-		dieUserErr("vpnkit nodes: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit nodes", err)
 	}
 }
 
@@ -291,9 +291,9 @@ func dispatchUse(args []string) {
 	}
 	c, _, err := loadClient()
 	if err != nil {
-		dieRuntime("vpnkit use: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit use", err)
 	}
 	if err := runUse(os.Stdout, c, rest[0], rest[1], jsonOut); err != nil {
-		dieUserErr("vpnkit use: %v", err)
+		dieJSONOrText(jsonOut, "vpnkit use", err)
 	}
 }

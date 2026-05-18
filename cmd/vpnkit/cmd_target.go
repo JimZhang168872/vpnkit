@@ -20,25 +20,39 @@ import (
 // Pre-rc.7 this accepted ANY string ("../../etc/passwd", "", emoji garbage)
 // and persisted it as-is, breaking 🚀 Proxy emission at Assemble time.
 func dispatchTarget(args []string) {
+	// Pre-rc.7 dispatchTarget didn't parseFlags, so `--json` got
+	// treated as a positional target value (rc.7 then validated it and
+	// rejected). Strip --json first so both `vpnkit target --json`
+	// (show JSON) and `vpnkit target X --json` (set + JSON
+	// confirmation) work.
+	jsonOut, rest := parseFlags(args)
 	p := paths.Resolve()
 	st, err := storeLoad(p.VpnkitConfigFile())
 	if err != nil {
 		dieRuntime("%v", err)
 	}
-	if len(args) == 0 {
+	if len(rest) == 0 {
+		if jsonOut {
+			_ = writeJSON(os.Stdout, map[string]string{"global_target": st.Cfg.GlobalTarget})
+			return
+		}
 		fmt.Println(st.Cfg.GlobalTarget)
 		return
 	}
-	if len(args) > 1 {
-		dieUserErr("vpnkit target takes 0 or 1 args; got %d: %v", len(args), args)
+	if len(rest) > 1 {
+		dieUserErr("vpnkit target takes 0 or 1 args; got %d: %v", len(rest), rest)
 	}
-	target := args[0]
+	target := rest[0]
 	if err := validateTarget(st, target); err != nil {
 		dieUserErr("%v", err)
 	}
 	st.Cfg.GlobalTarget = target
 	if err := st.Save(); err != nil {
 		dieRuntime("%v", err)
+	}
+	if jsonOut {
+		_ = writeJSON(os.Stdout, map[string]string{"global_target": target})
+		return
 	}
 	fmt.Fprintf(os.Stdout, "✅ global_target → %s\n", target)
 }

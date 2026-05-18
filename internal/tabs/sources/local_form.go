@@ -193,6 +193,14 @@ func newLocalNodeFieldForm(proto, defaultGroup string) *localNodeForm {
 		if d.key == "group" {
 			ti.SetValue(defaultGroup)
 		}
+		// Mask credential fields with bullets so over-the-shoulder
+		// reading of a TUI session doesn't leak passwords/UUIDs. Users
+		// who need to verify the value can still copy from the store
+		// via `vpnkit local-nodes list --json` over a private channel.
+		if isCredentialField(d.key) {
+			ti.EchoMode = textinput.EchoPassword
+			ti.EchoCharacter = '•'
+		}
 		inputs[i] = ti
 	}
 	inputs[1].Focus() // skip proto (index 0), focus on Name (index 1)
@@ -478,4 +486,18 @@ func protoRequiredFields(proto string) []string {
 		return []string{"uuid", "password"}
 	}
 	return nil
+}
+
+// isCredentialField reports whether a form-field key holds a value that
+// shouldn't be rendered in plaintext on screen. Mirrors the keys that
+// providers expect to be private; passwords, UUIDs (which are pre-shared
+// secrets in mihomo's vmess/vless), and obfuscation passwords all
+// qualify. Cipher / SNI / server are display-OK because they don't
+// authenticate connections.
+func isCredentialField(key string) bool {
+	switch key {
+	case "password", "obfs-password", "uuid":
+		return true
+	}
+	return false
 }

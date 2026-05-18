@@ -1,11 +1,26 @@
 package app
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // View composes sidebar + tab body + statusbar.
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "loading…"
+	}
+	// Minimum usable terminal: sidebar (24 cols) + at least 36 cols of
+	// content. Below this, About-page URLs wrap into ~10-col residuals
+	// and sub-sidebar labels mangle ("External Controller" splits to
+	// two lines with missing border). Show a clear gate message instead
+	// of letting layout silently corrupt.
+	if m.width < 60 {
+		return fmt.Sprintf("vpnkit: terminal too narrow (need ≥60 cols, got %d)\nresize and press any key.", m.width)
+	}
+	if m.height < 16 {
+		return fmt.Sprintf("vpnkit: terminal too short (need ≥16 rows, got %d)\nresize and press any key.", m.height)
 	}
 	bodyHeight := m.height - 1 // reserve a line for status bar
 	mainFocused := m.appFocus == FocusMainSidebar

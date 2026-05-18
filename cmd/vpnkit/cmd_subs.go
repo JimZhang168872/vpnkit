@@ -39,6 +39,14 @@ func dispatchSubs(args []string) {
 			dieRuntime("%v", err)
 		}
 	case "add":
+		// Filter out --json early with a clearer error — pre-rc.7 this
+		// went through the "too many positionals" path which confused
+		// users who naturally typed `subs add foo http://x --json`.
+		for _, a := range rest {
+			if a == "--json" {
+				dieUserErr("vpnkit subs add: --json not supported (only read verbs support it); use `vpnkit subs ls --json` after add")
+			}
+		}
 		ua, posArgs := extractUAFlag(rest)
 		if len(posArgs) < 2 {
 			dieUserErr("usage: vpnkit subs add <name> <url> [--ua=...]")
