@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Delay test → `connection refused` doesn't tell user mihomo is down.**
+  TUI Groups tab `[t]` now detects transport-layer failures (connection
+  refused / EOF / Client.Timeout / no route to host) separately from real
+  HTTP responses (`api.IsUnreachable`). On unreachable, it automatically
+  calls `applyCfg` (reassemble + restart-via-service) and retries once.
+  If still unreachable, the flash points the user to Settings → Service
+  `[r]` and `journalctl --user -u mihomo`.
 - **Sources mutations didn't reload mihomo** (the bug behind `❌ delay
   Local: group "Local" not found in /proxies`). TUI Sources tab CRUD
   (subscription add/rm/enable/disable/update, local-node add/rm/edit/mv,

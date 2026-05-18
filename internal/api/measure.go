@@ -95,6 +95,42 @@ func (c *Client) measureMembers(ctx context.Context, group, testURL string, time
 	return out, nil
 }
 
+// IsUnreachable reports whether err is the kind of transport-layer
+// failure that means "mihomo isn't listening" rather than a real HTTP
+// response. Callers — primarily the TUI delay-test handler — use this to
+// distinguish "controller down, try to restart" from "controller said
+// 404 / 401 / 500, surface the error verbatim".
+//
+// The signal is purely a string match against the wrapped net/http error
+// because Go's net package returns *net.OpError / *url.Error which don't
+// embed a stable sentinel. The patterns below cover the observed flavors:
+//
+//   - "connection refused"   : mihomo process not running at all
+//   - "no route to host"     : interface down (rare on localhost loopback)
+//   - "Client.Timeout"       : dial timed out (mihomo starting / hung)
+//   - "EOF"                  : connection reset mid-request (just died)
+//
+// HTTPError wrapper (404 / 401 / 500) returns false — those are *real*
+// responses from mihomo, not unreachability.
+func IsUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return false
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "no route to host"),
+		strings.Contains(msg, "Client.Timeout"),
+		strings.Contains(msg, ": EOF"):
+		return true
+	}
+	return false
+}
+
 // isNotFound reports whether err came from a mihomo 404 response. The
 // api.Client wraps non-2xx responses as `mihomo <method> <path>: <code>
 // <body>` strings, so we string-match on " 404 " — adequate until we

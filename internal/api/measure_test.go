@@ -97,6 +97,39 @@ func TestMeasureGroup_FallsBackOnSelectorGroup(t *testing.T) {
 	}
 }
 
+// TestIsUnreachable detects mihomo-down errors (connection refused, no
+// route, dial timeout) so callers can auto-recover via service restart.
+// All these strings appear on Linux when mihomo isn't listening:
+//   - "connection refused"          — process not running
+//   - "no route to host"            — interface down (rare on localhost)
+//   - "context deadline exceeded"   — dial timed out (slow startup mid-flight)
+//   - "EOF"                         — process died mid-request
+func TestIsUnreachable(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{&HTTPError{StatusCode: 404}, false},
+		{&HTTPError{StatusCode: 401}, false},
+		{&HTTPError{StatusCode: 500}, false},
+		{errStub("dial tcp 127.0.0.1:38696: connect: connection refused"), true},
+		{errStub("dial tcp: connect: no route to host"), true},
+		{errStub("net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)"), true},
+		{errStub("read tcp: EOF"), true},
+		{errStub("some other random error"), false},
+	}
+	for _, c := range cases {
+		if got := IsUnreachable(c.err); got != c.want {
+			t.Errorf("IsUnreachable(%v) = %v, want %v", c.err, got, c.want)
+		}
+	}
+}
+
+type errStub string
+
+func (e errStub) Error() string { return string(e) }
+
 // TestMeasureGroup_PreservesOtherErrors verifies that non-404 errors from
 // the /group endpoint surface as-is (not silently translated to per-node
 // fallback). 401 / 500 etc. should reach the caller.
