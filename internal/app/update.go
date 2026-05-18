@@ -10,6 +10,7 @@ import (
 	apiPkg "vpnkit/internal/api"
 	tabgroups "vpnkit/internal/tabs/groups"
 	tabrules "vpnkit/internal/tabs/rules"
+	tabsettings "vpnkit/internal/tabs/settings"
 	tabsources "vpnkit/internal/tabs/sources"
 )
 
@@ -119,8 +120,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, c
 			}
 			switch v.String() {
-			case "tab":
-				// Toggle between Live and Local sub-pages.
+			// Tab is OWNED by the global tab cycler — do NOT intercept it
+			// here. Previously `case "tab"` consumed Tab to toggle the
+			// Rules sub-page (Live ↔ Local), which permanently trapped
+			// the user on the Rules tab. The sub-page now uses `T`
+			// (shift+t) instead.
+			case "T":
 				var c tea.Cmd
 				m.rulesTab, c = m.rulesTab.Update(msg)
 				return m, c
@@ -237,6 +242,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 1-7 / Tab tab-switcher hijacking the input.
 		if m.activeTab == TabSources {
 			if m.sourcesTab.InputOpen() {
+				// Ctrl-C must always be a quit path — even inside a
+				// textinput. Without this carve-out the form swallows it
+				// and the user has no fast escape to abort the app.
+				if v.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
 				var c tea.Cmd
 				m.sourcesTab, c = m.sourcesTab.Update(msg)
 				return m, c
@@ -252,9 +263,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, c
 			}
 		}
-		// Settings-tab-specific keys: same rule — input overlay swallows all.
+		// Settings-tab-specific keys: same rule — input overlay swallows all
+		// EXCEPT ctrl+c (which must remain a quit escape hatch).
 		if m.activeTab == TabSettings {
 			if m.settingsTab.InputOpen() {
+				if v.String() == "ctrl+c" {
+					return m, tea.Quit
+				}
 				var c tea.Cmd
 				m.settingsTab, c = m.settingsTab.Update(msg)
 				return m, c
@@ -286,10 +301,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = TabConnections
 		case key.Matches(v, m.keys.Tab6):
 			m.activeTab = TabLogs
+		case key.Matches(v, m.keys.Tab7):
+			m.activeTab = TabSettings
 		case key.Matches(v, m.keys.NextTab):
 			m.activeTab = (m.activeTab + 1) % NumTabs
 		case key.Matches(v, m.keys.PrevTab):
 			m.activeTab = (m.activeTab + NumTabs - 1) % NumTabs
+		case key.Matches(v, m.keys.Help):
+			// Inline keymap flash — cheap stand-in for a full overlay,
+			// but enough to fix the status bar advertising "?:help"
+			// while ? did nothing.
+			m.flash = "Keys: [1-7] tab  [tab/S-Tab] cycle  [q] quit  [/] filter (Rules/Conn)  [a] add (Sources)  [t] test (Groups)"
+		case key.Matches(v, m.keys.Mode):
+			// Direct users to the canonical UI for mode changes.
+			m.flash = "Cycle mode in Settings → Routing or `vpnkit mode [rule|global|direct]`"
+		case key.Matches(v, m.keys.Restart):
+			// Same: direct to Settings → Service rather than firing a
+			// blocking systemctl call from the global handler.
+			m.flash = "Restart mihomo in Settings → Service (press r there) or `systemctl --user restart mihomo`"
+		case key.Matches(v, m.keys.Palette):
+			m.flash = "Command palette: not implemented yet"
 		}
 	case TrafficMsg, VersionMsg, ServiceStatusMsg:
 		m.dashboard, cmd = m.dashboard.Update(msg)
@@ -330,6 +361,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rulesTab, cmd = m.rulesTab.Update(msg)
 	case LogLine:
 		m.logsTab, _ = m.logsTab.Update(msg)
+	case tabsettings.RoutingApplyDoneMsg, tabsettings.ActiveApplyDoneMsg:
+		// Async applyFunc completion messages from Settings → Routing /
+		// Active Source. Must reach settingsTab.Update so the relevant
+		// sub-page can clear its `busy` flag — without explicit routing
+		// the message dies in the top-level switch and the user sees
+		// "⏳ reloading mihomo…" forever. Same dispatch-hole class of
+		// bug as tabsources.RefreshDoneMsg below.
+		m.settingsTab, cmd = m.settingsTab.Update(msg)
+		return m, cmd
 	case tabsources.RefreshDoneMsg, tabsources.RefreshErrMsg:
 		// Subscription-refresh tea.Cmds (fired by Sources tab's `u`) come
 		// back as these messages. They need to land on sourcesTab so its

@@ -154,9 +154,11 @@ func (m Model) Update(message tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	// Tab key toggles between Live and Local sub-pages.
+	// `T` (shift+t) toggles between Live and Local sub-pages. Was `Tab`
+	// pre-rc.7 but that conflicted with the global next-tab cycler —
+	// users got permanently trapped on Rules with no way to advance.
 	if km, ok := message.(tea.KeyMsg); ok {
-		if km.Type == tea.KeyTab && !m.filtering {
+		if km.String() == "T" && !m.filtering {
 			if m.page == subLive {
 				m.page = subLocal
 				if m.pipeline != nil {
@@ -268,7 +270,7 @@ func (m Model) ViewFocused(width, height int, focused bool) string {
 	if m.filtering {
 		rows = append(rows, "", m.filterInput.View(), "[Enter] apply  [Esc] clear")
 	} else {
-		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate  [Tab] local rules")
+		rows = append(rows, "", "[/] filter  [u] refresh providers  [↑↓] navigate  [T] local rules")
 	}
 	// MaxHeight enforces clip at body height — without it, lipgloss lets
 	// content extend below the box, and JoinHorizontal then misaligns the
@@ -363,7 +365,7 @@ func (p localRulesPane) View(width, height int, focused bool) string {
 			}
 		}
 	}
-	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] navigate  [d] delete  [K/J] move up/down  [Tab] live rules"))
+	rows = append(rows, "", lipgloss.NewStyle().Faint(true).Render("[↑↓] navigate  [d] delete  [K/J] move up/down  [T] live rules"))
 	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(1, 2).
 		Render(strings.Join(rows, "\n"))
 }

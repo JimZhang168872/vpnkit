@@ -42,23 +42,29 @@ func newActive(st *store.Store, pl PipelineFace, applyFunc func() error) activeM
 
 func (activeModel) Init() tea.Cmd { return nil }
 
-// activeApplyDoneMsg signals the end of an async applyFunc fired after a
+// ActiveApplyDoneMsg signals the end of an async applyFunc fired after a
 // successful SetActiveSource. The Update handler clears busy and turns
-// the result into a flash. Without this round-trip the applyFunc (which
-// can take up to 30s due to mihomo reload + svc.Restart fallback) would
-// run synchronously on the bubbletea event loop and freeze the TUI.
-type activeApplyDoneMsg struct {
-	pick string
-	err  error
+// the result into a flash. Exported so the app-level Model.Update can
+// forward it back to settingsTab — bubbletea routes every cmd's result
+// through the top-level model and only known types reach sub-handlers.
+//
+// Without this round-trip the applyFunc (which can take up to 30s due
+// to mihomo reload + svc.Restart fallback) would run synchronously on
+// the bubbletea event loop and freeze the TUI; with synchronously-
+// dispatched-but-unhandled, the busy flag stays true forever and the
+// pane goes input-dead.
+type ActiveApplyDoneMsg struct {
+	Pick string
+	Err  error
 }
 
 func (m activeModel) Update(message tea.Msg) (activeModel, tea.Cmd) {
-	if done, ok := message.(activeApplyDoneMsg); ok {
+	if done, ok := message.(ActiveApplyDoneMsg); ok {
 		m.busy = false
-		if done.err != nil {
-			m.flash = "⚠️  saved → " + done.pick + ", but mihomo reload failed: " + done.err.Error()
+		if done.Err != nil {
+			m.flash = "⚠️  saved → " + done.Pick + ", but mihomo reload failed: " + done.Err.Error()
 		} else {
-			m.flash = "✅ active → " + done.pick
+			m.flash = "✅ active → " + done.Pick
 		}
 		m.refreshSnapshot()
 		return m, nil
@@ -93,7 +99,7 @@ func (m activeModel) Update(message tea.Msg) (activeModel, tea.Cmd) {
 				m.busy = true
 				applyFn := m.applyFunc
 				return m, func() tea.Msg {
-					return activeApplyDoneMsg{pick: pick, err: applyFn()}
+					return ActiveApplyDoneMsg{Pick: pick, Err: applyFn()}
 				}
 			}
 			m.flash = "✅ active → " + pick

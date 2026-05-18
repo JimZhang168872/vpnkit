@@ -148,6 +148,14 @@ func Load(path string) (*Store, error) {
 			"v1.0.0 changed the data model. Back up the file, then run "+
 			"`vpnkit init --force` to regenerate", path)
 	}
+	// Reject schema versions we don't understand. Without this, an older
+	// vpnkit binary happily eats a future v3 store, backfills defaults
+	// into unknown fields, and writes back a v2-shaped frankenstein that
+	// loses the v3 information silently. Better to fail loud.
+	if s.Cfg.SchemaVersion > 2 {
+		return nil, fmt.Errorf("store at %s has schema_version=%d which this vpnkit doesn't understand "+
+			"(supported up to v2). Upgrade vpnkit or restore an older backup", path, s.Cfg.SchemaVersion)
+	}
 	if s.Cfg.SchemaVersion == 0 {
 		s.Cfg.SchemaVersion = 2
 		changed = true

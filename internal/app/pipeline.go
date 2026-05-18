@@ -451,6 +451,29 @@ func (p *Pipeline) DeleteSubscription(name string) error {
 	return p.store.Save()
 }
 
+// SetSubscriptionEnabled sets the Enabled flag idempotently (true sets
+// enabled, false sets disabled — unlike Toggle which flips). The CLI
+// `subs enable` / `subs disable` use this so running disable on an
+// already-disabled sub is a no-op, not an accidental re-enable.
+//
+// Clears ActiveSource if disabling the currently-active source. Same
+// reasoning as DeleteSubscription.
+func (p *Pipeline) SetSubscriptionEnabled(name string, enabled bool) error {
+	p.mu.Lock()
+	for i, s := range p.store.Cfg.Subscriptions {
+		if s.Name == name {
+			p.store.Cfg.Subscriptions[i].Enabled = enabled
+			if !enabled && p.store.Cfg.ActiveSource == name {
+				p.store.Cfg.ActiveSource = ""
+			}
+			p.mu.Unlock()
+			return p.store.Save()
+		}
+	}
+	p.mu.Unlock()
+	return fmt.Errorf("subscription %q not found", name)
+}
+
 // ToggleSubscriptionEnabled flips the Enabled flag for a named subscription.
 func (p *Pipeline) ToggleSubscriptionEnabled(name string) error {
 	p.mu.Lock()

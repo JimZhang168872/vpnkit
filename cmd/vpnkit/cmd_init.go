@@ -34,7 +34,11 @@ func runInit(out io.Writer, opts runInitOpts) error {
 	// Step 0: if --force, back up any existing store before re-creating it.
 	if opts.Force {
 		if _, err := os.Stat(p.VpnkitConfigFile()); err == nil {
-			bak := fmt.Sprintf("%s.bak.%d", p.VpnkitConfigFile(), time.Now().Unix())
+			// UnixNano so two init --force calls within the same second
+			// don't produce identical backup names and clobber each
+			// other. QA found `bak.<unix-seconds>` collisions silently
+			// losing the first backup when users panic-ran init twice.
+			bak := fmt.Sprintf("%s.bak.%d", p.VpnkitConfigFile(), time.Now().UnixNano())
 			if err := os.Rename(p.VpnkitConfigFile(), bak); err != nil {
 				return fmt.Errorf("back up existing store: %w", err)
 			}

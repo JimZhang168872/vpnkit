@@ -400,7 +400,28 @@ func TestDispatchTargetSet(t *testing.T) {
 	if err := runInit(&buf, runInitOpts{}); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	mustNotPanic(t, func() { dispatchTarget([]string{"PROXY"}) })
+	// rc.7+: target value must resolve to a known source / DIRECT /
+	// REJECT. DIRECT is the safe sentinel that always passes validation
+	// even with an empty store (this is the post-init shape).
+	mustNotPanic(t, func() { dispatchTarget([]string{"DIRECT"}) })
+}
+
+// TestDispatchTargetRejectsUnknown — rc.7 validation: an arbitrary
+// string (typo, path traversal, garbage) must error out, not silently
+// persist as a broken target the assembler can't satisfy.
+func TestDispatchTargetRejectsUnknown(t *testing.T) {
+	_, restore := initEnv(t)
+	defer restore()
+	restoreDie := panicOnDie(t)
+	defer restoreDie()
+
+	var buf bytes.Buffer
+	if err := runInit(&buf, runInitOpts{}); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	mustPanicWith(t, "doesn't match", func() { dispatchTarget([]string{"PROXY"}) })
+	mustPanicWith(t, "doesn't match", func() { dispatchTarget([]string{"../../etc/passwd"}) })
+	mustPanicWith(t, "cannot be empty", func() { dispatchTarget([]string{""}) })
 }
 
 // --- dispatchSubs happy paths ---
@@ -889,9 +910,10 @@ func TestDispatchModeNoClient(t *testing.T) {
 
 	var buf bytes.Buffer
 	_ = runInit(&buf, runInitOpts{})
-	// dispatchMode → runMode("rule") → store update → reload mihomo fails →
-	// dieUserErr (runMode wraps as user error).
-	mustPanicWith(t, "die", func() { dispatchMode([]string{"rule"}) })
+	// rc.7: when mihomo is unreachable, mode persists to disk and warns
+	// to stderr but returns rc=0 (consistent with `subs add`). Used to
+	// dieUserErr; that was inconsistent with the rest of the mutators.
+	mustNotPanic(t, func() { dispatchMode([]string{"rule"}) })
 }
 
 func TestDispatchGroupsNoClient(t *testing.T) {

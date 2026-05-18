@@ -43,20 +43,24 @@ func newRouting(st *store.Store, pl PipelineFace, applyFunc func() error) routin
 
 func (routingModel) Init() tea.Cmd { return nil }
 
-// routingApplyDoneMsg is the async completion signal for applyFunc fired
-// after a successful SetMode. Mirrors activeApplyDoneMsg.
-type routingApplyDoneMsg struct {
-	mode string
-	err  error
+// RoutingApplyDoneMsg is the async completion signal for applyFunc fired
+// after a successful SetMode. Mirrors ActiveApplyDoneMsg — exported so
+// the app-level Model.Update can forward it back into settingsTab.
+// Without this round-trip the message dies in the top-level switch and
+// the routing pane's busy flag stays true forever, making the Mode list
+// permanently input-dead.
+type RoutingApplyDoneMsg struct {
+	Mode string
+	Err  error
 }
 
 func (m routingModel) Update(message tea.Msg) (routingModel, tea.Cmd) {
-	if done, ok := message.(routingApplyDoneMsg); ok {
+	if done, ok := message.(RoutingApplyDoneMsg); ok {
 		m.busy = false
-		if done.err != nil {
-			m.flash = "⚠️  mode → " + done.mode + " saved, mihomo reload failed: " + done.err.Error()
+		if done.Err != nil {
+			m.flash = "⚠️  mode → " + done.Mode + " saved, mihomo reload failed: " + done.Err.Error()
 		} else {
-			m.flash = "✅ mode → " + done.mode
+			m.flash = "✅ mode → " + done.Mode
 		}
 		m.refreshSnapshot()
 		return m, nil
@@ -92,7 +96,7 @@ func (m routingModel) Update(message tea.Msg) (routingModel, tea.Cmd) {
 				m.busy = true
 				applyFn := m.applyFunc
 				return m, func() tea.Msg {
-					return routingApplyDoneMsg{mode: mode, err: applyFn()}
+					return RoutingApplyDoneMsg{Mode: mode, Err: applyFn()}
 				}
 			}
 			m.flash = "✅ mode → " + mode
