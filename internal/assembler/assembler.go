@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"vpnkit/internal/groups"
 	"vpnkit/internal/localrules"
+	"vpnkit/internal/rules"
 )
 
 // Mode describes the user-visible routing strategy. vpnkit always emits
@@ -35,6 +36,11 @@ type Input struct {
 	ControllerSecret string
 	ProxyUser        string
 	ProxyPass        string
+	// RuleTemplate names an embedded baseline rule set ("loyalsoldier" /
+	// "minimal" / …) whose `rule-providers` and `rules` get merged into
+	// every emitted config.yaml. Empty = no template = backwards-compat
+	// with rc.5- (local + subscription + MATCH only).
+	RuleTemplate string
 }
 
 // Assemble produces the bytes that bootstrap atomically writes to
@@ -66,7 +72,40 @@ func Assemble(in Input) ([]byte, error) {
 
 	doc["proxies"] = emitProxies(in.Subscriptions, in.LocalGroups)
 	doc["proxy-groups"] = emitProxyGroups(in.Subscriptions, in.LocalGroups, in.GlobalTarget)
-	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions)
+
+	// Bake the rule template (rule-providers + baseline rules) into every
+	// emit so vpnkit's reassembles preserve the rules mihomo downloaded
+	// from the template's CDN URLs. Without this, the very first Sources
+	// mutation strips rule-providers / RULE-SET rules from config.yaml
+	// and the user perceives "rules vanish after first edit."
+	var templateRules []any
+	if in.RuleTemplate != "" {
+		raw, err := rules.Load(in.RuleTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("rule template %q: %w", in.RuleTemplate, err)
+		}
+		var tmpl struct {
+			RuleProviders map[string]any `yaml:"rule-providers"`
+			Rules         []any          `yaml:"rules"`
+		}
+		if err := yaml.Unmarshal(raw, &tmpl); err != nil {
+			return nil, fmt.Errorf("rule template %q parse: %w", in.RuleTemplate, err)
+		}
+		if len(tmpl.RuleProviders) > 0 {
+			doc["rule-providers"] = tmpl.RuleProviders
+		}
+		// Strip any trailing MATCH from the template so emitRules' own
+		// `MATCH,🚀 Proxy` stays the final catch-all (one MATCH, not two).
+		templateRules = tmpl.Rules
+		for len(templateRules) > 0 {
+			last, _ := templateRules[len(templateRules)-1].(string)
+			if !strings.HasPrefix(strings.TrimSpace(last), "MATCH,") {
+				break
+			}
+			templateRules = templateRules[:len(templateRules)-1]
+		}
+	}
+	doc["rules"] = emitRules(in.Mode, in.LocalRules, in.Subscriptions, templateRules)
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)

@@ -119,3 +119,89 @@ func TestAssembleModeDirect(t *testing.T) {
 		t.Errorf("mode=direct must end with MATCH,🎯 Direct: %s", out)
 	}
 }
+
+// TestAssembleBakesRuleTemplateProviders regresses a bug where the rule
+// template (bootstrap-time only via config.BuildSkeleton) got stripped
+// from config.yaml on the very next assemble. After a single TUI Sources
+// mutation, mihomo lost every RULE-SET reference and matched only the
+// final MATCH fallback → user perception "rules disappear / never come
+// back after first launch."
+//
+// Fix: assembler.Input carries RuleTemplate, Assemble loads the named
+// embedded template, merges its rule-providers into the doc, and emits
+// its rules as the baseline tier (after local + subscription rules,
+// before the catch-all MATCH).
+func TestAssembleBakesRuleTemplateProviders(t *testing.T) {
+	out, err := Assemble(Input{
+		Mode:             ModeRule,
+		Subscriptions:    nil,
+		LocalGroups:      nil,
+		LocalRules:       nil,
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		GlobalTarget:     "DIRECT",
+		RuleTemplate:     "loyalsoldier",
+	})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"rule-providers:",          // section present
+		"reject:",                  // a provider key from the template
+		"cncidr:",                  // another
+		"RULE-SET,reject",          // a rule from the template
+		"GEOIP,CN",                 // baseline china-direct
+		"MATCH,\U0001F680 Proxy",   // final fallback
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("expected %q in output:\n%s", want, s)
+		}
+	}
+}
+
+// TestAssembleMinimalTemplate covers a happy-path tighter template, and
+// asserts user's local rules still win over template rules (priority
+// order: local → subscription → template → MATCH).
+func TestAssembleMinimalTemplate(t *testing.T) {
+	out, err := Assemble(Input{
+		Mode:             ModeRule,
+		LocalRules:       []localrules.Rule{{Type: "DOMAIN", Payload: "private.example.com", Target: "DIRECT"}},
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+		GlobalTarget:     "DIRECT",
+		RuleTemplate:     "minimal",
+	})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	s := string(out)
+	idxLocal := strings.Index(s, "DOMAIN,private.example.com,DIRECT")
+	idxTemplate := strings.Index(s, "GEOIP,CN")
+	if idxLocal < 0 || idxTemplate < 0 {
+		t.Fatalf("missing rules:\n%s", s)
+	}
+	if idxLocal > idxTemplate {
+		t.Errorf("local rule must come before template rule:\nlocal at %d, template at %d", idxLocal, idxTemplate)
+	}
+}
+
+// TestAssembleEmptyRuleTemplate stays backwards-compatible: callers that
+// don't specify a template (or pass "") get the previous behavior — no
+// rule-providers section, only their own + subscription rules + MATCH.
+func TestAssembleEmptyRuleTemplate(t *testing.T) {
+	out, err := Assemble(Input{
+		Mode:             ModeRule,
+		MixedPort:        7890,
+		ControllerPort:   9090,
+		ControllerSecret: "s",
+	})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if strings.Contains(string(out), "rule-providers:") {
+		t.Errorf("empty RuleTemplate should not emit rule-providers section:\n%s", out)
+	}
+}

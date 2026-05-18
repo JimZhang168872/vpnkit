@@ -4,6 +4,26 @@
 
 ### Fixed
 
+- **Default rules disappear after first edit + unmatched traffic goes
+  direct instead of through proxy.** Two related bugs:
+  - The rule template (loyalsoldier by default — its rule-providers +
+    GEOIP/RULE-SET baseline) was only baked into config.yaml by
+    `config.BuildSkeleton` at bootstrap time. The very first
+    reassemble (any Sources mutation) replaced the file with a stripped
+    version that had only the user's local rules + `MATCH,🚀 Proxy`.
+    mihomo lost every RULE-SET reference, the user perceived "default
+    rules took forever / never came back."
+    Fix: `assembler.Input` now carries `RuleTemplate`; `Assemble`
+    re-loads the embedded template every emit and merges
+    `rule-providers` + baseline rules into the doc. Order is
+    `local → subscription → template → MATCH,🚀 Proxy`.
+  - When the user's first proxy source was added, vpnkit left
+    `GlobalTarget = "DIRECT"` (rc.6 safe default). That made
+    `MATCH,🚀 Proxy` resolve to DIRECT for unmatched traffic. Fix:
+    `Pipeline.AddSubscription` / `Pipeline.AddLocalGroup` auto-nudge
+    `GlobalTarget` to `<new-source>-auto` when it's still "DIRECT" and
+    this is the very first proxy source. Subsequent adds and explicit
+    user choices via `vpnkit target` are preserved.
 - **`🚀 Proxy` self-loop crash at mihomo startup.** Old vpnkit
   (≤ rc.5) defaulted `store.Cfg.GlobalTarget` to `"🚀 Proxy"` — the
   name of the top-level Selector group itself. The assembler then

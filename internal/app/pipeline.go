@@ -157,6 +157,14 @@ func (p *Pipeline) Assemble() error {
 	cfg := p.store.Cfg
 	p.mu.Unlock()
 
+	// Fall back to "loyalsoldier" when the store doesn't pin a template —
+	// it's the same default config.BuildSkeleton uses, and matching it here
+	// keeps rc.5+ Assemble emissions identical to the bootstrap-time skeleton
+	// in terms of what RULE-SETs mihomo sees.
+	tmpl := cfg.LegacyRuleTemplate
+	if tmpl == "" {
+		tmpl = "loyalsoldier"
+	}
 	bytes_, err := assembler.Assemble(assembler.Input{
 		Mode:             assembler.Mode(cfg.Mode),
 		GlobalTarget:     cfg.GlobalTarget,
@@ -168,6 +176,7 @@ func (p *Pipeline) Assemble() error {
 		ControllerSecret: cfg.ControllerSecret,
 		ProxyUser:        cfg.ProxyUser,
 		ProxyPass:        cfg.ProxyPass,
+		RuleTemplate:     tmpl,
 	})
 	if err != nil {
 		return err
@@ -238,6 +247,14 @@ func (p *Pipeline) SubscriptionNames() []store.Subscription {
 }
 
 // AddSubscription appends a new subscription to the store and persists.
+//
+// If this is the user's first proxy source AND GlobalTarget is still the
+// safe-default "DIRECT", auto-set GlobalTarget to the new subscription's
+// `-auto` url-test group. Reasoning: a brand-new vpnkit install has no
+// proxies, so DIRECT is the only sane default. Once the user adds a
+// subscription they almost certainly want unmatched traffic to flow
+// through it — without this nudge, they'd have to run `vpnkit target` or
+// pick a member in the Groups tab on every new install.
 func (p *Pipeline) AddSubscription(sub store.Subscription) error {
 	p.mu.Lock()
 	for _, s := range p.store.Cfg.Subscriptions {
@@ -247,8 +264,25 @@ func (p *Pipeline) AddSubscription(sub store.Subscription) error {
 		}
 	}
 	p.store.Cfg.Subscriptions = append(p.store.Cfg.Subscriptions, sub)
+	if p.store.Cfg.GlobalTarget == "DIRECT" && firstProxySource(p.store) == sub.Name {
+		p.store.Cfg.GlobalTarget = sub.Name + "-auto"
+	}
 	p.mu.Unlock()
 	return p.store.Save()
+}
+
+// firstProxySource returns the name of the first enabled proxy source —
+// subscription or local-nodes-group, in store insertion order. Used by
+// AddSubscription/AddLocalGroup to detect "is this the very first one?"
+// for the GlobalTarget auto-nudge. Caller holds p.mu.
+func firstProxySource(st *store.Store) string {
+	for _, s := range st.Cfg.Subscriptions {
+		return s.Name
+	}
+	for _, g := range st.Cfg.LocalNodeGroups {
+		return g.Name
+	}
+	return ""
 }
 
 // DeleteSubscription removes a subscription by name and persists.
@@ -338,6 +372,12 @@ func (p *Pipeline) AddLocalGroup(name string) error {
 	p.store.Cfg.LocalNodeGroups = append(p.store.Cfg.LocalNodeGroups, store.LocalNodeGroup{
 		Name: name, Enabled: true,
 	})
+	// Same first-proxy-source nudge as AddSubscription: if the user had
+	// no proxies and GlobalTarget was the safe DIRECT default, point it
+	// at this new local group's -auto so unmatched traffic uses it.
+	if p.store.Cfg.GlobalTarget == "DIRECT" && firstProxySource(p.store) == name {
+		p.store.Cfg.GlobalTarget = name + "-auto"
+	}
 	p.mu.Unlock()
 	return p.store.Save()
 }
