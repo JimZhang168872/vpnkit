@@ -735,17 +735,63 @@ neighbors reading them via `/etc/systemd/user/`.
   shell launching vpnkit if the feed itself needs the proxy (chicken-
   and-egg case, but solvable).
 
-### China network — first launch deadlock
+### China network — mihomo restart loop on first launch
 
-mihomo's bootstrap pulls GeoIP MMDB from GitHub; if the user hasn't
-plumbed a proxy yet, mihomo deadlocks waiting on it. vpnkit avoids this
-two ways:
-1. systemd-user unit injects `HTTPS_PROXY` / `HTTP_PROXY` from the
-   user's environment so mihomo can use them.
-2. `vpnkit init` pre-seeds the GeoIP/GeoSite files into
-   `~/.config/mihomo/` from the embedded bootstrap data.
+Symptom (`journalctl --user -u mihomo`):
+```
+Can't find MMDB, start download
+…
+fatal msg="Parse config error: rules[N] [GEOIP,CN,🎯 Direct] error:
+   can't download MMDB: Get https://github.com/MetaCubeX/meta-rules-dat
+   /releases/download/latest/country.mmdb: context deadline exceeded"
+Main process exited, code=exited, status=1/FAILURE
+mihomo.service: Scheduled restart job, restart counter is at N
+…
+mihomo.service: Start request repeated too quickly.
+Failed with result 'start-limit-hit'.
+```
 
-If you're hitting this, run `vpnkit init --force` to re-seed.
+What's happening: mihomo needs `country.mmdb` for the `GEOIP,CN,…` rules
+in the loyalsoldier template. On first launch it tries to download from
+GitHub with a hard 90 s deadline. On GFW'd networks that times out →
+mihomo fatal → systemd restart loop → start-limit hit.
+
+vpnkit's bootstrap WAS supposed to pre-seed these files before mihomo's
+first start. If that pre-seed failed silently (most often: the
+SmartClient env-proxy probe didn't see a reachable HTTP proxy), you end
+up here.
+
+**Recovery — manual pre-seed via a working proxy** (e.g. another mihomo
+already running locally on `127.0.0.1:7897`, or any HTTP proxy you can
+reach):
+
+```bash
+# 1. Stop the restart loop so it doesn't fight with us.
+systemctl --user stop mihomo
+systemctl --user reset-failed mihomo
+
+# 2. Fetch the 4 geodata files through your working proxy.
+PROXY=http://127.0.0.1:7897   # replace with your reachable proxy
+BASE=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest
+mkdir -p ~/.config/mihomo
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/country.mmdb   "$BASE/country.mmdb"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/geoip.metadb   "$BASE/geoip.metadb"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/geosite.dat    "$BASE/geosite.dat"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/ASN.mmdb       "$BASE/GeoLite2-ASN.mmdb"
+
+# 3. Start mihomo. With files on disk, it skips the download step entirely.
+systemctl --user start mihomo
+systemctl --user is-active mihomo   # should print "active"
+vpnkit status                       # should show mihomo v1.x.x running
+```
+
+`vpnkit init --force` can also re-trigger the pre-seed — but it goes
+through the same SmartClient code path, so if your env proxy probe is
+the original culprit, it'll fail the same way. The manual curl above is
+the deterministic recipe.
+
+Filenames matter — mihomo reads them by these exact names (and the
+`geox-url:` block in `~/.config/mihomo/config.yaml` references them).
 
 ### Local node form: `port must be int`
 

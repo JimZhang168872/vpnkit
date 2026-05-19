@@ -683,14 +683,59 @@ basic-auth 凭据，不能让邻居通过 `/etc/systemd/user/` 看到。
   本身要代理，启动 vpnkit 的 shell 里 `HTTPS_PROXY=http://127.0.0.1:7890`
   set 一下（先有鸡先有蛋的情况，但能解）
 
-### 国内网络 —— 第一次启动死锁
+### 墙内网络 —— mihomo 反复重启 / 第一次启动崩
 
-mihomo bootstrap 要从 GitHub 拉 GeoIP MMDB；用户没配代理时 mihomo 死锁
-等下载。vpnkit 两种方式规避：
-1. systemd-user unit 注入 `HTTPS_PROXY` / `HTTP_PROXY`，让 mihomo 能用
-2. `vpnkit init` 把 GeoIP/GeoSite 文件预下到 `~/.config/mihomo/`
+症状（`journalctl --user -u mihomo`）：
+```
+Can't find MMDB, start download
+…
+fatal msg="Parse config error: rules[N] [GEOIP,CN,🎯 Direct] error:
+   can't download MMDB: Get https://github.com/MetaCubeX/meta-rules-dat
+   /releases/download/latest/country.mmdb: context deadline exceeded"
+Main process exited, code=exited, status=1/FAILURE
+mihomo.service: Scheduled restart job, restart counter is at N
+…
+mihomo.service: Start request repeated too quickly.
+Failed with result 'start-limit-hit'.
+```
 
-如果撞这个，跑 `vpnkit init --force` 重新预下。
+原因：loyalsoldier 模板的 `GEOIP,CN,…` 规则要用 `country.mmdb`。mihomo
+第一次启动会从 GitHub 拉，硬 90s 超时。GFW 挡的网络下超时 → mihomo
+fatal → systemd 重启循环 → 撞 start-limit。
+
+vpnkit bootstrap 本该在 mihomo 第一次启动前预拉这几个文件 —— 但如果
+预拉静默失败（最常见是 SmartClient 的 env proxy 探测没探到能用的代理），
+就会进这个循环。
+
+**恢复方法 —— 用一个能跑的代理手动预拉**（比如本机已有的另一个 mihomo
+在 `127.0.0.1:7897`，或任何你能连上的 HTTP 代理）：
+
+```bash
+# 1. 停掉重启循环，免得跟我们抢
+systemctl --user stop mihomo
+systemctl --user reset-failed mihomo
+
+# 2. 通过可用代理拉 4 个 geodata 文件
+PROXY=http://127.0.0.1:7897   # 改成你能用的代理
+BASE=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest
+mkdir -p ~/.config/mihomo
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/country.mmdb   "$BASE/country.mmdb"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/geoip.metadb   "$BASE/geoip.metadb"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/geosite.dat    "$BASE/geosite.dat"
+curl -sSL --max-time 60 -x "$PROXY" -o ~/.config/mihomo/ASN.mmdb       "$BASE/GeoLite2-ASN.mmdb"
+
+# 3. 起 mihomo —— 文件在盘上就跳过下载步骤
+systemctl --user start mihomo
+systemctl --user is-active mihomo   # 期望 active
+vpnkit status                       # 期望 mihomo v1.x.x running
+```
+
+`vpnkit init --force` 也能触发一次预拉，但走的是同一个 SmartClient 代码
+路径 —— 如果你的 env proxy 探测就是原因，会按同样方式失败。上面 curl
+是确定性恢复方案。
+
+**文件名要一字不差** —— mihomo 按字面找它们（`~/.config/mihomo/config.yaml`
+里 `geox-url:` 区块就是这几个名字）。
 
 ### 本地节点表单：`port must be int`
 
