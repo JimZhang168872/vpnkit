@@ -46,7 +46,8 @@ export ALL_PROXY=socks5://127.0.0.1:7897
 # 2. 关键:先用你的代理把 mihomo 二进制下下来放到位,
 #    绕过 vpnkit init bootstrap 的 NoProxy 限制
 ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
-MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
+MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+  | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -1)
 mkdir -p ~/.local/bin
 curl -fL "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-linux-${ARCH}-${MIHOMO_VER}.gz" \
   | gunzip > ~/.local/bin/mihomo
@@ -99,7 +100,7 @@ curl -fsSL --max-time 8 "${PROXY_URL}/https://api.github.com/repos/JimZhang16887
 # 2. 通过镜像下 mihomo 二进制
 ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
 MIHOMO_VER=$(curl -fsSL "${PROXY_URL}/https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" \
-  | grep -oP '"tag_name":\s*"\K[^"]+')
+  | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -1)
 mkdir -p ~/.local/bin
 curl -fL "${PROXY_URL}/https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-linux-${ARCH}-${MIHOMO_VER}.gz" \
   | gunzip > ~/.local/bin/mihomo
@@ -121,6 +122,9 @@ rm /tmp/install-cn.sh
 
 > **本节命令在 Docker `--network=none`(完全无网)容器里跑通过。**
 > 验证日期 2026-05-19,vpnkit v1.0.3 + mihomo v1.19.25。
+>
+> **源机**(下载 bundle 那台)支持 macOS / Linux。**目标机**(实际跑
+> vpnkit 那台)必须是 Linux —— vpnkit / mihomo 只发布 Linux 二进制。
 
 适合:目标机器**完全**上不了外网,但你有另一台能上 GitHub 的机器。
 
@@ -136,15 +140,27 @@ rm /tmp/install-cn.sh
 
 ### 在能上 GitHub 的机器上(准备 bundle)
 
+> 这段脚本 macOS / Linux 都能跑(用 `sed -nE` 解析 JSON,避开 GNU-only 的
+> `grep -oP`;`sha256sum` 跟 macOS `shasum` 自动兼容)。
+
 ```bash
 set -e
-ARCH=amd64   # 或 arm64,跟目标机一致
+ARCH=amd64   # ⚠️ 跟"目标 Linux 机"的架构对齐 (amd64 或 arm64),不是源机的
 
-# 1. 解析版本
+# 跨平台 sha256 校验工具 wrapper —— Linux 有 sha256sum,macOS 默认只有 shasum
+sha_check() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c -
+  else
+    shasum -a 256 -c -
+  fi
+}
+
+# 1. 解析版本 (sed -nE 跨 BSD/GNU 通吃)
 VPN_VER=$(curl -fsSL https://api.github.com/repos/JimZhang168872/vpnkit/releases/latest \
-  | grep -oP '"tag_name":\s*"\K[^"]+')
+  | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -1)
 MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-  | grep -oP '"tag_name":\s*"\K[^"]+')
+  | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -1)
 echo "vpnkit=$VPN_VER  mihomo=$MIHOMO_VER"
 
 # 2. 准备目录
@@ -152,6 +168,7 @@ rm -rf /tmp/vpnkit-bundle
 mkdir -p /tmp/vpnkit-bundle/geo && cd /tmp/vpnkit-bundle
 
 # 3. 公共下载函数 —— retry 防 GFW 中途 SSL EOF / connect reset
+#    --retry-all-errors 要 curl ≥ 7.71 (macOS 默认 curl 早就支持)
 fetch() {
   curl -fL --retry 5 --retry-delay 2 --retry-max-time 180 \
        --retry-all-errors --retry-connrefused \
@@ -174,7 +191,7 @@ cd ..
 
 # 7. 完整性自查
 gunzip -t mihomo-linux-*.gz && echo "✅ mihomo gz 完整"
-grep "vpnkit_${VPN_VER#v}_linux_${ARCH}.tar.gz" SHA256SUMS | sha256sum -c -
+grep "vpnkit_${VPN_VER#v}_linux_${ARCH}.tar.gz" SHA256SUMS | sha_check
 
 # 8. 打包 (大概 40MB)
 cd /tmp
@@ -197,7 +214,7 @@ mkdir -p ~/.local/bin ~/.config/mihomo
 gunzip -c mihomo-linux-*.gz > ~/.local/bin/mihomo
 chmod +x ~/.local/bin/mihomo
 
-# 2. vpnkit 二进制 (顺便校验 SHA256)
+# 2. vpnkit 二进制 (顺便校验 SHA256;目标机是 Linux,有 sha256sum)
 grep "vpnkit_.*_linux_.*\.tar\.gz" SHA256SUMS | sha256sum -c -
 tar xzf vpnkit_*_linux_*.tar.gz
 install -m 0755 vpnkit ~/.local/bin/vpnkit
