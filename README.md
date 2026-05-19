@@ -1,7 +1,7 @@
 <h1 align="center">vpnkit</h1>
 
 <p align="center">
-  Terminal UI for the <a href="https://github.com/MetaCubeX/mihomo">mihomo</a> proxy core. Inspired by <a href="https://github.com/clash-verge-rev/clash-verge-rev">Clash Verge</a>. Single Go binary, fully non-root.
+  <strong>Terminal-native manager for the <a href="https://github.com/MetaCubeX/mihomo">mihomo</a> proxy core</strong> — subscriptions, local nodes, proxy chains, rule-based routing. TUI + CLI, no Electron, no daemon. Inspired by <a href="https://github.com/clash-verge-rev/clash-verge-rev">Clash Verge</a>. Single Go binary, fully non-root.
 </p>
 
 <p align="center">

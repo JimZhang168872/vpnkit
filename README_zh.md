@@ -1,7 +1,7 @@
 <h1 align="center">vpnkit</h1>
 
 <p align="center">
-  给 <a href="https://github.com/MetaCubeX/mihomo">mihomo</a> 内核做的终端管理 UI。模仿 <a href="https://github.com/clash-verge-rev/clash-verge-rev">Clash Verge</a>。单一 Go 二进制，完全非 root。
+  <strong><a href="https://github.com/MetaCubeX/mihomo">mihomo</a> 内核的终端管家</strong> —— 订阅、本地节点、代理链、规则路由,纯 TUI + CLI,不要 Electron,不跑 daemon。模仿 <a href="https://github.com/clash-verge-rev/clash-verge-rev">Clash Verge</a>。单一 Go 二进制,完全非 root。
 </p>
 
 <p align="center">
