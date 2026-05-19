@@ -45,7 +45,7 @@ curl_no_env() {
 # Curl through our local mihomo's mixed-port. PORT must be set.
 curl_via_vpnkit() {
   env -u HTTPS_PROXY -u HTTP_PROXY -u ALL_PROXY -u https_proxy -u http_proxy -u all_proxy \
-    curl -s --max-time 15 --proxy "http://127.0.0.1:$PORT" "$@"
+    curl -s --max-time 15 --proxy "$PROXY_URL" "$@"
 }
 
 # Best-effort egress-IP detection. Tries the configured IP_ECHO_URL first;
@@ -87,7 +87,17 @@ PORT=$("$VPNKIT" status --json | jq -r .ports.mixed)
 CTRL_PORT=$("$VPNKIT" status --json | jq -r .ports.controller)
 [[ "$PORT" =~ ^[0-9]+$ ]] || { fail "couldn't read ports.mixed from status (got: $PORT)"; exit 3; }
 [[ "$CTRL_PORT" =~ ^[0-9]+$ ]] || { fail "couldn't read ports.controller (got: $CTRL_PORT)"; exit 3; }
-pass "vpnkit running, mixed=$PORT controller=$CTRL_PORT"
+# vpnkit defaults to enforcing proxy auth (random credentials in store.toml).
+# Read them so the curl helpers can build authenticated URLs.
+PROXY_USER=$(grep '^proxy_user' "$HOME/.config/vpnkit/config.toml" | awk -F'"' '{print $2}')
+PROXY_PASS=$(grep '^proxy_pass' "$HOME/.config/vpnkit/config.toml" | awk -F'"' '{print $2}')
+if [ -n "$PROXY_USER" ] && [ -n "$PROXY_PASS" ]; then
+  PROXY_URL="http://${PROXY_USER}:${PROXY_PASS}@127.0.0.1:$PORT"
+  pass "vpnkit running, mixed=$PORT controller=$CTRL_PORT (with proxy auth)"
+else
+  PROXY_URL="http://127.0.0.1:$PORT"
+  pass "vpnkit running, mixed=$PORT controller=$CTRL_PORT (no auth in config)"
+fi
 
 # ─── A. subscription import ──────────────────────────────────────────────
 section "A. subscription import"
@@ -148,7 +158,7 @@ echo "ℹ️  baseline (no proxy) IP = $BASELINE_IP"
 # E.1 — mode=direct: vpnkit proxy should pass-through to baseline egress
 "$VPNKIT" mode direct >/dev/null
 sleep 1
-DIRECT_IP=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+DIRECT_IP=$(egress_ip "$PROXY_URL" || echo "unknown")
 echo "ℹ️  mode=direct egress IP = $DIRECT_IP"
 if [ "$DIRECT_IP" = "$BASELINE_IP" ] && [ "$DIRECT_IP" != "unknown" ]; then
   pass "mode=direct egress == baseline"
@@ -170,7 +180,7 @@ if [ -z "$SUB1_FIRST" ]; then
 else
   "$VPNKIT" use "🚀 Proxy" "$SUB1_FIRST" >/dev/null
   sleep 1
-  GLOBAL_IP=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+  GLOBAL_IP=$(egress_ip "$PROXY_URL" || echo "unknown")
   echo "ℹ️  mode=global use=$SUB1_FIRST → egress IP = $GLOBAL_IP"
   if [ "$GLOBAL_IP" != "$BASELINE_IP" ] && [ "$GLOBAL_IP" != "unknown" ]; then
     pass "mode=global egress changed (proxy is actually proxying)"
@@ -201,14 +211,14 @@ if [ -n "$JUMP_NAME" ] && [ -n "$DIRECT_NAME" ]; then
   # mihomo sees it in the flat namespace.
   if "$VPNKIT" use "🚀 Proxy" "local:$DIRECT_NAME" >/dev/null 2>&1; then
     sleep 1
-    DIRECT_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+    DIRECT_EGRESS=$(egress_ip "$PROXY_URL" || echo "unknown")
   else
     DIRECT_EGRESS="unknown"
   fi
 
   if "$VPNKIT" use "🚀 Proxy" "local:$JUMP_NAME" >/dev/null 2>&1; then
     sleep 1
-    JUMP_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+    JUMP_EGRESS=$(egress_ip "$PROXY_URL" || echo "unknown")
   else
     JUMP_EGRESS="unknown"
   fi

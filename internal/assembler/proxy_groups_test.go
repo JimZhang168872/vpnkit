@@ -103,3 +103,14 @@ func TestWithTargetFirstDropsSelfReference(t *testing.T) {
 		}
 	}
 }
+
+func TestTopProxyMembersForFallbacksWhenActiveHasNoNodes(t *testing.T) {
+	// Sub registered but never fetched (NodeCount = 0). Without this guard
+	// 🚀 Proxy would reference "doge-auto" — a group emitPair skips for
+	// the same 0-node reason — and mihomo would 400 on PUT /configs.
+	sub := groups.NewSubscriptionGroup("doge", true, &subscription.Result{})
+	got := topProxyMembersFor("doge", []groups.Group{sub}, nil)
+	if len(got) != 1 || got[0] != "DIRECT" {
+		t.Errorf("0-node active source should yield [DIRECT], got %v", got)
+	}
+}

@@ -94,22 +94,31 @@ func topProxyMembersFor(activeSource string, subs, localGroups []groups.Group) [
 	if activeSource == "" {
 		return []string{"DIRECT"}
 	}
-	found := false
+	// Must match BOTH conditions to emit the activeSource into 🚀 Proxy:
+	//   (1) enabled, (2) has at least one node.
+	// emitPair (above) ALSO skips groups with 0 nodes, so referencing
+	// "<activeSource>-auto" here when no nodes exist would dangle —
+	// mihomo PUT /configs would 400 with "group not found". This
+	// situation reliably arises right after `vpnkit subs add <name>`
+	// (before the first `subs update` fetches nodes): the store has the
+	// sub registered, the cache file doesn't exist yet, and Assemble
+	// runs immediately via applyMutation.
+	hasNodes := false
 	for _, g := range subs {
-		if g.Enabled() && g.Name() == activeSource {
-			found = true
+		if g.Enabled() && g.Name() == activeSource && len(nodeNames(g)) > 0 {
+			hasNodes = true
 			break
 		}
 	}
-	if !found {
+	if !hasNodes {
 		for _, lg := range localGroups {
-			if lg.Enabled() && lg.Name() == activeSource {
-				found = true
+			if lg.Enabled() && lg.Name() == activeSource && len(nodeNames(lg)) > 0 {
+				hasNodes = true
 				break
 			}
 		}
 	}
-	if !found {
+	if !hasNodes {
 		return []string{"DIRECT"}
 	}
 	return []string{activeSource + "-auto", activeSource, "DIRECT"}
