@@ -117,55 +117,147 @@ rm /tmp/install-cn.sh
 
 ---
 
-## 4. 路径 C:完全离线安装
+## 4. 路径 C:完全离线安装 ✅ 已验证
+
+> **本节命令在 Docker `--network=none`(完全无网)容器里跑通过。**
+> 验证日期 2026-05-19,vpnkit v1.0.3 + mihomo v1.19.25。
 
 适合:目标机器**完全**上不了外网,但你有另一台能上 GitHub 的机器。
 
-### 在能上 GitHub 的机器上
+### 关键 finding (避坑)
+
+1. **mihomo 启动需要 GeoIP MMDB 文件** —— 默认 config 含 `GEOIP,CN,...`
+   规则,缺 MMDB 就直接 fatal exit。所以 bundle **必须**包含 4 个 geo
+   文件,不能指望 vpnkit init 离线时把它们拉下来。
+2. **GitHub release 资产下载经常 SSL EOF 中途切断** —— curl 必须带
+   `--retry --retry-all-errors`,否则一次 fail 整个 bundle 准备阶段就跪。
+3. **mihomo 二进制 → `~/.local/bin/mihomo`** —— vpnkit init 看到就跳过
+   下载,这是规避 bootstrap NoProxy 直连 github 的关键。
+
+### 在能上 GitHub 的机器上(准备 bundle)
 
 ```bash
+set -e
 ARCH=amd64   # 或 arm64,跟目标机一致
-VPN_VER=$(curl -fsSL https://api.github.com/repos/JimZhang168872/vpnkit/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
-MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
 
-mkdir -p /tmp/vpnkit-bundle && cd /tmp/vpnkit-bundle
+# 1. 解析版本
+VPN_VER=$(curl -fsSL https://api.github.com/repos/JimZhang168872/vpnkit/releases/latest \
+  | grep -oP '"tag_name":\s*"\K[^"]+')
+MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+  | grep -oP '"tag_name":\s*"\K[^"]+')
+echo "vpnkit=$VPN_VER  mihomo=$MIHOMO_VER"
 
-# 下 vpnkit
-curl -fLO "https://github.com/JimZhang168872/vpnkit/releases/download/${VPN_VER}/vpnkit_${VPN_VER#v}_linux_${ARCH}.tar.gz"
+# 2. 准备目录
+rm -rf /tmp/vpnkit-bundle
+mkdir -p /tmp/vpnkit-bundle/geo && cd /tmp/vpnkit-bundle
 
-# 下 mihomo
-curl -fLO "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-linux-${ARCH}-${MIHOMO_VER}.gz"
+# 3. 公共下载函数 —— retry 防 GFW 中途 SSL EOF / connect reset
+fetch() {
+  curl -fL --retry 5 --retry-delay 2 --retry-max-time 180 \
+       --retry-all-errors --retry-connrefused \
+       --connect-timeout 30 -O "$1"
+}
 
-# 打包传给目标机
-tar czf /tmp/vpnkit-bundle.tgz -C /tmp vpnkit-bundle
-scp /tmp/vpnkit-bundle.tgz user@target:/tmp/
+# 4. vpnkit binary + 校验文件
+fetch "https://github.com/JimZhang168872/vpnkit/releases/download/${VPN_VER}/vpnkit_${VPN_VER#v}_linux_${ARCH}.tar.gz"
+fetch "https://github.com/JimZhang168872/vpnkit/releases/download/${VPN_VER}/SHA256SUMS"
+
+# 5. mihomo binary
+fetch "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-linux-${ARCH}-${MIHOMO_VER}.gz"
+
+# 6. ⚠️ 关键:4 个 GeoIP / GeoSite 数据文件,缺一不可
+cd geo
+for f in country.mmdb geoip.metadb geosite.dat GeoLite2-ASN.mmdb; do
+  fetch "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/$f"
+done
+cd ..
+
+# 7. 完整性自查
+gunzip -t mihomo-linux-*.gz && echo "✅ mihomo gz 完整"
+grep "vpnkit_${VPN_VER#v}_linux_${ARCH}.tar.gz" SHA256SUMS | sha256sum -c -
+
+# 8. 打包 (大概 40MB)
+cd /tmp
+tar czf vpnkit-bundle.tgz -C /tmp vpnkit-bundle
+du -h vpnkit-bundle.tgz
+
+# 9. 传给目标机
+scp vpnkit-bundle.tgz user@target:/tmp/
 ```
 
-### 在目标机上
+### 在目标机上(离线安装)
 
 ```bash
+set -e
 cd /tmp && tar xzf vpnkit-bundle.tgz && cd vpnkit-bundle
-mkdir -p ~/.local/bin
 
-# 装 mihomo
-gunzip -c mihomo-linux-*.gz > ~/.local/bin/mihomo && chmod +x ~/.local/bin/mihomo
+mkdir -p ~/.local/bin ~/.config/mihomo
 
-# 装 vpnkit
-tar xzf vpnkit_*_linux_*.tar.gz && install -m 0755 vpnkit ~/.local/bin/vpnkit
+# 1. mihomo 二进制
+gunzip -c mihomo-linux-*.gz > ~/.local/bin/mihomo
+chmod +x ~/.local/bin/mihomo
 
-# 跳过 bootstrap (网络步骤),只创建配置
-vpnkit init --skip-bootstrap
+# 2. vpnkit 二进制 (顺便校验 SHA256)
+grep "vpnkit_.*_linux_.*\.tar\.gz" SHA256SUMS | sha256sum -c -
+tar xzf vpnkit_*_linux_*.tar.gz
+install -m 0755 vpnkit ~/.local/bin/vpnkit
 
-# vpnkit init 完整版会试着拉 GeoIP / 规则集 — 离线场景下网络都走不了,
-# 不过 vpnkit 把规则集嵌在二进制里,所以会自动从 embed 写出来。
-# GeoIP 那一步会失败但是非致命:mihomo 启动时会自己重试。
-vpnkit init
+# 3. ⚠️ 关键:把 geo 文件放到 mihomo 配置目录,bootstrap 看到就跳过拉取
+cp geo/*.mmdb geo/*.metadb geo/*.dat ~/.config/mihomo/
 
-# 如果 vpnkit init 报 mihomo download / geo 拉取 fail,而你确认
-# ~/.local/bin/mihomo 已经在,就 OK 了。手动起 mihomo:
-systemctl --user start mihomo
-vpnkit status
+# 4. 跑 vpnkit init —— 不需要 --skip-bootstrap!
+#    所有需要的资源 (mihomo binary / geo / ruleset embed) 都已就位,
+#    bootstrap 全程不会触发网络。
+~/.local/bin/vpnkit init
+
+# 5. 验证
+~/.local/bin/vpnkit status
 ```
+
+### 预期输出 (验证过)
+
+`vpnkit init` 应该看到:
+
+```
+🛠️  vpnkit init
+✅ ~/.config/vpnkit/config.toml (created)
+✅ ~/.config/mihomo/config.yaml (created)
+🎉 ready — run `vpnkit` to start
+✅ mihomo binary already present (~/.local/bin/mihomo)
+✅ geo files seeded
+✅ rulesets seeded
+🔧 installing pid service backend…              # (或 systemd-user,看你机器)
+✅ mihomo running (mode=pid, pid=XX)
+```
+
+`vpnkit status` 应该看到:
+
+```
+🟢 mihomo  v1.19.25   running
+🔧 mode    rule
+🚪 ports   mixed=XXXXX   controller=XXXXX
+🚀 groups  4 selectable (GLOBAL → DIRECT, ...)
+📚 sources   0 subs + 0 local nodes
+🔀 routing   mode=rule  target=DIRECT
+```
+
+如果看到 mihomo 没起来,看日志:
+
+```bash
+tail -30 ~/.local/state/vpnkit/mihomo.log
+# 或 systemd 模式下:
+journalctl --user -u mihomo -n 30 --no-pager
+```
+
+常见离线 + 漏 geo 的报错:
+
+```
+level=fatal msg="Parse config error: rules[5] [GEOIP,CN,🎯 Direct] error:
+can't download MMDB: ... dial tcp: lookup github.com ... network is unreachable"
+```
+
+→ bundle 里没装 geo,补 `cp geo/*.mmdb ... ~/.config/mihomo/` 那一步,然后
+`systemctl --user restart mihomo` 或 `pkill mihomo && vpnkit init`。
 
 ---
 
