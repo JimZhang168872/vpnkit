@@ -53,6 +53,12 @@ From source: `git clone … && cd vpnkit && make install` (needs Go 1.23+).
 > *before* installing. The systemd-user unit and bootstrap also pick up your
 > shell-level proxy and pre-download the GeoIP/GeoSite data files so
 > mihomo's first launch doesn't deadlock waiting on GitHub.
+>
+> **🇨🇳 Behind the Great Firewall?** See
+> [**`docs/INSTALL-CN.md`**](docs/INSTALL-CN.md) — covers three install
+> paths (via existing proxy / via GitHub mirror / fully offline) plus
+> common errors (`SSL_ERROR_SYSCALL`, `connection refused`, mihomo
+> bootstrap failures).
 
 ## First run
 

@@ -43,11 +43,13 @@ curl -sSL https://raw.githubusercontent.com/JimZhang168872/vpnkit/main/install.s
 
 源码编译：`git clone … && cd vpnkit && make install`（需要 Go 1.23+）。
 
-> **网络要求：** vpnkit 直连 `github.com`，无 mirror fallback。墙内
-> 装请先在 shell 里 `export HTTPS_PROXY=...` 设好已有代理，再跑 install
-> 脚本。systemd-user unit 和 bootstrap 会把 shell 代理转发给 mihomo，并
-> 在启动前**预下** GeoIP / GeoSite 数据文件，避免 mihomo 首次启动因为拉
-> github 而 deadlock。
+> **网络要求：** vpnkit 直连 `github.com`，无 mirror fallback。
+>
+> **🇨🇳 在墙内?** 看 [**`docs/INSTALL-CN.md`**](docs/INSTALL-CN.md) —
+> 三条安装路径(已有代理 / GitHub 镜像 / 完全离线)+ 常见报错排查
+> (`SSL_ERROR_SYSCALL`、`connection refused`、`vpnkit init` 卡在
+> mihomo 下载等)。简单情况:`export HTTPS_PROXY=http://127.0.0.1:7897`
+> 后再跑上面的 install 脚本即可。
 
 ## 3 分钟上手
 
