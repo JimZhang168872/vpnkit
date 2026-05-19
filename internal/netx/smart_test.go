@@ -48,7 +48,17 @@ func TestSmartClientUsesEnvProxyWhenAlive(t *testing.T) {
 	}
 }
 
-func TestSmartClientFallsBackWhenEnvProxyDead(t *testing.T) {
+// TestSmartClientFailsLoudlyWhenEnvProxyDead covers rc.11+ behavior: when
+// the user has explicitly set HTTP_PROXY/HTTPS_PROXY/etc, SmartClient trusts
+// that choice. If the named proxy turns out to be dead, the request fails
+// with a transport-layer error (which the caller surfaces with a hint about
+// fixing HTTPS_PROXY) rather than silently bypassing the user's stated
+// intent.
+//
+// Pre-rc.11 this same scenario silently fell back to NoProxy, which on a
+// GFW host meant a 5-minute timeout against github.com instead of an
+// immediate "couldn't reach your proxy" error.
+func TestSmartClientFailsLoudlyWhenEnvProxyDead(t *testing.T) {
 	clearProxyEnv(t)
 	// Find a free port → close it → env proxy points there (dead).
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -68,14 +78,14 @@ func TestSmartClientFallsBackWhenEnvProxyDead(t *testing.T) {
 
 	c := SmartClient(3 * time.Second)
 	resp, err := c.Get(target.URL)
-	if err != nil {
-		t.Fatalf("dead env proxy should not break the request: %v", err)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatalf("dead env proxy should surface an error, but request succeeded — fallback regression?")
 	}
-	defer resp.Body.Close()
-	buf := make([]byte, 16)
-	n, _ := resp.Body.Read(buf)
-	if string(buf[:n]) != "DIRECT" {
-		t.Errorf("body = %q, want DIRECT (fell back to no-proxy)", buf[:n])
+	// Error message should mention the proxy address so the user sees what
+	// they need to fix.
+	if !strings.Contains(err.Error(), deadAddr) {
+		t.Errorf("error should mention proxy address %q; got: %v", deadAddr, err)
 	}
 }
 

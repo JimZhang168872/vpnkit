@@ -28,17 +28,28 @@ type ProgressFunc func(n, total int64)
 // There is no mirror fallback chain. If the GET fails, the error is returned
 // as-is; callers should surface it to the user with a hint to configure a
 // proxy (HTTPS_PROXY env) if they're inside a restricted network.
-func Download(githubURL, expectedSHA, dst string, progress ProgressFunc) error {
+// Download fetches a gzipped mihomo binary from githubURL. When noProxy is
+// true (bootstrap path), env proxies are bypassed unconditionally; when
+// false (update path), the user's HTTPS_PROXY is honored.
+func Download(githubURL, expectedSHA, dst string, progress ProgressFunc, noProxy bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubURL, nil)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", githubURL, err)
 	}
-	client := netx.SmartClient(0)
+	var client *http.Client
+	if noProxy {
+		client = netx.NoProxyClient(0)
+	} else {
+		client = netx.SmartClient(0)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", githubURL, err)
+		return fmt.Errorf("download %s: %w\n"+
+			"  • on GFW networks, set HTTPS_PROXY to a working proxy before re-running\n"+
+			"  • if your proxy IS vpnkit-managed mihomo, make sure it's running:\n"+
+			"    systemctl --user status mihomo", githubURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

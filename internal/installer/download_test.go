@@ -44,7 +44,7 @@ func TestDownloadAndVerify(t *testing.T) {
 	progresses := []int64{}
 	err := Download(srv.URL+"/mihomo.gz", expected, dst, func(n, total int64) {
 		progresses = append(progresses, n)
-	})
+	}, true)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestDownloadSHAMismatch(t *testing.T) {
 	defer srv.Close()
 
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	err := Download(srv.URL, "00deadbeef", dst, nil)
+	err := Download(srv.URL, "00deadbeef", dst, nil, true)
 	if err == nil {
 		t.Fatal("expected SHA mismatch error")
 	}
@@ -99,7 +99,7 @@ func TestDownloadHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 	dst := filepath.Join(t.TempDir(), "mihomo")
-	if err := Download(srv.URL, "", dst, nil); err == nil {
+	if err := Download(srv.URL, "", dst, nil, true); err == nil {
 		t.Fatal("expected error")
 	}
 }

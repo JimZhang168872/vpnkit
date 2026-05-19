@@ -39,7 +39,11 @@ type ReleaseClient struct {
 	HTTP    *http.Client
 }
 
-// NewReleaseClient constructs a client with a 10s timeout.
+// NewReleaseClient constructs a client with a 10s timeout that honors the
+// user's env proxy (HTTPS_PROXY / HTTP_PROXY) when set. Bootstrap callers
+// that must avoid the v0.9.x deadlock (env proxy is vpnkit's own
+// not-yet-running mihomo) should override .HTTP with noProxyHTTPClient()
+// after construction.
 func NewReleaseClient(baseURL, token string) *ReleaseClient {
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
@@ -47,13 +51,14 @@ func NewReleaseClient(baseURL, token string) *ReleaseClient {
 	return &ReleaseClient{
 		BaseURL: baseURL,
 		Token:   token,
-		// SmartClient: probe env proxy and honor it when alive. This makes
-		// `vpnkit update` work for users who have `proxy_on` set (mihomo
-		// can reach api.github.com via their proxy chain) while still
-		// degrading to NoProxyClient when the proxy isn't running yet
-		// (first-launch bootstrap — keeps v0.9.1 anti-deadlock).
-		HTTP: netx.SmartClient(10 * time.Second),
+		HTTP:    netx.SmartClient(10 * time.Second),
 	}
+}
+
+// noProxyHTTPClient is the bootstrap-safe client (Transport.Proxy=nil).
+// Used by Install() when Options.NoProxy is true.
+func noProxyHTTPClient() *http.Client {
+	return netx.NoProxyClient(10 * time.Second)
 }
 
 // Latest fetches MetaCubeX/mihomo's latest release.

@@ -75,6 +75,10 @@ func RunBootstrap(ctx context.Context, d BootstrapDeps, out io.Writer) error {
 		res, err := install(installer.Options{
 			Dst:     d.Paths.MihomoBinary(),
 			APIBase: "",
+			// Bootstrap context: user's HTTPS_PROXY usually points at our
+			// own mihomo (which we're about to install). Bypass env proxy
+			// so we don't deadlock on the chicken-and-egg case.
+			NoProxy: true,
 		}, nil)
 		if err != nil {
 			return fmt.Errorf("install mihomo: %w", err)

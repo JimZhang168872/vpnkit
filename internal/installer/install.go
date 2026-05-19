@@ -11,6 +11,15 @@ type Options struct {
 	Dst         string // absolute destination path for mihomo binary
 	Version     string // empty = latest
 	ForceCompat *bool  // nil = autodetect; true/false = override
+	// NoProxy forces the GitHub HTTP traffic to bypass the user's env proxy
+	// (HTTP_PROXY / HTTPS_PROXY / …). Set this for the BOOTSTRAP path
+	// (vpnkit init's first-time mihomo download): if the env proxy is
+	// vpnkit's own mihomo (the v0.9.x `proxy_on` case), trying to use it
+	// would deadlock — mihomo doesn't exist yet, we're trying to install it.
+	// Update / upgrade callers should leave this false so the user's
+	// explicit HTTPS_PROXY (often set via `vpnkit env` after bootstrap) is
+	// honored.
+	NoProxy bool
 }
 
 // Result describes a successful install.
@@ -27,6 +36,11 @@ func Install(opts Options, progress ProgressFunc) (Result, error) {
 		return Result{}, fmt.Errorf("install: Dst is required")
 	}
 	rc := NewReleaseClient(opts.APIBase, opts.Token)
+	if opts.NoProxy {
+		// Bootstrap path: never honor env proxy (it likely points at our own
+		// mihomo, which doesn't exist yet → chicken-and-egg).
+		rc.HTTP = noProxyHTTPClient()
+	}
 	var rel Release
 	var err error
 	if opts.Version == "" {
@@ -57,7 +71,7 @@ func Install(opts Options, progress ProgressFunc) (Result, error) {
 		compat = !compat
 	}
 
-	if err := Download(url, "", opts.Dst, progress); err != nil {
+	if err := Download(url, "", opts.Dst, progress, opts.NoProxy); err != nil {
 		return Result{}, fmt.Errorf("install: download: %w", err)
 	}
 	return Result{Version: rel.Tag, Compatible: compat}, nil

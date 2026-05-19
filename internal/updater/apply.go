@@ -51,7 +51,10 @@ func DownloadAndApplyVpnkit(githubURL, expectedSHA, dstPath string) error {
 	client := netx.SmartClient(0)
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", githubURL, err)
+		return fmt.Errorf("download %s: %w\n"+
+			"  • on GFW networks, set HTTPS_PROXY to a working proxy before re-running\n"+
+			"  • if your proxy IS vpnkit-managed mihomo, make sure it's running:\n"+
+			"    systemctl --user status mihomo", githubURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
