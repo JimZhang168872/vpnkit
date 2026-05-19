@@ -191,6 +191,8 @@ func parseVmess(_ *url.URL, raw string) (Node, error) {
 		Path string `json:"path"`
 		TLS  string `json:"tls"`
 		SNI  string `json:"sni"`
+		Fp   string `json:"fp"`   // TLS fingerprint (chrome/firefox/safari/random)
+		Alpn string `json:"alpn"` // comma-separated ALPN list (e.g. "h2,http/1.1")
 	}
 	if err := json.Unmarshal(decoded, &raw_); err != nil {
 		return Node{}, fmt.Errorf("parse(vmess): bad json: %w", err)
@@ -213,6 +215,19 @@ func parseVmess(_ *url.URL, raw string) (Node, error) {
 		} else if raw_.Host != "" {
 			fields["servername"] = raw_.Host
 		}
+	}
+	// TLS fingerprint emulation: drops handshake-fingerprint heuristic
+	// detection on GFW boxes. Without this, mihomo's default fingerprint
+	// is "chrome" too but only for newer versions — explicitly preserving
+	// the URI's choice keeps behavior consistent across mihomo versions.
+	if raw_.Fp != "" {
+		fields["client-fingerprint"] = raw_.Fp
+	}
+	// ALPN preference: many vmess servers will reject TLS handshakes that
+	// don't include the expected ALPN list, leading to long timeouts or
+	// outright connection failures.
+	if raw_.Alpn != "" {
+		fields["alpn"] = strings.Split(raw_.Alpn, ",")
 	}
 	if raw_.Net == "ws" {
 		wsOpts := map[string]any{}
@@ -268,6 +283,9 @@ func parseTrojan(u *url.URL, raw string) (Node, error) {
 	if alpn := q.Get("alpn"); alpn != "" {
 		fields["alpn"] = strings.Split(alpn, ",")
 	}
+	if fp := q.Get("fp"); fp != "" {
+		fields["client-fingerprint"] = fp
+	}
 	if q.Get("allowInsecure") == "1" || q.Get("skip-cert-verify") == "1" {
 		fields["skip-cert-verify"] = true
 	}
@@ -320,6 +338,12 @@ func parseVless(u *url.URL, raw string) (Node, error) {
 		}
 		fields["reality-opts"] = ro
 	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		fields["alpn"] = strings.Split(alpn, ",")
+	}
+	if fp := q.Get("fp"); fp != "" {
+		fields["client-fingerprint"] = fp
+	}
 	return Node{
 		Name:   nameOrFallback(u),
 		Proto:  "vless",
@@ -362,6 +386,18 @@ func parseHy2(u *url.URL, raw string) (Node, error) {
 		if pw := q.Get("obfs-password"); pw != "" {
 			fields["obfs-password"] = pw
 		}
+	}
+	// ALPN: hysteria2 typically requires h3 (QUIC). Servers that pin
+	// alpn=h3 will reject handshakes without it, causing 504 Timeout from
+	// mihomo's /proxies/<name>/delay (the connection never completes).
+	if alpn := q.Get("alpn"); alpn != "" {
+		fields["alpn"] = strings.Split(alpn, ",")
+	}
+	// TLS fingerprint emulation: hy2 supports client-fingerprint for the
+	// underlying QUIC TLS layer. Preserves the URI's intent (chrome/etc.)
+	// instead of mihomo's default.
+	if fp := q.Get("fp"); fp != "" {
+		fields["client-fingerprint"] = fp
 	}
 	return Node{
 		Name:   nameOrFallback(u),

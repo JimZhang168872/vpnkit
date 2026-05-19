@@ -399,3 +399,63 @@ func TestParseURISocks5_NoAuth(t *testing.T) {
 		t.Errorf("no auth should not emit username; got %v", n.Fields)
 	}
 }
+
+func TestParseURIVmessFpAlpn(t *testing.T) {
+	// vmess JSON containing fp + alpn. Tests should not see the parser
+	// silently drop these — without them the emitted mihomo config can fail
+	// handshake or get GFW-fingerprinted.
+	jsonBlob := `{"v":"2","ps":"NY-1","add":"a.b","port":443,"id":"u","scy":"auto","net":"ws","tls":"tls","host":"a.b","sni":"a.b","fp":"chrome","alpn":"h2,http/1.1"}`
+	b64 := base64.StdEncoding.EncodeToString([]byte(jsonBlob))
+	n, err := ParseURI("vmess://" + b64)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := n.Fields["client-fingerprint"]; got != "chrome" {
+		t.Errorf("client-fingerprint = %v, want chrome", got)
+	}
+	alpn, ok := n.Fields["alpn"].([]string)
+	if !ok || len(alpn) != 2 || alpn[0] != "h2" || alpn[1] != "http/1.1" {
+		t.Errorf("alpn = %v, want [h2 http/1.1]", n.Fields["alpn"])
+	}
+}
+
+func TestParseURIHy2AlpnFp(t *testing.T) {
+	uri := "hysteria2://pw@1.2.3.4:443?alpn=h3&fp=chrome&sni=jim.example.com"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	alpn, ok := n.Fields["alpn"].([]string)
+	if !ok || len(alpn) != 1 || alpn[0] != "h3" {
+		t.Errorf("alpn = %v, want [h3]", n.Fields["alpn"])
+	}
+	if got := n.Fields["client-fingerprint"]; got != "chrome" {
+		t.Errorf("client-fingerprint = %v, want chrome", got)
+	}
+}
+
+func TestParseURIVlessAlpnFp(t *testing.T) {
+	uri := "vless://u@1.2.3.4:443?security=tls&sni=a.b&alpn=h2,http/1.1&fp=firefox&type=ws#vless-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := n.Fields["client-fingerprint"]; got != "firefox" {
+		t.Errorf("client-fingerprint = %v, want firefox", got)
+	}
+	alpn, ok := n.Fields["alpn"].([]string)
+	if !ok || len(alpn) != 2 {
+		t.Errorf("alpn = %v, want [h2 http/1.1]", n.Fields["alpn"])
+	}
+}
+
+func TestParseURITrojanFp(t *testing.T) {
+	uri := "trojan://pw@1.2.3.4:443?sni=a.b&alpn=h2&fp=chrome#trojan-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := n.Fields["client-fingerprint"]; got != "chrome" {
+		t.Errorf("client-fingerprint = %v, want chrome", got)
+	}
+}
