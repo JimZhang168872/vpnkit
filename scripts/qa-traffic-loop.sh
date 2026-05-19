@@ -132,11 +132,12 @@ sub2_nodes=$(printf '%s' "$subs_json" | jq --arg n "$SUB2_NAME" '[.[]|select(.na
 # ─── B. local direct node ────────────────────────────────────────────────
 section "B. local direct node"
 # Pre-clean any local nodes from prior runs. local-nodes rm uses
-# `<group>:<name>` syntax; we don't know the names yet, so just enumerate
-# and remove everything.
-for existing in $("$VPNKIT" local-nodes list --json 2>/dev/null | jq -r '.[]|"\(.group):\(.name)"' 2>/dev/null); do
+# `<group>:<name>` syntax; names may contain spaces ("New York-phone") so
+# read line-by-line instead of word-splitting.
+while IFS= read -r existing; do
+  [ -z "$existing" ] && continue
   "$VPNKIT" local-nodes rm "$existing" >/dev/null 2>&1 || true
-done
+done < <("$VPNKIT" local-nodes list --json 2>/dev/null | jq -r '.[]|"\(.group):\(.name)"' 2>/dev/null)
 "$VPNKIT" local-nodes add "$DIRECT_NODE_URI" && pass "local-nodes add direct" || fail "local-nodes add direct"
 # Pick the most-recently-added node — i.e. the one without a `via` set,
 # which is the direct node (jump has via).
@@ -233,12 +234,15 @@ if [ -n "$JUMP_NAME" ] && [ -n "$DIRECT_NAME" ]; then
     "$VPNKIT" mode global >/dev/null
     sleep 2
 
-    echo "ℹ️  E.4 setup: groups after active=local + mode=global:"
-    "$VPNKIT" groups --json 2>/dev/null | jq -c '.[]|select(.name=="🚀 Proxy")' || true
+    # Selector hierarchy: 🚀 Proxy → "local" (group) → leaf node.
+    # First pin 🚀 Proxy.now to the "local" group, THEN drive node choice
+    # by selecting inside the local group.
+    "$VPNKIT" use "🚀 Proxy" "local" >/dev/null 2>&1 || true
 
-    # Use the direct node by its namespaced name (local:<name>) — that's how
-    # mihomo sees it in the flat namespace.
-    if "$VPNKIT" use "🚀 Proxy" "local:$DIRECT_NAME" 2>&1 | tee /tmp/.vpnkit-use-direct.log >/dev/null; then
+    echo "ℹ️  E.4 setup: groups after active=local + use 🚀 Proxy=local:"
+    "$VPNKIT" groups --json 2>/dev/null | jq -c '.[]|select(.name=="🚀 Proxy" or .name=="local")' || true
+
+    if "$VPNKIT" use "local" "local:$DIRECT_NAME" 2>&1 | tee /tmp/.vpnkit-use-direct.log >/dev/null; then
       sleep 2
       DIRECT_EGRESS=$(egress_ip "$PROXY_URL" || echo "unknown")
     else
@@ -246,7 +250,7 @@ if [ -n "$JUMP_NAME" ] && [ -n "$DIRECT_NAME" ]; then
       echo "ℹ️    use direct error: $(cat /tmp/.vpnkit-use-direct.log)"
     fi
 
-    if "$VPNKIT" use "🚀 Proxy" "local:$JUMP_NAME" 2>&1 | tee /tmp/.vpnkit-use-jump.log >/dev/null; then
+    if "$VPNKIT" use "local" "local:$JUMP_NAME" 2>&1 | tee /tmp/.vpnkit-use-jump.log >/dev/null; then
       sleep 2
       JUMP_EGRESS=$(egress_ip "$PROXY_URL" || echo "unknown")
     else
@@ -282,20 +286,35 @@ CTRL_SECRET=$(grep '^controller_secret' "$HOME/.config/vpnkit/config.toml" | awk
 "$VPNKIT" active "$SUB1_NAME" >/dev/null 2>&1 || true
 "$VPNKIT" mode rule >/dev/null
 sleep 2
-# Open foreground connections that stay alive while we query /connections.
-# Background curl with --max-time long enough to outlast the controller poll.
-( curl -s --max-time 15 --proxy "$PROXY_URL" "$DOMESTIC_TEST_URL" >/dev/null 2>&1 || true ) &
+# Open long-lived connections so /connections has something to look at.
+# A streaming download holds the socket open for the entire transfer; a
+# 1MB file at modest bandwidth gives us ≥1 second of overlap with the
+# /connections poll. Hosts: domestic = baidu.com (DIRECT), foreign =
+# github tarball (proxy). Cap at 30s; we kill the bg curls regardless.
+DOM_BG_URL="${DOMESTIC_TEST_URL%/}/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png"
+FOR_BG_URL="https://api.github.com/repos/golang/go"
+( curl -s --max-time 30 --proxy "$PROXY_URL" "$DOM_BG_URL" >/dev/null 2>&1 || true ) &
 DOM_PID=$!
-( curl -s --max-time 15 --proxy "$PROXY_URL" "$FOREIGN_TEST_URL" >/dev/null 2>&1 || true ) &
+( curl -s --max-time 30 --proxy "$PROXY_URL" "$FOR_BG_URL" >/dev/null 2>&1 || true ) &
 FOR_PID=$!
-sleep 2
+sleep 3
 conn_json=$(curl -s --max-time 5 -H "Authorization: Bearer $CTRL_SECRET" "http://127.0.0.1:$CTRL_PORT/connections" || echo '{}')
-wait $DOM_PID $FOR_PID 2>/dev/null || true
+kill "$DOM_PID" "$FOR_PID" 2>/dev/null || true
+wait "$DOM_PID" "$FOR_PID" 2>/dev/null || true
 
-DOMESTIC_CHAIN=$(printf '%s' "$conn_json" | jq -r --arg host "$(echo "$DOMESTIC_TEST_URL" | sed -E 's#https?://([^/]+).*#\1#')" \
-  '.connections[]?|select(.metadata.host==$host)|.chains|join(" → ")' | head -1)
-FOREIGN_CHAIN=$(printf '%s' "$conn_json" | jq -r --arg host "$(echo "$FOREIGN_TEST_URL" | sed -E 's#https?://([^/]+).*#\1#')" \
-  '.connections[]?|select(.metadata.host==$host)|.chains|join(" → ")' | head -1)
+dom_host=$(echo "$DOM_BG_URL" | sed -E 's#https?://([^/]+).*#\1#')
+for_host=$(echo "$FOR_BG_URL" | sed -E 's#https?://([^/]+).*#\1#')
+# Match on host substring (some metadata uses bare host, others FQDN with
+# trailing dot). chains may be []string or [string,string].
+DOMESTIC_CHAIN=$(printf '%s' "$conn_json" | jq -r --arg h "$dom_host" \
+  '.connections[]?|select((.metadata.host//""|tostring)|contains($h))|.chains|join(" → ")' | head -1)
+FOREIGN_CHAIN=$(printf '%s' "$conn_json" | jq -r --arg h "$for_host" \
+  '.connections[]?|select((.metadata.host//""|tostring)|contains($h))|.chains|join(" → ")' | head -1)
+# Diagnostic: if both are empty, dump a summary of what /connections returned
+if [ -z "$DOMESTIC_CHAIN" ] && [ -z "$FOREIGN_CHAIN" ]; then
+  echo "ℹ️  /connections returned $(printf '%s' "$conn_json" | jq '.connections|length') entries; first 3 hosts:"
+  printf '%s' "$conn_json" | jq -r '.connections[]?|"\(.metadata.host) ← \(.chains|join("/"))"' | head -3
+fi
 echo "ℹ️  domestic chain: ${DOMESTIC_CHAIN:-<none captured>}"
 echo "ℹ️  foreign  chain: ${FOREIGN_CHAIN:-<none captured>}"
 # Domestic should chain through DIRECT, foreign through 🚀 Proxy
