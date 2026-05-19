@@ -47,14 +47,18 @@ vpnkit                                     # 7-tab 交互界面
 | 概念 | 含义 |
 |---|---|
 | **mihomo** | 底层代理内核 ([MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo))。vpnkit 拼装它的 config.yaml、启动它、读它的 controller API |
-| **store** | `~/.config/vpnkit/config.toml`。订阅、本地节点 / 组、本地规则、端口、凭据的 single source of truth。Schema v2 |
-| **subscription** | 远程订阅 URL，返回 base64 / clash-yaml 节点列表。每个 enabled 订阅在 mihomo 里生成 `<name>` select 组 + `<name>-auto` url-test 组 |
-| **local node group** | 用户命名的手填节点容器（如 `home`、`office`）。跟订阅完全对称 —— 每个 enabled 组也生成 select + url-test 这一对 |
+| **store** | `~/.config/vpnkit/config.toml`。订阅、本地节点 / 组、本地规则、端口、凭据、active source 的 single source of truth。Schema v2 |
+| **source** | 通用术语 ——"装节点的东西"。一个 source 要么是订阅、要么是本地节点组。两者完全对称：都生成 `<name>` select 组 + `<name>-auto` url-test 组 |
+| **subscription** | 远程订阅 URL，返回 base64 / clash-yaml 节点列表。默认 User-Agent 是 `mihomo/v1.19.25`（部分提供商按 UA 区分客户端 —— 用 `vpnkit subs add --ua=...` 改） |
+| **local node group** | 用户命名的手填节点容器（如 `home`、`office`） |
 | **Local node `Via`** | 节点自带的 `dialer-proxy` 目标。设成任何 proxy / 组名就让 mihomo 先经那一跳出去（Shadowrocket 风格的 inline 链式代理） |
-| **Routing mode** | `rule` / `global` / `direct`。存在 `store.Cfg.Mode`；rule 模板生成的 mihomo `rules:` 决定行为，跟 mihomo 自己的 mode 设置无关 |
-| **Global target** | mode=global 时谁兜底接管。默认 `🚀 Proxy` 的某个具体成员（rc.6 起根据有没有订阅自动选 `<name>-auto` 或 `DIRECT`） |
-| **Controller secret** | 随机 token 存在 store 里，写进 mihomo 的 `secret:` 和 vpnkit API client 两边。`init --force` 重置 |
+| **active source** | 1 个 source（订阅或本地组）—— 它的 rules 驱动路由，它的节点成为 `🚀 Proxy` 的成员。`vpnkit active <name>` 或 Settings → Active Source 切换。如果 active 没自带 rules（本地组永远没），用 loyalsoldier 模板兜底。Groups tab 用 `★` 标 |
+| **Routing mode** | `rule`（默认）/ `global` / `direct`。存在 `store.Cfg.Mode`。`rule` 走拼出来的 rule 列表；`global` 全部送到 `🚀 Proxy`；`direct` 全直连 |
+| **Global target** | 决定 `🚀 Proxy` Selector 默认选谁。由 active source 派生（`<active>-auto`）；`vpnkit target` CLI 允许进阶覆盖 |
+| **Controller secret** | 随机 token 存在 store 里，写进 mihomo 的 `secret:` 和 vpnkit API client 两边。`init --force` 或 Settings → External Controller `r` 重置 |
 | **Service mode** | `systemd-user`（Linux 默认）或 `pid`（fallback —— 自己管 pidfile + 子进程）。存 `store.Cfg.ServiceMode` |
+| **Embedded rulesets** | 13 个 loyalsoldier `.txt.gz` 文件嵌在 vpnkit 二进制里（~2 MB gz / ~8 MB 解压后）。Bootstrap 第一次启动前解包到 `~/.config/mihomo/ruleset/`，所以 RULE-SET 规则不用等 CDN 就能用。mihomo 自己的 `interval: 86400` 保持本地版本随时间追上最新 |
+| **名字校验** | source 名（订阅 + 本地组）：≤64 字符、不含 shell 元字符（`$`、backtick、`;` 等）、不含 `:` `/` 空白、不以 `-` 开头、不能（不区分大小写）匹配 mihomo 内置名（DIRECT、REJECT、GLOBAL...）。本地节点名允许 emoji + 空格（和订阅 feed 来的名字一致），同样拦 shell metas |
 
 ---
 
@@ -128,10 +132,32 @@ mihomo 不可达 / ipinfo 超时退出 2。
 JSON（set）: `{"from": "rule", "to": "global"}`
 JSON（get）: `{"mode": "rule"}`
 
-### `vpnkit target [<group-or-node>]`
+### `vpnkit target [<member>] [--json]`
 
-查看或设置 `global_target`。`global` 模式下用作兜底成员。名字必须匹配 mihomo
-已知的 proxy 或 group（assemble 时验证，不是这里验证）。
+查看或设置 `global_target` —— `🚀 Proxy` Selector 的默认成员。
+`vpnkit active` 设 active source 时会自动把它设成 `<active>-auto`，所以
+绝大多数用户不需要直接用 `target`。
+
+校验：接受 `DIRECT`、`REJECT`、enabled source 名、`<source>-auto` 或
+`<source>:<node>`。disabled source、垃圾值、空字符串在 set 时就被拒
+（不再静默写入 broken 状态）。
+
+### `vpnkit active [<name>] [--json]`
+
+最关键的路由旋钮。挑**哪个 source**（1 个订阅 OR 1 个本地节点组）驱动：
+- 拼装出的 rules 列表（active 自己的 rules，或 loyalsoldier 模板兜底）
+- `🚀 Proxy` Selector 的成员
+
+无参数：打印当前 active source + 类型（`subscription` / `local`）。
+
+```bash
+vpnkit active                 # 看
+vpnkit active doge            # 切到订阅 `doge`
+vpnkit active home            # 切到本地组 `home`
+vpnkit active --json          # → {"active_source":"doge","kind":"subscription"}
+```
+
+设 active 立刻 reassemble + mihomo reload，秒级生效。
 
 ### `vpnkit subs <verb> ...`
 
@@ -384,18 +410,22 @@ network + ws-opts.host/path + tls + servername 等），Via 最后。
 | `Esc` | 退出 filter |
 | `↑` / `↓` / `PgUp` / `PgDown` | 导航 |
 | `u` | 刷新 rule providers |
-| `Tab` | 切到 Local Rules 子页 |
+| `T` (Shift+t) | 切到 Local Rules 子页 |
+
+`Tab` 和 `Shift+Tab` 留给全局 tab 循环（切顶层 tab），所以 Rules 子页用 `T`。
 
 #### Local Rules 子页
 
-`store.Cfg.LocalRules` 的 CRUD。Local rules 在拼装 config 里**先于**订阅规则。
+`store.Cfg.LocalRules` 的 CRUD。Local rules 在拼装 config 里**先于** active
+source 的 rules，且不论哪个 source 是 active，它们都生效 —— 用户自定义
+覆盖层。
 
 | 键 | 作用 |
 |---|---|
 | `d` | 删除高亮 rule |
 | `K` | 高亮上移 |
 | `J` | 高亮下移 |
-| `Tab` | 切回 Live |
+| `T` (Shift+t) | 切回 Live |
 
 （Add 目前只走 CLI —— `vpnkit local-rules add <type> <payload> <target>`）
 
@@ -416,24 +446,32 @@ rule, chain。
 mihomo 日志 tail（PID 模式 = `~/.local/state/vpnkit/mihomo.log`；systemd-user
 模式 = journalctl）。Ring buffer ≈ 1000 行。
 
-只读。行 truncate 防溢出（保证不会换行顶掉 tab bar）。
+| 键 | 作用 |
+|---|---|
+| `p` | 暂停/继续 tail。暂停时 header 显示 `[PAUSED]`。暂停期间的行直接丢弃（resume 不会回放） |
+
+行 truncate 防溢出（保证不会换行顶掉 tab bar）。
 
 ### Tab 7: Settings
 
-子 sidebar 列出 7 个子页面。↑/↓ 切换；← 退回 MainSidebar；→ 进入 content
-（只对 Routing 和 Rule Template 这两个 own arrows 的子页有意义）。
+子 sidebar 列出 8 个子页面。↑/↓ 切换；← 退回 MainSidebar；→ 进入 content
+（只对 own-arrows 子页有意义：Routing、Active Source、Rule Template）。
 
 | 子页 | 显示什么 |
 |---|---|
-| **Mihomo Core** | binary 路径、版本、mixed-port、controller-port、secret（mask）、proxy basic-auth user（mask） |
-| **Service** | systemd-user vs pid 模式、running 状态、log 路径、last error |
-| **External Controller** | URL + secret（mask）、复制提示 |
-| **Routing** | mode selector（rule / global / direct）+ global target —— `↑↓ Enter` 选；改动后自动 reload mihomo |
-| **Rule Template** | mihomo rule 模板（curated 列表）—— `↑↓ Enter` 应用 |
+| **Mihomo Core** | binary 路径、版本、mixed-port、controller-port、secret（mask）、proxy basic-auth user（mask）。`u` 异步升级 binary |
+| **Service** | systemd-user vs pid 模式、running 状态、log 路径。`s`/`S`/`r`/`u` 异步启/停/重启/卸载 service（不阻塞 TUI） |
+| **External Controller** | URL + secret（mask）。`r` 轮换 secret；需要 restart mihomo 才生效 |
+| **Routing** | mode selector（rule / global / direct） —— `↑↓ Enter` 选。apply 是异步的；flash 报告结果 |
+| **Active Source** | 所有 enabled source 的单选列表（订阅先、本地组后）。`↑↓ Enter` 切；Groups tab 的 `★` 跟着移动。异步 apply |
+| **Rule Template** | 内嵌的 mihomo rule 模板（loyalsoldier / minimal）—— `↑↓ Enter` 应用 |
 | **Cache** | mihomo cache 目录 + 大小 + 最后修改 |
 | **About** | vpnkit 版本 + commit + license + repo URL |
 
-大多数子页只读；Routing 和 Rule Template 才会改 store。
+大多数子页只读；Routing、Active Source、Rule Template 和
+Service / External Controller / Mihomo Core 的 action 键是 mutating 的。
+所有触及 mihomo 的操作（Routing、Active Source、Service ops、Core 升级）
+都跑在 goroutine 上，TUI 在 30s+ 操作期间也响应正常。
 
 ---
 
@@ -443,7 +481,8 @@ mihomo 日志 tail（PID 模式 = `~/.local/state/vpnkit/mihomo.log`；systemd-u
 |---|---|---|
 | `~/.local/bin/vpnkit` | 用户 | 本程序 |
 | `~/.local/bin/mihomo` | 用户 | 受管 mihomo 核心（自动装的） |
-| `~/.config/vpnkit/config.toml` | vpnkit | **store**（schema v2）：subs、本地节点 / 组 / 规则、端口、creds、mode、service mode |
+| `~/.config/vpnkit/config.toml` | vpnkit | **store**（schema v2）：subs、本地节点 / 组 / 规则、端口、creds、mode、active_source、service mode |
+| `~/.config/vpnkit/config.toml.lock` | vpnkit | POSIX flock 锁文件 —— 并发 CLI mutation 串行化 |
 | `~/.config/mihomo/config.yaml` | vpnkit | 组装的 mihomo 配置（每次 mutation 重写） |
 | `~/.config/mihomo/cache.db` | mihomo | mihomo session 缓存 |
 | `~/.config/mihomo/ruleset/*.txt` | vpnkit 预置 | loyalsoldier 规则集 snapshot（bootstrap 时落盘，mihomo 后台 refresh 更新） |
@@ -463,7 +502,8 @@ mihomo 日志 tail（PID 模式 = `~/.local/state/vpnkit/mihomo.log`；systemd-u
 ```toml
 schema_version = 2
 mode = "rule"               # "rule" | "global" | "direct"
-global_target = "doge-auto"
+active_source = "doge"      # 哪个 source 驱动 rules + 🚀 Proxy (rc.7 加)
+global_target = "doge-auto" # 🚀 Proxy 默认成员；从 active_source 派生
 service_mode = "systemd-user"  # "systemd-user" | "pid"
 mixed_port = 7890
 controller_port = 9090
@@ -474,7 +514,7 @@ proxy_pass = "random-hex"
 [[subscriptions]]
 name = "doge"
 url = "https://doge.example.com/sub?token=..."
-user_agent = "ClashforWindows/0.20.39"   # 可选
+user_agent = "mihomo/v1.19.25"           # 可选；默认就是 mihomo UA
 enabled = true
 node_count = 52                          # 缓存，`subs update` 时更新
 

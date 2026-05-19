@@ -15,9 +15,13 @@
 ---
 
 vpnkit 完全 user-space 跑 mihomo（仍在维护的 Clash.Meta 内核）— 不需要
-root、不依赖 TUN。v1.0.0 新增**多订阅组共存、手动本地节点、结构化本地规则**，
-TUI 7 个 tab + 完整 `vpnkit subs / local-nodes / local-rules / target` CLI
-都能改。
+root、不依赖 TUN。v1.0.0 新增**多订阅组共存、手动本地节点、结构化本地规则、
+单一活跃源路由模型**，TUI 7 个 tab + 完整
+`vpnkit subs / local-nodes / local-rules / active` CLI 都能改。
+
+默认 loyalsoldier 规则集快照（~2 MB gz）**嵌入在二进制里**，bootstrap
+在 mihomo 首次启动前解包出来，所以慢网络 / 国内被劫持 jsdelivr 也能秒
+出 RULE-SET 规则。
 
 > 📖 **完整技术参考**：[docs/USAGE_zh.md](docs/USAGE_zh.md)（中文）/
 > [docs/USAGE.md](docs/USAGE.md)（English）—— 每个 CLI 命令、每个 TUI tab、
@@ -94,10 +98,21 @@ vpnkit local-rules list
 
 ```bash
 vpnkit mode rule              # 默认，按规则匹配
-vpnkit mode global            # 所有流量走 global target
+vpnkit mode global            # 所有流量走 🚀 Proxy (即 active source)
 vpnkit mode direct            # 全直连
-vpnkit target doge-auto       # 设 global target（组名或节点名）
+
+# Active source（活跃源）—— 单一路由真相。Groups tab 用 ★ 标
+vpnkit active                 # 看当前 active（订阅或本地组）
+vpnkit active boost-net       # 切到某个订阅
+vpnkit active home            # 切到某个本地组
+
+vpnkit target doge-auto       # 覆盖 🚀 Proxy 默认成员（进阶）
 ```
+
+**活跃源**是 1 个订阅 OR 1 个本地节点组。它的 `rules:` 段驱动路由；如果
+没自带 rules（本地组永远没），就用 loyalsoldier 模板兜底。`🚀 Proxy`
+的成员只放活跃源的节点 + `DIRECT`。切换 active 等于同时切规则基线和
+兜底代理。
 
 ### 在终端里走代理
 
@@ -188,53 +203,68 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 | 命令 | 说明 |
 |---|---|
 | `vpnkit` | 打开 TUI |
-| `vpnkit status` | mihomo 状态、端口、订阅数、本地节点数、模式、global target |
+| `vpnkit version` / `--version` / `-v` | 版本 + commit + mihomo 路径 |
+| `vpnkit --help` / `-h` / `help` | 顶层用法（也支持每个子命令 `<verb> --help`） |
+| `vpnkit status` | mihomo 状态、端口、订阅数、本地节点数、模式、active source |
 | `vpnkit ip` | 经 mihomo 代理查出口 IP |
 | `vpnkit mode [rule\|global\|direct]` | 显示/切换路由模式 |
-| `vpnkit target [<组或节点名>]` | 显示/设置 GlobalTarget |
+| `vpnkit active [<name>]` | 显示/切换 active source（订阅 或 本地节点组） |
+| `vpnkit target [<member>]` | 覆盖 🚀 Proxy 默认成员（进阶——通常用 `active` 就够了） |
 | `vpnkit subs list/add/rm/enable/disable/update [<name>]` | 管理订阅 |
 | `vpnkit local-groups list/add/rm/enable/disable/rename` | 管理本地节点组 |
 | `vpnkit local-nodes list/add/rm/edit/mv`（含 `--group/--via`） | 管理手动节点 |
-| `vpnkit local-rules list/add/rm/move` | 管理本地规则 |
+| `vpnkit local-rules list/add/rm/move` | 管理本地规则（type + payload + target 全校验） |
 | `vpnkit groups` | 实时 proxy-group 列表（从 mihomo controller 读） |
 | `vpnkit nodes '<组>'` | 列某组成员 + 缓存延迟（被动读，mihomo url-test 缓存） |
-| `vpnkit test '<组>' ['<节点>']` | 主动测延迟（见 [USAGE.md › 延迟测试](docs/USAGE.md#active-delay-test-deep-dive)） |
+| `vpnkit test '<组>' ['<节点>']` | 主动测延迟（见 [USAGE.md › 延迟测试](docs/USAGE_zh.md#延迟测试详解)） |
 | `vpnkit use '<组>' '<节点>'` | 切换某组的选中节点 |
-| `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | 输出 shell snippet |
+| `vpnkit env [--shell bash\|zsh\|fish] [--unset] [--functions] [--no-netrc]` | 输出 shell snippet（shell 类型有校验） |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | 升级 vpnkit + mihomo |
 | `vpnkit init [--force]` | 重建配置骨架（`--force` 会备份旧 store） |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | 停服务，删 vpnkit 全部文件 |
 
-只读命令接受 `--json`。退出码：`0` 成功、`1` 用户错、`2` 运行时错。每个
-命令的 flag 详解 + JSON schema 在 [docs/USAGE.md › CLI reference](docs/USAGE.md#cli-reference)。
+只读命令（`status`、`ip`、`groups`、`nodes`、`test`、`mode`、`target`、
+`active`、`... ls`）接受 `--json`；mutation 命令拒绝 `--json` 并报清楚
+错误。JSON 模式下运行时失败也写 `{"error":"…"}` 到 stdout，消费脚本仍
+能 parse。
+
+退出码：`0` 成功、`1` 用户错、`2` 运行时错。并发 CLI mutation 通过
+config 文件的 POSIX flock 序列化，所以 `vpnkit subs add foo url &`
+并行也是安全的。每命令 flag 详解 + JSON schema 在
+[docs/USAGE_zh.md › CLI 参考](docs/USAGE_zh.md#cli-参考)。
 
 ## TUI 布局 (v1)
 
 ```
 [1] 🏠 Dashboard      mihomo 状态 / 实时流量
-[2] 🌐 Groups         所有组 + 节点（只读 + 延迟测试）
+[2] 🌐 Groups         所有组 + 节点（★ 标 active source · 延迟测试）
 [3] 📚 Sources        Subscriptions / Local Nodes 子页（CRUD）
 [4] 📜 Rules          Live (mihomo) / Local Rules 子页
 [5] 🔗 Connections    实时连接（`x` 关、`/` 过滤）
-[6] 📓 Logs           mihomo 日志
+[6] 📓 Logs           mihomo 日志（`p` 暂停/继续）
 [7] ⚙  Settings       Mihomo Core / Service / External Controller / Routing /
-                       Rule Template / Cache / About 子页
+                       Active Source / Rule Template / Cache / About 子页
 ```
 
 按键：
-- `↑↓` 移动 · `←` 退/sidebar focus · `→` content focus / 进 · `Enter` 激活 · `q` 退出
-- `1`-`7` 跳 tab · `Tab`/`Shift+Tab` 循环
-- **Groups**：`r` 刷新 · `t` 测延迟（主动 probe 当前组） · `Enter` 切到高亮节点 · `←/→` 切左右面板 focus
-- **Sources › Subscriptions**：`a` 添加 · `d` 删 · `u` 拉一次 · `e` 启/禁
+- `↑↓` 移动 · `←` 退/sidebar focus · `→` content focus / 进 · `Enter` 激活 · `q` 退出 · `Ctrl+C` 退出（表单内也算）
+- `1`-`7` 跳 tab · `Tab`/`Shift+Tab` 循环 · `?` keymap 提示 flash
+- **Groups**：`r` 刷新 · `t` 测延迟（主动 probe 当前组） · `Enter` 切到高亮节点 · `←/→` 切左右面板 focus · 组名旁的 `★` 表示 active source
+- **Sources › Subscriptions**：`a` 添加 · `d` 删 · `u` 拉一次 · `e` 启/禁（长列表自动滚动）
 - **Sources › Local Nodes**：`a` 添加（proto 表单）· `e` 编辑 · `d` 删 · `u` 粘 URI ·
-  `N`/`D`/`E`/`T` 新建/删/重命名/启停 group · `←/→` 切换 group（无表单时）
-- **添加/编辑节点表单**：`Tab/↑↓` 切字段 · `Enter` 保存 · `Esc` 取消 ·
+  `N`/`D`/`E`/`T` 新建/删/重命名/启停 group · `←/→` 切换 group（无表单时）· 凭据字段（password / uuid）以圆点显示
+- **添加/编辑节点表单**：`Tab/↑↓` 切字段 · `Enter` 保存（按协议校验必填字段）· `Esc` 取消 ·
   Proto 字段上按 `←/→` 循环 ss / vmess / vless / trojan / hysteria2 / tuic
-- **Rules › Live**：`/` 过滤 · `u` 刷新 providers · `Tab` 切 Local Rules
-- **Rules › Local Rules**：`d` 删 · `K/J` 上下移 · `Tab` 切回 Live
-- **Settings › Routing**：`↑↓ Enter` 选模式；global target 走 CLI 改
+- **Rules › Live**：`/` 过滤 · `u` 刷新 providers · `T` (Shift+t) 切 Local Rules
+- **Rules › Local Rules**：`d` 删 · `K/J` 上下移 · `T` 切回 Live
+- **Logs**：`p` 暂停/继续 tail
+- **Settings › Routing**：`↑↓ Enter` 选模式 · 异步 apply (mihomo reload 不阻塞主循环)
+- **Settings › Active Source**：`↑↓ Enter` 选 active source —— 决定 🚀 Proxy + rules
 
-每个 tab 的按键表 + 行为详解在 [docs/USAGE.md › TUI reference](docs/USAGE.md#tui-reference)。
+最小可用终端尺寸：**60×16**。比这小会显示 "terminal too narrow" 提示
+而不是渲染崩坏的 layout。
+
+每个 tab 的按键表 + 行为详解在 [docs/USAGE_zh.md › TUI 参考](docs/USAGE_zh.md#tui-参考)。
 
 ## 目录布局
 
@@ -242,8 +272,10 @@ Via: doge-auto              # 任何订阅/本地节点名 或 组名
 |---|---|
 | `~/.local/bin/vpnkit` | 本程序 |
 | `~/.local/bin/mihomo` | 受管 mihomo |
-| `~/.config/vpnkit/config.toml` | 订阅、本地节点、本地规则、端口、凭据（schema v2） |
+| `~/.config/vpnkit/config.toml` | 订阅、本地节点、本地规则、端口、凭据、active_source（schema v2） |
+| `~/.config/vpnkit/config.toml.lock` | POSIX flock 锁文件 —— 并发 CLI mutation 串行化 |
 | `~/.config/mihomo/config.yaml` | 组装的 mihomo 配置（每次 mutation 重写） |
+| `~/.config/mihomo/ruleset/*.txt` | loyalsoldier 规则集快照（启动时从 binary 内嵌的 `.txt.gz` 解压） |
 | `~/.config/mihomo/*.mmdb / *.dat` | GeoIP / GeoSite 数据（bootstrap 预下） |
 | `~/.config/systemd/user/mihomo.service` | systemd-user unit（mode 0600；转发 HTTPS_PROXY） |
 | `~/.netrc` | proxy basic-auth 条目（mode 0600） |

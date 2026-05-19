@@ -47,14 +47,18 @@ recommended `export PATH=...` snippet.
 | Term | Meaning |
 |---|---|
 | **mihomo** | the underlying proxy core ([MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo)). vpnkit assembles its config.yaml, launches it, and reads its controller API. |
-| **store** | `~/.config/vpnkit/config.toml`. Single source of truth for subscriptions, local nodes/groups, local rules, ports, credentials. Schema v2. |
-| **subscription** | A remote URL returning a base64'd / clash-yaml node list. Each enabled subscription becomes one `<name>` select group + `<name>-auto` url-test group in mihomo. |
-| **local node group** | User-named container for hand-entered nodes (e.g., `home`, `office`). Symmetric with subscriptions — each enabled group emits its own select+url-test pair. |
+| **store** | `~/.config/vpnkit/config.toml`. Single source of truth for subscriptions, local nodes/groups, local rules, ports, credentials, active source. Schema v2. |
+| **source** | Generic term for "thing that holds proxies." A source is **either** a subscription **or** a local-nodes-group. Both emit a `<name>` select group + `<name>-auto` url-test group in mihomo — symmetric. |
+| **subscription** | A remote URL returning a base64'd / clash-yaml node list. Default User-Agent is `mihomo/v1.19.25` (some providers gate on UA — see `vpnkit subs add --ua=...` for overrides). |
+| **local node group** | User-named container for hand-entered nodes (e.g., `home`, `office`). |
 | **Local node `Via`** | First-class `dialer-proxy` target on the node itself. Set to any proxy/group name to make mihomo dial through that hop first (Shadowrocket-style inline chaining). |
-| **Routing mode** | `rule` / `global` / `direct`. Stored in `store.Cfg.Mode`; rule template emits matching mihomo `rules:` regardless of mihomo's own mode setting. |
-| **Global target** | Proxy/group name that catches-all when mode is `global`. Defaults to `🚀 Proxy`. |
-| **Controller secret** | Random token in store, written into both mihomo's `secret:` and vpnkit's API client. Rotated on `init --force`. |
+| **active source** | The one source whose rules drive routing AND whose nodes back `🚀 Proxy`. Set via `vpnkit active <name>` or Settings → Active Source. If the active source ships no rules (local-nodes groups never do), the loyalsoldier template fills in. The Groups tab marks it with `★`. |
+| **Routing mode** | `rule` (default) / `global` / `direct`. Stored in `store.Cfg.Mode`. `rule` follows the assembled rule list; `global` sends everything to `🚀 Proxy`; `direct` bypasses the proxy entirely. |
+| **Global target** | Which member of the `🚀 Proxy` Selector mihomo picks by default. Derived from the active source (`<active>-auto`); the `vpnkit target` CLI lets advanced users override it. |
+| **Controller secret** | Random token in store, written into both mihomo's `secret:` and vpnkit's API client. Rotated on `init --force` or Settings → External Controller `r`. |
 | **Service mode** | `systemd-user` (default on Linux with systemd) or `pid` (fallback, manages a pidfile + child process directly). Stored in `store.Cfg.ServiceMode`. |
+| **Embedded rulesets** | The 13 loyalsoldier `.txt.gz` files are bundled into the vpnkit binary (~2 MB gz / ~8 MB uncompressed). Bootstrap unpacks them into `~/.config/mihomo/ruleset/` before mihomo's first launch, so RULE-SET rules work without a CDN round-trip. mihomo's own `interval: 86400` refresh keeps them current. |
+| **Name validation** | Source names (subs + local-groups) must be ≤64 chars, no shell metacharacters (`$`, backtick, `;`, etc.), no `:` `/` whitespace, no leading `-`, no case-insensitive match against mihomo built-ins (DIRECT, REJECT, GLOBAL, …). Local-node names allow emoji + space (for parity with feed names) but block the same shell metas. |
 
 ---
 
@@ -102,11 +106,12 @@ Snapshot: mihomo version, service running, ports, mode, # subscriptions,
 JSON shape (abridged):
 ```json
 {
-  "vpnkit_version": "v1.0.0-rc.5",
-  "mihomo": {"version": "v1.16.0", "running": true, "pid": 12345},
+  "vpnkit_version": "v1.0.0-rc.7",
+  "mihomo": {"version": "v1.19.25", "running": true, "pid": 12345},
   "ports": {"mixed": 7890, "controller": 9090},
   "mode": "rule",
-  "global_target": "🚀 Proxy",
+  "active_source": "doge",
+  "global_target": "doge-auto",
   "subscriptions": 2,
   "local_nodes": 3,
   "local_rules": 4
@@ -135,11 +140,37 @@ config.yaml, hot-reload mihomo.
 JSON (set): `{"from": "rule", "to": "global"}`
 JSON (get): `{"mode": "rule"}`
 
-### `vpnkit target [<group-or-node>]`
+### `vpnkit target [<member>] [--json]`
 
-Get or set `global_target`. Used by the `global` routing mode as the
-catch-all. Name must match a known mihomo proxy or group (validated at
-assemble time, not here).
+Get or set `global_target` — the `🚀 Proxy` Selector's default member.
+Setting active source via `vpnkit active` automatically sets this to
+`<active>-auto`, so most users never need `target` directly.
+
+Validation: accepts `DIRECT`, `REJECT`, an enabled source name,
+`<source>-auto`, or `<source>:<node>`. Disabled sources, garbage, and
+empty strings are rejected at set time (no more silently-broken assemble
+states).
+
+### `vpnkit active [<name>] [--json]`
+
+The single most important routing knob. Picks **which source** (one
+subscription OR one local-nodes-group) drives:
+- the emitted rule list (active's own rules, or loyalsoldier template
+  if active has none)
+- the `🚀 Proxy` Selector membership
+
+No-arg form prints the current active source plus its kind
+(`subscription` / `local`).
+
+```bash
+vpnkit active                 # show
+vpnkit active doge            # switch to subscription `doge`
+vpnkit active home            # switch to local-nodes-group `home`
+vpnkit active --json          # → {"active_source":"doge","kind":"subscription"}
+```
+
+Setting active triggers an immediate reassemble + mihomo reload, so the
+flip is live within seconds.
 
 ### `vpnkit subs <verb> ...`
 
@@ -406,19 +437,23 @@ Live `/rules` + `/providers/rules` view. Read-only.
 | `Esc` | exit filter |
 | `↑` / `↓` / `PgUp` / `PgDown` | navigate |
 | `u` | refresh rule providers |
-| `Tab` | switch to Local Rules sub-page |
+| `T` (Shift+t) | switch to Local Rules sub-page |
+
+`Tab` and `Shift+Tab` are reserved for the global tab cycler (move
+between top-level tabs), so the Rules sub-page toggle uses `T` instead.
 
 #### Local Rules sub-page
 
 CRUD over `store.Cfg.LocalRules`. Local rules are emitted **before**
-subscription rules in the assembled config.
+the active source's rules in the assembled config and apply regardless
+of which source is active — they're the user-defined override layer.
 
 | Key | Action |
 |---|---|
 | `d` | delete highlighted rule |
 | `K` | move highlighted up |
 | `J` | move highlighted down |
-| `Tab` | switch back to Live |
+| `T` (Shift+t) | switch back to Live |
 
 (Add is currently CLI-only — `vpnkit local-rules add <type> <payload>
 <target>`.)
@@ -440,26 +475,34 @@ upload, download, rule, chain.
 Tail of mihomo log (`~/.local/state/vpnkit/mihomo.log` in PID mode, or
 journalctl in systemd-user mode). Ring buffer ≈ 1000 lines.
 
-Read-only. Lines truncate-on-overflow so they never wrap into the tab bar.
+| Key | Action |
+|---|---|
+| `p` | pause/resume tailing. `[PAUSED]` appears in the header while paused. Paused lines are dropped at the source (no replay on resume). |
+
+Lines truncate-on-overflow so they never wrap into the tab bar.
 
 ### Tab 7: Settings
 
-Sub-sidebar lists 7 sub-pages. ↑/↓ on the sub-sidebar cycles; ← goes
+Sub-sidebar lists 8 sub-pages. ↑/↓ on the sub-sidebar cycles; ← goes
 back to MainSidebar; → drills into content (only meaningful on the
-two sub-pages that own arrows: Routing and Rule Template).
+sub-pages that own arrows: Routing, Active Source, Rule Template).
 
 | Sub-page | What it shows |
 |---|---|
-| **Mihomo Core** | binary path, version, mixed-port, controller-port, secret (masked), proxy basic-auth user (masked) |
-| **Service** | systemd-user vs pid mode, running state, log path, last error |
-| **External Controller** | URL + secret (masked), copy hint |
-| **Routing** | mode selector (rule / global / direct) + global target — `↑↓ Enter` to pick, applies + reloads mihomo on change |
-| **Rule Template** | curated mihomo rule templates from `~/.cache/vpnkit/rules` — `↑↓ Enter` to apply |
+| **Mihomo Core** | binary path, version, mixed-port, controller-port, secret (masked), proxy basic-auth user (masked). `u` upgrades the binary asynchronously. |
+| **Service** | systemd-user vs pid mode, running state, log path. `s`/`S`/`r`/`u` start/stop/restart/uninstall the service asynchronously (won't freeze the TUI). |
+| **External Controller** | URL + secret (masked). `r` rotates the secret; mihomo restart required for it to take effect. |
+| **Routing** | mode selector (rule / global / direct) — `↑↓ Enter` to pick. Apply is async; flash reports outcome. |
+| **Active Source** | radio list of every enabled source (subs first, then local-groups). `↑↓ Enter` picks; the Groups tab's `★` marker updates accordingly. Async apply. |
+| **Rule Template** | embedded mihomo rule templates (loyalsoldier / minimal) — `↑↓ Enter` to apply. |
 | **Cache** | mihomo cache dir + size + last-modified |
 | **About** | vpnkit version + commit + license + repo URL |
 
-Most sub-pages are display-only; Routing + Rule Template are the only
-mutating ones.
+Most sub-pages are display-only; Routing, Active Source, Rule Template,
+and the action keys on Service / External Controller / Mihomo Core are
+the mutating ones. All mutations that touch mihomo (Routing, Active
+Source, Service ops, Core upgrade) run on a goroutine so the TUI stays
+responsive even during 30s+ operations.
 
 ---
 
@@ -469,9 +512,11 @@ mutating ones.
 |---|---|---|
 | `~/.local/bin/vpnkit` | user | this binary |
 | `~/.local/bin/mihomo` | user | managed mihomo core (auto-installed) |
-| `~/.config/vpnkit/config.toml` | vpnkit | **store** (schema v2): subs, local nodes/groups/rules, ports, creds, mode, service mode |
+| `~/.config/vpnkit/config.toml` | vpnkit | **store** (schema v2): subs, local nodes/groups/rules, ports, creds, mode, active_source, service mode |
+| `~/.config/vpnkit/config.toml.lock` | vpnkit | POSIX flock target — serializes concurrent CLI mutations |
 | `~/.config/mihomo/config.yaml` | vpnkit | assembled mihomo config (regenerated on every mutation) |
 | `~/.config/mihomo/cache.db` | mihomo | mihomo session cache |
+| `~/.config/mihomo/ruleset/*.txt` | vpnkit | loyalsoldier ruleset snapshot (unpacked from embedded `*.txt.gz` on first launch) |
 | `~/.config/mihomo/*.mmdb`, `*.dat` | bootstrap | GeoIP / GeoSite (pre-seeded once) |
 | `~/.config/systemd/user/mihomo.service` | vpnkit | systemd unit (mode 0600, forwards `HTTPS_PROXY`) |
 | `~/.netrc` | `vpnkit env` | proxy basic-auth entry (mode 0600) |
@@ -489,7 +534,8 @@ so isolation in tests / sandboxes just works.
 ```toml
 schema_version = 2
 mode = "rule"               # "rule" | "global" | "direct"
-global_target = "🚀 Proxy"
+active_source = "doge"      # which source drives rules + 🚀 Proxy (added in rc.7)
+global_target = "doge-auto" # 🚀 Proxy's default member; derived from active_source
 service_mode = "systemd-user"  # "systemd-user" | "pid"
 mixed_port = 7890
 controller_port = 9090
@@ -500,7 +546,7 @@ proxy_pass = "random-hex"
 [[subscriptions]]
 name = "doge"
 url = "https://doge.example.com/sub?token=..."
-user_agent = "ClashforWindows/0.20.39"   # optional
+user_agent = "mihomo/v1.19.25"           # optional; default ships mihomo UA
 enabled = true
 node_count = 52                          # cached, updated by `subs update`
 

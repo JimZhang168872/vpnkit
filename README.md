@@ -17,8 +17,14 @@
 
 vpnkit runs mihomo (the maintained Clash.Meta core) entirely in user space — no
 root, no TUN. v1.0.0 adds **multi-source subscriptions, hand-entered local
-nodes, and structured local rules**, all editable from a 7-tab TUI or a
-matching `vpnkit subs / local-nodes / local-rules / target` CLI surface.
+nodes, structured local rules, and a single-active-source routing model**,
+all editable from a 7-tab TUI or a matching
+`vpnkit subs / local-nodes / local-rules / active` CLI surface.
+
+The default loyalsoldier rule-set snapshot ships **embedded in the binary**
+(~2 MB gzipped). Bootstrap unpacks it before mihomo's first launch, so
+RULE-SET rules work on slow or GFW-restricted networks without waiting on
+jsdelivr.
 
 > 📖 **Full reference**: [docs/USAGE.md](docs/USAGE.md) (English) /
 > [docs/USAGE_zh.md](docs/USAGE_zh.md) (中文) — every CLI command, every TUI
@@ -101,10 +107,22 @@ takes precedence.
 
 ```bash
 vpnkit mode rule              # default — follow rules
-vpnkit mode global            # all traffic → global target
+vpnkit mode global            # all traffic → 🚀 Proxy (whatever active source picks)
 vpnkit mode direct            # all traffic bypasses proxy
-vpnkit target doge-auto       # set global target (group or node name)
+
+# Active source — single source of routing truth. ★ in Groups tab marks it.
+vpnkit active                 # show current active source (sub or local group)
+vpnkit active boost-net       # switch to a subscription
+vpnkit active home            # switch to a local-nodes group
+
+vpnkit target doge-auto       # override 🚀 Proxy's default member (advanced)
 ```
+
+The **active source** is one subscription OR one local-nodes-group. Its
+`rules:` section drives routing; if it has none (e.g. local-nodes groups
+never ship rules), the loyalsoldier template fills in. `🚀 Proxy`'s members
+are the active source's nodes + `DIRECT`. Switching active swaps both the
+rule baseline and the catch-all proxy in one step.
 
 ### Use the proxy from your shell
 
@@ -143,18 +161,17 @@ vpnkit update --mihomo-only              # leave vpnkit alone
 ## Multi-source architecture
 
 Every subscription becomes its own mihomo `<name>` (select) + `<name>-auto`
-(url-test) group. The top-level `🚀 Proxy` group lists all subscription
-groups + the synthetic `local` group + `DIRECT`; routing's MATCH falls back
-to whichever target the user picked. See
-[`docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md`](docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md)
-for the assembler algorithm in detail.
-
-v1.0.0-rc.3 generalizes the previous single `local` group into named
-user-managed groups (e.g. `home`, `office`). Each enabled local group emits
-its own `<group>` (select) + `<group>-auto` (url-test) pair — exactly
+(url-test) group. Every named local-nodes-group does the same — exactly
 symmetric with subscriptions. Hand-entered nodes carry a `Via` field that
 writes through to mihomo's `dialer-proxy`, so you can build per-node
 chains directly in the form (Shadowrocket-style).
+
+**One active source drives routing** (`vpnkit active <name>`). Only that
+source's rules are emitted; if it doesn't ship rules, the loyalsoldier
+template fills in. `🚀 Proxy`'s members are limited to the active source's
+nodes + `DIRECT`, so MATCH traffic deterministically routes through it.
+Other sources stay loaded in proxy-groups so switching active is a single
+command — no re-assemble required from the user's side.
 
 ```
 proxies: each node renamed "<group>:<original-name>" so cross-group
@@ -162,14 +179,18 @@ proxies: each node renamed "<group>:<original-name>" so cross-group
 proxy-groups:
   - {name: doge,        type: select,   proxies: [doge-auto, doge:HK-A, ...]}
   - {name: doge-auto,   type: url-test, proxies: [doge:HK-A, ...], interval: 300}
-  - {name: boost,       type: select,   ...}
-  - {name: local,       type: select,   proxies: [local:HK-manual, DIRECT]}
-  - {name: 🚀 Proxy,    type: select,   proxies: [<global-target>, ...rest]}
+  - {name: home,        type: select,   proxies: [home-auto, home:HK-manual, ...]}
+  - {name: home-auto,   type: url-test, ...}
+  - {name: 🚀 Proxy,    type: select,   proxies: [<active>-auto, <active>, DIRECT]}
 rules:
-  - <local rules first — always win>
-  - <each enabled subscription's own rules, with targets rewritten>
+  - <local-rules first — always win, regardless of active source>
+  - <active source's own rules, OR loyalsoldier template if it has none>
   - MATCH,🚀 Proxy
 ```
+
+See [`docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md`](docs/superpowers/specs/2026-05-17-v1-subscription-groups-design.md)
+for the original spec; the active-source model layered on top is described
+in [USAGE.md](docs/USAGE.md#core-concepts).
 
 ## Multi-user / multi-instance safety
 
@@ -201,52 +222,66 @@ Via: doge-auto              # any subscription/local node name OR group name
 | Command | What it does |
 |---|---|
 | `vpnkit` | open the TUI |
-| `vpnkit status` | mihomo state, ports, subscriptions count, local nodes count, mode, global target |
+| `vpnkit version` / `--version` / `-v` | binary + commit + mihomo path |
+| `vpnkit --help` / `-h` / `help` | top-level usage (also `<verb> --help` per subverb) |
+| `vpnkit status` | mihomo state, ports, subscriptions count, local nodes count, mode, active source |
 | `vpnkit ip` | exit IP via the proxy |
 | `vpnkit mode [rule\|global\|direct]` | show or change routing mode |
-| `vpnkit target [<group-or-node>]` | show or set GlobalTarget |
+| `vpnkit active [<name>]` | show or switch the active source (subscription OR local-nodes-group) |
+| `vpnkit target [<member>]` | override 🚀 Proxy's default member (advanced — usually `active` suffices) |
 | `vpnkit subs list/add/rm/enable/disable/update [<name>]` | manage subscriptions |
 | `vpnkit local-groups list/add/rm/enable/disable/rename` | manage local-nodes groups |
 | `vpnkit local-nodes list/add/rm/edit/mv` (with `--group/--via`) | manage hand-entered nodes |
-| `vpnkit local-rules list/add/rm/move` | manage local routing rules |
+| `vpnkit local-rules list/add/rm/move` | manage local routing rules (type + payload + target all validated) |
 | `vpnkit groups` | live proxy-group list (from mihomo controller) |
 | `vpnkit nodes '<group>'` | members + cached delay (read-only, from mihomo url-test cache) |
 | `vpnkit test '<group>' ['<node>']` | active delay test (see [USAGE.md › Active delay test](docs/USAGE.md#active-delay-test-deep-dive)) |
 | `vpnkit use '<group>' '<node>'` | switch a group's selection |
-| `vpnkit env [--shell zsh] [--unset] [--functions] [--no-netrc]` | shell snippet |
+| `vpnkit env [--shell bash\|zsh\|fish] [--unset] [--functions] [--no-netrc]` | shell snippet (validates shell flavor) |
 | `vpnkit update [--check] [--yes] [--vpnkit-only] [--mihomo-only]` | upgrade vpnkit + mihomo |
 | `vpnkit init [--force]` | regenerate config skeleton (`--force` backs up existing) |
 | `vpnkit uninstall [--yes] [--purge] [--keep-mihomo]` | stop services, remove all vpnkit-owned paths |
 
-All read commands accept `--json` for scripting. Exit codes: `0` ok,
-`1` user error, `2` runtime error. Per-command flags and JSON schemas
-are in [docs/USAGE.md › CLI reference](docs/USAGE.md#cli-reference).
+Read commands (`status`, `ip`, `groups`, `nodes`, `test`, `mode`, `target`,
+`active`, `... ls`) accept `--json` for scripting; mutation verbs reject
+`--json` with a clear error. JSON-mode runtime failures emit
+`{"error":"…"}` to stdout so consumer scripts still parse cleanly.
+
+Exit codes: `0` ok, `1` user error, `2` runtime error. Concurrent CLI
+mutations are serialized via a POSIX flock on the config file, so
+`vpnkit subs add foo url &` in parallel is safe. Per-command flags and
+JSON schemas are in [docs/USAGE.md › CLI reference](docs/USAGE.md#cli-reference).
 
 ## TUI layout (v1)
 
 ```
 [1] 🏠 Dashboard      live mihomo / traffic
-[2] 🌐 Groups         all groups + nodes (read-only + delay test)
+[2] 🌐 Groups         all groups + nodes (★ marks active source · delay test)
 [3] 📚 Sources        Subscriptions / Local Nodes sub-pages (CRUD)
 [4] 📜 Rules          Live (mihomo view) / Local Rules (CRUD) sub-pages
 [5] 🔗 Connections    live connections (`x` close, `/` filter)
-[6] 📓 Logs           mihomo log tail
+[6] 📓 Logs           mihomo log tail (`p` pause/resume)
 [7] ⚙  Settings       Mihomo Core / Service / External Controller / Routing /
-                      Rule Template / Cache / About sub-pages
+                      Active Source / Rule Template / Cache / About sub-pages
 ```
 
 Keys:
-- `↑↓` navigate · `←` back / sidebar focus · `→` content focus / drill-in · `Enter` activate · `q` quit
-- `1`–`7` jump to tab · `Tab`/`Shift+Tab` cycle
-- **Groups**: `r` refresh · `t` test delay (active probe, current group) · `Enter` switch to highlighted node · `←/→` left/right pane focus
-- **Sources › Subscriptions**: `a` add · `d` delete · `u` update now · `e` toggle enabled
+- `↑↓` navigate · `←` back / sidebar focus · `→` content focus / drill-in · `Enter` activate · `q` quit · `Ctrl+C` quit (even inside forms)
+- `1`–`7` jump to tab · `Tab`/`Shift+Tab` cycle · `?` keymap hint flash
+- **Groups**: `r` refresh · `t` test delay (active probe, current group) · `Enter` switch to highlighted node · `←/→` left/right pane focus · `★` after the group name marks the active source
+- **Sources › Subscriptions**: `a` add · `d` delete · `u` update now · `e` toggle enabled (lists scroll past the visible window when long)
 - **Sources › Local Nodes**: `a` add (proto-driven form) · `e` edit · `d` delete · `u` paste URI ·
-  `N`/`D`/`E`/`T` new/delete/rename/toggle group · `←/→` switch group (when no form open)
-- **Add/Edit Node form**: `Tab/↑↓` navigate fields · `Enter` save · `Esc` cancel ·
+  `N`/`D`/`E`/`T` new/delete/rename/toggle group · `←/→` switch group (when no form open) · credential fields (password / uuid) display as bullets
+- **Add/Edit Node form**: `Tab/↑↓` navigate fields · `Enter` save (validates proto-specific required fields) · `Esc` cancel ·
   `←/→` on Proto field cycles ss / vmess / vless / trojan / hysteria2 / tuic
-- **Rules › Live**: `/` filter · `u` refresh providers · `Tab` switch to Local Rules
-- **Rules › Local Rules**: `d` delete · `K/J` move up/down · `Tab` back to Live
-- **Settings › Routing**: `↑↓ Enter` pick mode · global target editable via `vpnkit target`
+- **Rules › Live**: `/` filter · `u` refresh providers · `T` (Shift+t) switch to Local Rules
+- **Rules › Local Rules**: `d` delete · `K/J` move up/down · `T` back to Live
+- **Logs**: `p` pause/resume tailing
+- **Settings › Routing**: `↑↓ Enter` pick mode · async apply (mihomo reload runs off the event loop)
+- **Settings › Active Source**: `↑↓ Enter` pick which source drives 🚀 Proxy + rules
+
+Min usable terminal: **60×16**. Below that you get a "terminal too narrow"
+gate instead of a corrupted layout.
 
 Per-tab key tables + behavior contracts live in
 [docs/USAGE.md › TUI reference](docs/USAGE.md#tui-reference).

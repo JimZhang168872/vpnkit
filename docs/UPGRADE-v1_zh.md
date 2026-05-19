@@ -87,14 +87,30 @@ v1.0.0 changed the data model. Back up the file, then run
 ## 新的 CLI 接口
 
 ```
-vpnkit subs        list | add <name> <url> | rm <name> | enable <name> | disable <name> | update [<name>]
-vpnkit local-nodes list | add <uri>        | rm <name> | edit <name> <key=val>...
-vpnkit local-rules list | add <type> <payload> <target> | rm <idx> | move <from> <to>
-vpnkit target      [<group-or-node>]      # 查看或设置
-vpnkit mode        rule | global | direct
+vpnkit subs         list | add <name> <url> | rm <name> | enable <name> | disable <name> | update [<name>]
+vpnkit local-groups list | add <name> | rm <name> | enable <name> | disable <name> | rename <old> <new>
+vpnkit local-nodes  list | add <uri>  | rm <name> | edit <name> <key=val>...        | mv <name> <new-group>
+vpnkit local-rules  list | add <type> <payload> <target> | rm <idx> | move <from> <to>
+vpnkit active       [<name>]              # 查看 / 切 active source（订阅 OR 本地组）
+vpnkit target       [<member>]            # 进阶：覆盖 🚀 Proxy 默认成员
+vpnkit mode         rule | global | direct
+vpnkit --help / -h / help                 # 顶层 + 每个子命令的 usage
 ```
 
-`vpnkit status` 现在会打印订阅数 / 本地节点数 / mode / global target。
+`vpnkit status` 现在打印订阅数 / 本地节点数 / mode / **active source** /
+global target。Mutation 命令拒绝 `--json` 并报清楚错误，只读命令接受。
+
+### 自动迁移到 rc.7 active-source 模型
+
+`store.Load` 自动升级老 store —— 用户什么都不用做：
+
+| 老字段值 | 新行为 |
+|---|---|
+| `global_target = "<name>-auto"` | 派生 `active_source = "<name>"` |
+| `global_target = "DIRECT"` 且有 ≥1 enabled source | 两个字段都 bump 到第一个 source |
+| `global_target = "🚀 Proxy"`（rc.5- 自循环） | 改写后再 bump（同上） |
+
+升级后用 `vpnkit active <name>` 或新的 Settings → Active Source 子页选别的。
 
 ## 底层改了什么
 

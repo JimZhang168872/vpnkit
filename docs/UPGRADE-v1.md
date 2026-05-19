@@ -85,14 +85,32 @@ v1.0.0 changed the data model. Back up the file, then run
 ## New CLI surface
 
 ```
-vpnkit subs        list | add <name> <url> | rm <name> | enable <name> | disable <name> | update [<name>]
-vpnkit local-nodes list | add <uri>        | rm <name> | edit <name> <key=val>...
-vpnkit local-rules list | add <type> <payload> <target> | rm <idx> | move <from> <to>
-vpnkit target      [<group-or-node>]      # show current or set
-vpnkit mode        rule | global | direct
+vpnkit subs         list | add <name> <url> | rm <name> | enable <name> | disable <name> | update [<name>]
+vpnkit local-groups list | add <name> | rm <name> | enable <name> | disable <name> | rename <old> <new>
+vpnkit local-nodes  list | add <uri>  | rm <name> | edit <name> <key=val>...        | mv <name> <new-group>
+vpnkit local-rules  list | add <type> <payload> <target> | rm <idx> | move <from> <to>
+vpnkit active       [<name>]              # show / switch active source (subscription OR local group)
+vpnkit target       [<member>]            # advanced: override 🚀 Proxy default member
+vpnkit mode         rule | global | direct
+vpnkit --help / -h / help                 # top-level + per-subverb usage
 ```
 
-`vpnkit status` now prints subscriptions count, local nodes count, mode, and global target.
+`vpnkit status` now prints subscriptions count, local nodes count, mode,
+**active source**, and global target. Mutation verbs reject `--json` with
+a clear error; read verbs accept it.
+
+### Auto-migration to the rc.7 active-source model
+
+`store.Load` upgrades old stores in place — no user action required:
+
+| Old field | New behavior |
+|---|---|
+| `global_target = "<name>-auto"` | derives `active_source = "<name>"` |
+| `global_target = "DIRECT"` AND ≥1 enabled source | bumps both fields to the first source |
+| `global_target = "🚀 Proxy"` (rc.5- self-loop) | rewritten + bumped as above |
+
+After upgrade you can pick a different active source with
+`vpnkit active <name>` or the new Settings → Active Source sub-page.
 
 ## What changed under the hood
 
