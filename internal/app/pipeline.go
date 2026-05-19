@@ -511,6 +511,14 @@ func (p *Pipeline) DeleteSubscription(name string) error {
 	if p.store.Cfg.ActiveSource == name {
 		p.store.Cfg.ActiveSource = ""
 	}
+	// Same story for GlobalTarget — when it points at "<deleted-name>" or
+	// "<deleted-name>-auto", the next Assemble's withTargetFirst PREPENDS
+	// that dangling string into 🚀 Proxy's member list, and mihomo's
+	// PUT /configs 400s with "group not found". Reset to empty so the
+	// assembler computes a fresh default from the new active source.
+	if p.store.Cfg.GlobalTarget == name || p.store.Cfg.GlobalTarget == name+"-auto" {
+		p.store.Cfg.GlobalTarget = ""
+	}
 	p.mu.Unlock()
 	if err := dropSubResult(cacheDir, name); err != nil {
 		fmt.Fprintf(os.Stderr, "vpnkit: sub-cache drop %s: %v (non-fatal)\n", name, err)

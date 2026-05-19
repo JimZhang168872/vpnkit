@@ -71,7 +71,7 @@ func emitProxyGroups(subs []groups.Group, localGroups []groups.Group, activeSour
 	// remain in the config but stay out of the top-level Selector to keep
 	// MATCH routing deterministic per the user's "选谁用谁" intent.
 	topProxies := topProxyMembersFor(activeSource, subs, localGroups)
-	if globalTarget != "" {
+	if globalTarget != "" && globalTargetExists(globalTarget, subs, localGroups) {
 		topProxies = withTargetFirst(topProxies, globalTarget)
 	}
 
@@ -132,6 +132,47 @@ func nodeNames(g groups.Group) []string {
 		out = append(out, fmt.Sprintf("%s:%s", g.Name(), origName))
 	}
 	return out
+}
+
+// globalTargetExists reports whether target names a real, emittable
+// proxy-group or built-in proxy. Used as a guard before withTargetFirst:
+// without it, a stale store value (e.g. left over from a deleted active
+// source) would silently make withTargetFirst PREPEND a dangling string
+// into 🚀 Proxy's member list, and mihomo would reject the config with
+// "group 'X' not found".
+//
+// Recognized values:
+//   - "DIRECT" / "REJECT" / "🎯 Direct" / "🛑 Reject" — built-ins
+//   - "🚀 Proxy" — self (the top-level group; withTargetFirst already
+//     early-returns on self-reference but we accept it for symmetry)
+//   - "<sub>" or "<sub>-auto" for any enabled subscription with nodes
+//   - "<localGroup>" or "<localGroup>-auto" for any enabled local group
+//     with nodes
+//   - a fully-qualified node name "<group>:<original-name>" emitted by
+//     emitProxies — leaf proxies can be addressed directly
+func globalTargetExists(target string, subs, localGroups []groups.Group) bool {
+	switch target {
+	case "DIRECT", "REJECT", "🎯 Direct", "🛑 Reject", topLevelProxyGroup:
+		return true
+	}
+	check := func(gs []groups.Group) bool {
+		for _, g := range gs {
+			if !g.Enabled() || len(nodeNames(g)) == 0 {
+				continue
+			}
+			if target == g.Name() || target == g.Name()+"-auto" {
+				return true
+			}
+			// Leaf-proxy form: "<group>:<original-name>".
+			for _, p := range g.Proxies() {
+				if orig, ok := p["name"].(string); ok && target == fmt.Sprintf("%s:%s", g.Name(), orig) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return check(subs) || check(localGroups)
 }
 
 // withTargetFirst moves target to index 0 so mihomo treats it as the

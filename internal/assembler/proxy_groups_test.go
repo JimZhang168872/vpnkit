@@ -114,3 +114,58 @@ func TestTopProxyMembersForFallbacksWhenActiveHasNoNodes(t *testing.T) {
 		t.Errorf("0-node active source should yield [DIRECT], got %v", got)
 	}
 }
+
+func TestGlobalTargetExistsRecognizesValidTargets(t *testing.T) {
+	sub := groups.NewSubscriptionGroup("doge", true, &subscription.Result{
+		Proxies: []proto.Proxy{{"name": "HK-1", "type": "ss", "server": "1.1", "port": 1}},
+	})
+	cases := []struct {
+		target string
+		want   bool
+	}{
+		{"DIRECT", true},
+		{"REJECT", true},
+		{"🚀 Proxy", true},
+		{"🎯 Direct", true},
+		{"🛑 Reject", true},
+		{"doge", true},
+		{"doge-auto", true},
+		{"doge:HK-1", true},
+		{"sub-doggy-auto", false}, // not enabled / not present — the stale-target case
+		{"completely-random", false},
+	}
+	for _, tc := range cases {
+		if got := globalTargetExists(tc.target, []groups.Group{sub}, nil); got != tc.want {
+			t.Errorf("globalTargetExists(%q) = %v, want %v", tc.target, got, tc.want)
+		}
+	}
+}
+
+func TestEmitProxyGroupsDropsStaleGlobalTarget(t *testing.T) {
+	// Active is "local", but GlobalTarget points at a deleted "sub-doggy-auto".
+	// Previously this prepended "sub-doggy-auto" into 🚀 Proxy's members and
+	// mihomo PUT /configs 400'd. Guard should now silently drop the stale
+	// target so the assembled config is valid.
+	localM := localnodes.New()
+	_ = localM.Add(localnodes.Node{Name: "Hub", Proto: "vmess", Server: "a.b", Port: 443})
+	lg := groups.NewLocalNodesGroupForGroup("local", localM)
+
+	out := emitProxyGroups(nil, []groups.Group{lg}, "local", "sub-doggy-auto")
+
+	var top map[string]any
+	for _, g := range out {
+		gm := g.(map[string]any)
+		if gm["name"] == topLevelProxyGroup {
+			top = gm
+			break
+		}
+	}
+	if top == nil {
+		t.Fatal("🚀 Proxy group not emitted")
+	}
+	for _, m := range top["proxies"].([]string) {
+		if m == "sub-doggy-auto" {
+			t.Errorf("🚀 Proxy members still include stale 'sub-doggy-auto': %v", top["proxies"])
+		}
+	}
+}
