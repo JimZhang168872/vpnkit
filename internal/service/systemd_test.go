@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -163,6 +164,67 @@ func TestRenderUnitQuotesValuesWithSpaces(t *testing.T) {
 	s := buf.String()
 	if !strings.Contains(s, `Environment="HTTPS_PROXY=http://proxy with space:80"`) {
 		t.Errorf("value with space not quoted as a single token\n--- unit ---\n%s", s)
+	}
+}
+
+func TestSystemdUninstallRemovesDropInDir(t *testing.T) {
+	dir := t.TempDir()
+	unitPath := dir + "/mihomo.service"
+	dropInDir := unitPath + ".d"
+
+	if err := os.WriteFile(unitPath, []byte("[Unit]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dropInDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dropInDir+"/env.conf", []byte("[Service]\nEnvironment=X=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := func(args ...string) (string, error) { return "", nil }
+	m := &SystemdManager{cfg: Config{UnitPath: unitPath}, run: runner}
+
+	if err := m.Uninstall(nil); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if _, err := os.Stat(unitPath); !os.IsNotExist(err) {
+		t.Errorf("unit file still exists: %v", err)
+	}
+	if _, err := os.Stat(dropInDir); !os.IsNotExist(err) {
+		t.Errorf("drop-in dir still exists: %v (should have been removed)", err)
+	}
+}
+
+// TestSystemdUninstallEmptyUnitPathGuard ensures the safety guard against a
+// zero-value UnitPath skips the drop-in cleanup branch (otherwise it would
+// resolve to ".d" and recursively wipe whichever directory the caller's cwd
+// points at).
+func TestSystemdUninstallEmptyUnitPathGuard(t *testing.T) {
+	// Create a ".d" directory in a temp scratch space, then run Uninstall
+	// with the cwd pointing there. If the guard were missing, the drop-in
+	// branch would attempt RemoveAll(".d") and wipe it.
+	scratch := t.TempDir()
+	canary := scratch + "/.d/keep-me"
+	if err := os.MkdirAll(scratch+"/.d", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(canary, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir("/")
+	}()
+	if err := os.Chdir(scratch); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := func(args ...string) (string, error) { return "", nil }
+	m := &SystemdManager{cfg: Config{UnitPath: ""}, run: runner}
+	_ = m.Uninstall(nil) // intentionally ignore — Remove("") returns an error but the guard branch is what we test
+
+	if _, err := os.Stat(canary); err != nil {
+		t.Fatalf("canary file at %s was destroyed by Uninstall — guard missing? err=%v", canary, err)
 	}
 }
 

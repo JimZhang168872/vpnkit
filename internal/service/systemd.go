@@ -73,6 +73,15 @@ func (m *SystemdManager) Uninstall(ctx context.Context) error {
 	if err := os.Remove(m.cfg.UnitPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	// Also remove the drop-in directory (mihomo.service.d). Past versions
+	// or hand-applied workarounds (e.g. proxy env overlays) live there;
+	// leaving them behind makes a fresh reinstall silently inherit
+	// overrides the user thought they'd cleaned up.
+	if dropInDir := m.cfg.UnitPath + ".d"; dropInDir != ".d" {
+		if err := os.RemoveAll(dropInDir); err != nil {
+			return fmt.Errorf("remove drop-in dir: %w", err)
+		}
+	}
 	_, _ = m.run("--user", "daemon-reload")
 	return nil
 }

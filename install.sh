@@ -74,12 +74,18 @@ if [ -x "$DEST/vpnkit" ]; then
     log "📦 backed up profiles → $backup_file"
   fi
 
-  if [ -f "$CONFIG_HOME/systemd/user/mihomo.service" ]; then
+  if [ -f "$CONFIG_HOME/systemd/user/mihomo.service" ] || [ -d "$CONFIG_HOME/systemd/user/mihomo.service.d" ]; then
     systemctl --user stop mihomo 2>/dev/null || true
     systemctl --user disable mihomo 2>/dev/null || true
     rm -f "$CONFIG_HOME/systemd/user/mihomo.service"
+    # Also wipe the drop-in directory. Past versions / hand-applied
+    # proxy-env overlays live there; leaving them behind makes a fresh
+    # rc.5+ reinstall silently inherit overrides the user thought were
+    # gone — and after the unit template started rendering those env
+    # entries directly, the drop-ins became a redundant override layer.
+    rm -rf "$CONFIG_HOME/systemd/user/mihomo.service.d"
     systemctl --user daemon-reload 2>/dev/null || true
-    log "🧹 removed systemd unit"
+    log "🧹 removed systemd unit (+ drop-ins)"
   fi
 
   STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
