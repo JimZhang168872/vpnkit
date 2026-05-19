@@ -91,8 +91,11 @@ pass "vpnkit running, mixed=$PORT controller=$CTRL_PORT"
 
 # ─── A. subscription import ──────────────────────────────────────────────
 section "A. subscription import"
-"$VPNKIT" subs add "$SUB1_NAME" "$SUB1_URL" && pass "subs add $SUB1_NAME" || fail "subs add $SUB1_NAME"
-"$VPNKIT" subs add "$SUB2_NAME" "$SUB2_URL" && pass "subs add $SUB2_NAME" || fail "subs add $SUB2_NAME"
+# Use clash.meta UA — some providers (boost1.shop in particular) reject the
+# default mihomo UA and ship an empty config; clash.meta is more universally
+# accepted across feed vendors.
+"$VPNKIT" subs add "$SUB1_NAME" "$SUB1_URL" --ua=clash.meta && pass "subs add $SUB1_NAME (ua=clash.meta)" || fail "subs add $SUB1_NAME"
+"$VPNKIT" subs add "$SUB2_NAME" "$SUB2_URL" --ua=clash.meta && pass "subs add $SUB2_NAME (ua=clash.meta)" || fail "subs add $SUB2_NAME"
 "$VPNKIT" subs update                       && pass "subs update (all)"   || fail "subs update"
 
 subs_json=$("$VPNKIT" subs list --json 2>/dev/null || echo "[]")
@@ -186,22 +189,39 @@ echo "ℹ️  mode=rule  foreign=$FOREIGN_TEST_URL  → $FOREIGN_CODE"
 [ "$DOMESTIC_CODE" = "200" ] && pass "domestic URL via rule mode (200)" || fail "domestic URL returned $DOMESTIC_CODE"
 [ "$FOREIGN_CODE" = "200" ]   && pass "foreign URL via rule mode (200)" || fail "foreign URL returned $FOREIGN_CODE"
 
-# E.4 — jump node egress should match jump's exit, not direct's exit
+# E.4 — jump chain: switch active to "local" so 🚀 Proxy contains local nodes
+# (including the jump node), then `use 🚀 Proxy <jump>` to route through it.
+# The chain (jump → New York-phone) is verified by checking egress IP changes.
 if [ -n "$JUMP_NAME" ] && [ -n "$DIRECT_NAME" ]; then
+  "$VPNKIT" active local >/dev/null 2>&1 || skip "active=local failed (no local group?)"
   "$VPNKIT" mode global >/dev/null
-  "$VPNKIT" use "🚀 Proxy" "$DIRECT_NAME" >/dev/null 2>&1 || skip "couldn't use DIRECT_NAME in 🚀 Proxy group (likely in local group)"
   sleep 1
-  DIRECT_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
-  "$VPNKIT" use "🚀 Proxy" "$JUMP_NAME" >/dev/null 2>&1 || skip "couldn't use JUMP_NAME in 🚀 Proxy group"
-  sleep 1
-  JUMP_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+
+  # Use the direct node by its namespaced name (local:<name>) — that's how
+  # mihomo sees it in the flat namespace.
+  if "$VPNKIT" use "🚀 Proxy" "local:$DIRECT_NAME" >/dev/null 2>&1; then
+    sleep 1
+    DIRECT_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+  else
+    DIRECT_EGRESS="unknown"
+  fi
+
+  if "$VPNKIT" use "🚀 Proxy" "local:$JUMP_NAME" >/dev/null 2>&1; then
+    sleep 1
+    JUMP_EGRESS=$(egress_ip "http://127.0.0.1:$PORT" || echo "unknown")
+  else
+    JUMP_EGRESS="unknown"
+  fi
+
   echo "ℹ️  direct-only egress = $DIRECT_EGRESS"
   echo "ℹ️  jump egress        = $JUMP_EGRESS"
   if [ "$JUMP_EGRESS" != "unknown" ] && [ "$DIRECT_EGRESS" != "unknown" ] && [ "$JUMP_EGRESS" != "$DIRECT_EGRESS" ]; then
     pass "jump chain produces different egress than direct (chain working)"
   else
-    skip "could not validate jump vs direct egress (resolve failed or same IP — chain may or may not work)"
+    skip "could not validate jump vs direct egress (resolve failed or same IP)"
   fi
+  # Restore active back to sub-doggy for phase F
+  "$VPNKIT" active "$SUB1_NAME" >/dev/null 2>&1 || true
 fi
 
 # ─── F. rules classification check (via mihomo /connections) ────────────
