@@ -215,8 +215,11 @@ gunzip -c mihomo-linux-*.gz > ~/.local/bin/mihomo
 chmod +x ~/.local/bin/mihomo
 
 # 2. vpnkit 二进制 (顺便校验 SHA256;目标机是 Linux,有 sha256sum)
-grep "vpnkit_.*_linux_.*\.tar\.gz" SHA256SUMS | sha256sum -c -
-tar xzf vpnkit_*_linux_*.tar.gz
+#    ⚠️ SHA256SUMS 里有 amd64 + arm64 两条,bundle 只放了一条,
+#    用 ls 拿实际文件名再 grep,避免校验缺失的 arch。
+TARBALL=$(ls vpnkit_*_linux_*.tar.gz | head -1)
+grep " ${TARBALL}\$" SHA256SUMS | sha256sum -c -
+tar xzf "$TARBALL"
 install -m 0755 vpnkit ~/.local/bin/vpnkit
 
 # 3. ⚠️ 关键:把 geo 文件放到 mihomo 配置目录,bootstrap 看到就跳过拉取
@@ -227,9 +230,24 @@ cp geo/*.mmdb geo/*.metadb geo/*.dat ~/.config/mihomo/
 #    bootstrap 全程不会触发网络。
 ~/.local/bin/vpnkit init
 
-# 5. 验证
-~/.local/bin/vpnkit status
+# 5. 让 ~/.local/bin 进入 PATH (zsh 默认不带),并验证
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc 2>/dev/null
+     echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc 2>/dev/null
+     export PATH="$HOME/.local/bin:$PATH"
+     echo "ℹ️  已把 ~/.local/bin 加到 ~/.zshrc 和 ~/.bashrc;新 shell 自动生效。" ;;
+esac
+vpnkit status
 ```
+
+> **tar 那些 warning?** 如果你在 macOS 上打 bundle,Linux 目标机解包时
+> 会看到 `tar: Ignoring unknown extended header keyword
+> 'LIBARCHIVE.xattr.com.apple.provenance'`。这是 macOS 的 BSD tar 在
+> 文件里写了苹果系统的扩展属性,GNU tar 不认但只是 warning,内容已经
+> 正确解出。可以忽略。要消掉的话,源机打包前 `export
+> COPYFILE_DISABLE=1`(macOS env),或者改用 `tar --no-xattrs -czf ...`
+> (BSD tar 不支持这个 flag,GNU tar 才有)。
 
 ### 预期输出 (验证过)
 
