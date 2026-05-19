@@ -30,7 +30,13 @@ func runTest(out io.Writer, c *api.Client, group, node, testURL string, timeoutM
 	if group == "" && node == "" {
 		return errors.New("test: group or node required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs+2000)*time.Millisecond)
+	// Buffer is generous because mihomo's group-delay endpoint waits up to
+	// `timeoutMs` for the slowest member (members run in parallel), then
+	// serializes the response. For a 58-node subscription with default
+	// timeoutMs=5000, the response itself can take ~5s + network jitter +
+	// JSON encoding. Pre-rc.11 used +2000ms here, which lost the race when
+	// the slowest few members hit the per-probe deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs+5000)*time.Millisecond)
 	defer cancel()
 
 	if node != "" {

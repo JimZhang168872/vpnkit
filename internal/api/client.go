@@ -31,7 +31,15 @@ func New(baseURL, secret string) *Client {
 		// and the user often has HTTP_PROXY set pointing at the very mihomo
 		// we're calling — routing through it would loop or fail when mihomo
 		// is still bootstrapping.
-		HTTP: netx.NoProxyClient(5 * time.Second),
+		//
+		// 60s outer timeout is a safety net only; every call sets a tighter
+		// per-request deadline via ctx. Pre-rc.11 this was 5s, which caused
+		// `vpnkit test <sub>` against a 58-node subscription to die with
+		// "Client.Timeout exceeded while awaiting headers" — mihomo's
+		// /group/<name>-auto/delay endpoint waits up to its own `timeout`
+		// query param (default 5000ms) for the slowest member, and the
+		// roundtrip easily overshot a 5s client cap.
+		HTTP: netx.NoProxyClient(60 * time.Second),
 	}
 }
 
