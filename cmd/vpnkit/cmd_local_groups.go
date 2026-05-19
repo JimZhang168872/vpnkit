@@ -36,7 +36,7 @@ func dispatchLocalGroups(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit local-groups: %v", err)
 	}
-	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitCache)
 	mutated := false
 	switch sub {
 	case "list", "ls":

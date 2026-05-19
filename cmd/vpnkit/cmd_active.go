@@ -30,7 +30,7 @@ func dispatchActive(args []string) {
 	if err != nil {
 		dieRuntime("%v", err)
 	}
-	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitCache)
 	if len(positional) == 0 {
 		runActiveShow(os.Stdout, pl, wantJSON)
 		return

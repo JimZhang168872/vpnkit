@@ -44,7 +44,7 @@ func dispatchSubs(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit subs: %v", err)
 	}
-	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitCache)
 	mutated := false
 	switch sub {
 	case "list", "ls":
@@ -152,9 +152,38 @@ func dispatchSubs(args []string) {
 	}
 }
 
+// subsListJSONItem is the snake_case projection emitted by `vpnkit subs list --json`.
+// store.Subscription only carries `toml:` tags, so a raw Marshal of the slice
+// produced PascalCase keys (Name/URL/NodeCount) — inconsistent with every other
+// JSON surface in vpnkit (`status`, `groups`, `nodes`, …), which surprises
+// scripts and breaks shell pipelines like `jq -r '.[]|.node_count'`.
+type subsListJSONItem struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	UserAgent   string `json:"user_agent,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	LastUpdated string `json:"last_updated,omitempty"`
+	NodeCount   int    `json:"node_count"`
+}
+
 func runSubsList(out io.Writer, st *store.Store, jsonOut bool) error {
 	if jsonOut {
-		return json.NewEncoder(out).Encode(st.Cfg.Subscriptions)
+		items := make([]subsListJSONItem, 0, len(st.Cfg.Subscriptions))
+		for _, s := range st.Cfg.Subscriptions {
+			lu := ""
+			if !s.LastUpdated.IsZero() {
+				lu = s.LastUpdated.Format("2006-01-02T15:04:05Z07:00")
+			}
+			items = append(items, subsListJSONItem{
+				Name:        s.Name,
+				URL:         s.URL,
+				UserAgent:   s.UserAgent,
+				Enabled:     s.Enabled,
+				LastUpdated: lu,
+				NodeCount:   s.NodeCount,
+			})
+		}
+		return json.NewEncoder(out).Encode(items)
 	}
 	for _, s := range st.Cfg.Subscriptions {
 		mark := "✅"

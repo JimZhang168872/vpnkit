@@ -45,7 +45,7 @@ func Run(version string) error {
 	// absent, bootstrap will create it from scratch.
 	configChanged, _ := ensureConfigSecurity(st, p.MihomoConfigFile())
 
-	pl := NewPipeline(st, p.MihomoConfigFile())
+	pl := NewPipeline(st, p.MihomoConfigFile(), p.VpnkitCache)
 
 	// Force-reassemble config.yaml from the current store on every launch.
 	// Cheap (one Marshal + AtomicWrite) and protects against three classes

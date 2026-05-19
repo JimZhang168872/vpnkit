@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -24,27 +25,37 @@ import (
 type Pipeline struct {
 	store          *store.Store
 	configYAMLPath string
+	// subCacheDir is the directory holding per-subscription cached Results.
+	// Empty disables disk caching (used by tests). When set, RefreshSubscription
+	// persists Results so subsequent CLI invocations (which create a fresh
+	// Pipeline with an empty subResults map) can still emit the full config.
+	subCacheDir string
 
 	mu         sync.Mutex
 	localNodes *localnodes.Manager
 	localRules *localrules.Manager
 	// subResults caches one fetched+converted subscription Result per name.
-	// Entries for removed subscriptions are NOT auto-purged in this phase —
-	// Phase 7's `subs rm` CLI must call DropSubscription (TODO) or the next
-	// Assemble will silently include stale data via store re-lookup. Today
-	// Assemble skips groups whose name isn't in store.Cfg.Subscriptions, so
-	// the leak is contained; Phase 7 should still purge for memory hygiene.
+	// Populated either by RefreshSubscription (this run) or lazily by Assemble
+	// from disk cache (prior runs). Entries for removed subscriptions are
+	// purged by DropSubscriptionCache; Assemble itself only emits subs that
+	// also appear in store.Cfg.Subscriptions.
 	subResults map[string]*subscription.Result
 }
 
 // NewPipeline constructs a Pipeline and loads existing local state from the store.
-func NewPipeline(st *store.Store, configYAMLPath string) *Pipeline {
+// cacheDir should be an XDG cache subdirectory (e.g. paths.Resolve().VpnkitCache).
+// Pass "" to disable disk caching of subscription Results (tests / ephemeral
+// flows).
+func NewPipeline(st *store.Store, configYAMLPath string, cacheDir ...string) *Pipeline {
 	pl := &Pipeline{
 		store:          st,
 		configYAMLPath: configYAMLPath,
 		localNodes:     localnodes.New(),
 		localRules:     localrules.New(),
 		subResults:     map[string]*subscription.Result{},
+	}
+	if len(cacheDir) > 0 {
+		pl.subCacheDir = cacheDir[0]
 	}
 	pl.localNodes.Load(toLocalNodes(st.Cfg.LocalNodes))
 	pl.localRules.Load(toLocalRules(st.Cfg.LocalRules))
@@ -126,12 +137,32 @@ func (p *Pipeline) RefreshSubscription(ctx context.Context, name string) (int, e
 	p.subResults[name] = &res
 	p.store.Cfg.Subscriptions[idx].LastUpdated = time.Now()
 	p.store.Cfg.Subscriptions[idx].NodeCount = len(res.Proxies)
+	cacheDir := p.subCacheDir
 	p.mu.Unlock()
 
 	if err := p.store.Save(); err != nil {
 		return 0, fmt.Errorf("save store: %w", err)
 	}
+	// Persist to disk so the next CLI invocation (a fresh Pipeline with an
+	// empty subResults map) can still emit a complete config.yaml. Non-fatal:
+	// even if cache write fails, this run is correct; the next run will just
+	// silently drop this sub from emission (the pre-rc.7 behavior).
+	if err := saveSubResult(cacheDir, name, &res); err != nil {
+		fmt.Fprintf(os.Stderr, "vpnkit: sub-cache save %s: %v (non-fatal)\n", name, err)
+	}
 	return len(res.Proxies), nil
+}
+
+// DropSubscriptionCache removes a subscription's on-disk cached Result.
+// Callers (cmd_subs.go's `rm` path) should invoke this so stale entries
+// don't linger and don't accidentally re-emit a removed sub if it gets
+// re-added with the same name.
+func (p *Pipeline) DropSubscriptionCache(name string) error {
+	p.mu.Lock()
+	delete(p.subResults, name)
+	dir := p.subCacheDir
+	p.mu.Unlock()
+	return dropSubResult(dir, name)
 }
 
 // Assemble produces the config.yaml for the current state and writes it.
@@ -155,8 +186,20 @@ func (p *Pipeline) Assemble() error {
 			continue
 		}
 		res := p.subResults[s.Name]
+		if res == nil && p.subCacheDir != "" {
+			// Pre-rc.7 this branch was the bug source: every CLI mutation
+			// ran with an empty in-memory map, dropped the sub's proxies,
+			// and produced a config.yaml that referenced a non-existent
+			// "<sub>-auto" group. The disk cache (written by Refresh) is
+			// loaded here so non-fetch mutations still emit a valid config.
+			if cached, err := loadSubResult(p.subCacheDir, s.Name); err == nil && cached != nil {
+				res = cached
+				p.subResults[s.Name] = res
+			}
+		}
 		if res == nil {
-			// Fetch has not happened this run; skip — status TUI will surface stale.
+			// No fetch has ever happened (truly new sub). Skip — the user must
+			// `vpnkit subs update <name>` before this sub takes effect.
 			continue
 		}
 		subs = append(subs, groups.NewSubscriptionGroup(s.Name, true, res))
@@ -458,6 +501,7 @@ func (p *Pipeline) DeleteSubscription(name string) error {
 	}
 	p.store.Cfg.Subscriptions = append(p.store.Cfg.Subscriptions[:idx], p.store.Cfg.Subscriptions[idx+1:]...)
 	delete(p.subResults, name)
+	cacheDir := p.subCacheDir
 	// Clear ActiveSource if we just deleted the active one. Leaving a
 	// stale ActiveSource here would make the next Assemble fall through
 	// topProxyMembersFor's "name doesn't match anything enabled" branch
@@ -468,6 +512,9 @@ func (p *Pipeline) DeleteSubscription(name string) error {
 		p.store.Cfg.ActiveSource = ""
 	}
 	p.mu.Unlock()
+	if err := dropSubResult(cacheDir, name); err != nil {
+		fmt.Fprintf(os.Stderr, "vpnkit: sub-cache drop %s: %v (non-fatal)\n", name, err)
+	}
 	return p.store.Save()
 }
 

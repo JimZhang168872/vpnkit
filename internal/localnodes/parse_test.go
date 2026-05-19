@@ -363,3 +363,39 @@ func TestToProxyMapSS(t *testing.T) {
 		t.Errorf("ToProxyMap ss: %v", m)
 	}
 }
+
+func TestParseURISocks5(t *testing.T) {
+	uri := "socks5://user:pa%2Fss@1.2.3.4:1080#sock-1"
+	n, err := ParseURI(uri)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "socks5" {
+		t.Errorf("proto = %q, want socks5", n.Proto)
+	}
+	if n.Server != "1.2.3.4" || n.Port != 1080 {
+		t.Errorf("host:port = %s:%d", n.Server, n.Port)
+	}
+	if n.Name != "sock-1" {
+		t.Errorf("name = %q, want sock-1", n.Name)
+	}
+	if n.Fields["username"] != "user" {
+		t.Errorf("username = %v, want user", n.Fields["username"])
+	}
+	if got := n.Fields["password"]; got != "pa/ss" {
+		t.Errorf("password = %v, want pa/ss (slash should round-trip)", got)
+	}
+}
+
+func TestParseURISocks5_NoAuth(t *testing.T) {
+	n, err := ParseURI("socks5://1.2.3.4:1080")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if n.Proto != "socks5" {
+		t.Errorf("proto = %q, want socks5", n.Proto)
+	}
+	if _, has := n.Fields["username"]; has {
+		t.Errorf("no auth should not emit username; got %v", n.Fields)
+	}
+}

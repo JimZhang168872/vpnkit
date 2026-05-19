@@ -830,8 +830,10 @@ func TestDispatchInitFromMain(t *testing.T) {
 	restoreDie := panicOnDie(t)
 	defer restoreDie()
 
-	// dispatchInit should succeed (just calls runInit internally).
-	mustNotPanic(t, func() { dispatchInit([]string{}) })
+	// dispatchInit should succeed at the config-write step. --skip-bootstrap
+	// prevents the test from triggering a real mihomo download + systemd unit
+	// install (would-be 30+s wall time, plus pollutes the host's user systemd).
+	mustNotPanic(t, func() { dispatchInit([]string{"--skip-bootstrap"}) })
 }
 
 func TestDispatchInitForce(t *testing.T) {
@@ -840,7 +842,7 @@ func TestDispatchInitForce(t *testing.T) {
 	restoreDie := panicOnDie(t)
 	defer restoreDie()
 
-	mustNotPanic(t, func() { dispatchInit([]string{"--force"}) })
+	mustNotPanic(t, func() { dispatchInit([]string{"--force", "--skip-bootstrap"}) })
 }
 
 func TestDispatchUninstallFromMain(t *testing.T) {

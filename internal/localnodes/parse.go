@@ -42,9 +42,41 @@ func ParseURI(raw string) (Node, error) {
 		return parseHy2(u, raw)
 	case "tuic":
 		return parseTuic(u, raw)
+	case "socks5", "socks":
+		return parseSocks5(u, raw)
 	default:
 		return Node{}, fmt.Errorf("parse: unsupported scheme %q", u.Scheme)
 	}
+}
+
+// parseSocks5 reads a socks5://[user:pass@]host:port[#name] URI and produces
+// a mihomo `type: socks5` node. Username and password are optional and may
+// be percent-encoded in the userinfo. Real-world QA case: providers commonly
+// give a jump-hop socks5 endpoint that clients then chain via dialer-proxy
+// (vpnkit's --via flag), and rejecting this scheme broke proxy-chain configs.
+func parseSocks5(u *url.URL, _ string) (Node, error) {
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return Node{}, fmt.Errorf("parse(socks5): bad port: %w", err)
+	}
+	fields := map[string]any{}
+	if u.User != nil {
+		// url.Userinfo.Password() returns "" + false when absent — keep
+		// username-only auth working (rare but spec-permitted).
+		if user := u.User.Username(); user != "" {
+			fields["username"] = user
+		}
+		if pass, ok := u.User.Password(); ok {
+			fields["password"] = pass
+		}
+	}
+	return Node{
+		Name:   nameOrFallback(u),
+		Proto:  "socks5",
+		Server: u.Hostname(),
+		Port:   port,
+		Fields: fields,
+	}, nil
 }
 
 // escapeUserinfoSlashes percent-encodes any '/' that sits in the userinfo

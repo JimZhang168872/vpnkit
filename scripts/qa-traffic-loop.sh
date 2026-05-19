@@ -83,9 +83,11 @@ if ! "$VPNKIT" status >/dev/null 2>&1; then
   fail "vpnkit status crashed — install/service broken"
   exit 3
 fi
-PORT=$("$VPNKIT" status --json | jq -r .mixed_port)
-[[ "$PORT" =~ ^[0-9]+$ ]] || { fail "couldn't read mixed_port from status (got: $PORT)"; exit 3; }
-pass "vpnkit running, mixed_port=$PORT"
+PORT=$("$VPNKIT" status --json | jq -r .ports.mixed)
+CTRL_PORT=$("$VPNKIT" status --json | jq -r .ports.controller)
+[[ "$PORT" =~ ^[0-9]+$ ]] || { fail "couldn't read ports.mixed from status (got: $PORT)"; exit 3; }
+[[ "$CTRL_PORT" =~ ^[0-9]+$ ]] || { fail "couldn't read ports.controller (got: $CTRL_PORT)"; exit 3; }
+pass "vpnkit running, mixed=$PORT controller=$CTRL_PORT"
 
 # ─── A. subscription import ──────────────────────────────────────────────
 section "A. subscription import"
@@ -102,8 +104,8 @@ else
 fi
 
 # Node counts per sub
-sub1_nodes=$(printf '%s' "$subs_json" | jq --arg n "$SUB1_NAME" '.[]|select(.name==$n)|.node_count // 0')
-sub2_nodes=$(printf '%s' "$subs_json" | jq --arg n "$SUB2_NAME" '.[]|select(.name==$n)|.node_count // 0')
+sub1_nodes=$(printf '%s' "$subs_json" | jq --arg n "$SUB1_NAME" '[.[]|select(.name==$n)|.node_count][0] // 0')
+sub2_nodes=$(printf '%s' "$subs_json" | jq --arg n "$SUB2_NAME" '[.[]|select(.name==$n)|.node_count][0] // 0')
 [ "${sub1_nodes:-0}" -gt 0 ] && pass "$SUB1_NAME has $sub1_nodes nodes" || fail "$SUB1_NAME has $sub1_nodes nodes (expected >0)"
 [ "${sub2_nodes:-0}" -gt 0 ] && pass "$SUB2_NAME has $sub2_nodes nodes" || fail "$SUB2_NAME has $sub2_nodes nodes (expected >0)"
 
@@ -155,7 +157,11 @@ fi
 
 # E.2 — mode=global + use sub1's first node: egress IP should differ from baseline
 "$VPNKIT" mode global >/dev/null
-SUB1_FIRST=$("$VPNKIT" nodes "🚀 Proxy" --json 2>/dev/null | jq -r '.[0].name // empty')
+SUB1_FIRST=$("$VPNKIT" nodes "🚀 Proxy" --json 2>/dev/null | jq -r '.nodes[]?|select(.name|test("^(DIRECT|REJECT)$")|not)|select(.name|endswith("-auto")|not)|select(.name==$top|not).name // empty' --arg top "$SUB1_NAME" | head -1)
+# If the activation flow gave us the auto-test group as default selected, drill into it to find a real node
+if [ -z "$SUB1_FIRST" ]; then
+  SUB1_FIRST=$("$VPNKIT" nodes "$SUB1_NAME" --json 2>/dev/null | jq -r '.nodes[]?|.name' | grep -v -E "^(DIRECT|REJECT)$" | head -1)
+fi
 if [ -z "$SUB1_FIRST" ]; then
   skip "no nodes in 🚀 Proxy group — skipping global-mode IP test"
 else
@@ -200,7 +206,6 @@ fi
 
 # ─── F. rules classification check (via mihomo /connections) ────────────
 section "F. rule classification via mihomo controller"
-CTRL_PORT=$("$VPNKIT" status --json | jq -r .controller_port)
 CTRL_SECRET=$(grep '^controller_secret' "$HOME/.config/vpnkit/config.toml" | awk -F'"' '{print $2}')
 # Force a fresh connection for each test URL so /connections sees them.
 "$VPNKIT" mode rule >/dev/null

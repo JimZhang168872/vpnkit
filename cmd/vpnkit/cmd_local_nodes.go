@@ -40,7 +40,7 @@ func dispatchLocalNodes(args []string) {
 	if err != nil {
 		dieRuntime("vpnkit local-nodes: %v", err)
 	}
-	pl := app.NewPipeline(st, p.MihomoConfigFile())
+	pl := app.NewPipeline(st, p.MihomoConfigFile(), p.VpnkitCache)
 	mutated := false
 	switch sub {
 	case "list", "ls":
@@ -348,9 +348,30 @@ func resolveLocalNode(st *store.Store, ref string) (group, name string, ambiguou
 	}
 }
 
+// localNodeJSONItem is the snake_case projection for `local-nodes list --json`.
+// Same rationale as subsListJSONItem in cmd_subs.go: align with the rest of
+// the JSON surface so scripts can rely on lowercase + underscored keys.
+type localNodeJSONItem struct {
+	Name   string         `json:"name"`
+	Group  string         `json:"group,omitempty"`
+	Via    string         `json:"via,omitempty"`
+	Proto  string         `json:"proto"`
+	Server string         `json:"server"`
+	Port   int            `json:"port"`
+	Fields map[string]any `json:"fields,omitempty"`
+}
+
 func runLocalNodesList(out io.Writer, st *store.Store, jsonOut bool) error {
 	if jsonOut {
-		return json.NewEncoder(out).Encode(st.Cfg.LocalNodes)
+		items := make([]localNodeJSONItem, 0, len(st.Cfg.LocalNodes))
+		for _, n := range st.Cfg.LocalNodes {
+			items = append(items, localNodeJSONItem{
+				Name: n.Name, Group: n.Group, Via: n.Via,
+				Proto: n.Proto, Server: n.Server, Port: n.Port,
+				Fields: n.Fields,
+			})
+		}
+		return json.NewEncoder(out).Encode(items)
 	}
 	for _, n := range st.Cfg.LocalNodes {
 		fmt.Fprintf(out, "%-20s  %-10s  %-20s  %d\n", n.Name, n.Proto, n.Server, n.Port)
