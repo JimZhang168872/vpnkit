@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -127,7 +128,7 @@ Read verbs (always safe):
   vpnkit test <group> [<node>] [--json] active delay test
 
 Mutation verbs (hold a config flock):
-  vpnkit init [--force]                 generate / regenerate config
+  vpnkit init [--force] [--skip-bootstrap]  configs + download mihomo + install service
   vpnkit subs        <list|add|rm|enable|disable|update>     # CRUD: no --json
   vpnkit local-nodes <list|add|rm|edit|mv>                   # CRUD: no --json
   vpnkit local-groups <list|add|rm|enable|disable|rename>    # CRUD: no --json
@@ -290,13 +291,40 @@ func dispatchInit(args []string) {
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
 	force := fs.Bool("force", false, "back up any existing store before regenerating (use to recover from v1 → v2)")
+	skipBootstrap := fs.Bool("skip-bootstrap", false, "only create config files; do NOT download mihomo or install the service")
 	_ = fs.Bool("non-interactive", false, "(no-op; init is always non-interactive)")
 	if err := fs.Parse(args); err != nil {
-		dieUserErr("vpnkit init: %v (valid flags: --force, --non-interactive)", err)
+		dieUserErr("vpnkit init: %v (valid flags: --force, --skip-bootstrap, --non-interactive)", err)
 	}
 	if err := runInit(os.Stdout, runInitOpts{Force: *force}); err != nil {
 		dieRuntime("vpnkit init: %v", err)
 	}
+	if *skipBootstrap {
+		fmt.Println("ℹ️  skipped bootstrap (--skip-bootstrap). Run `vpnkit` to download mihomo + start the service.")
+		return
+	}
+	// Full bootstrap: download mihomo + seed geo/rulesets + install & start
+	// service. Before rc.5 this only happened on first TUI launch, which left
+	// curl-installed users with `vpnkit --version` saying "mihomo: not
+	// installed" and no running service. Doing it here makes `install.sh`
+	// (which calls `vpnkit init`) leave the system actually usable.
+	if err := dispatchInitBootstrap(); err != nil {
+		dieRuntime("vpnkit init: bootstrap: %v", err)
+	}
+}
+
+func dispatchInitBootstrap() error {
+	p := paths.Resolve()
+	st, err := store.Load(p.VpnkitConfigFile())
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+	svc := app.NewServiceManager(p, st)
+	return app.RunBootstrap(context.Background(), app.BootstrapDeps{
+		Paths:   p,
+		Store:   st,
+		Service: svc,
+	}, os.Stdout)
 }
 
 func dispatchUninstall(args []string) {

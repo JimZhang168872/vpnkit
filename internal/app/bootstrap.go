@@ -1,20 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"vpnkit/internal/config"
 	"vpnkit/internal/installer"
 	"vpnkit/internal/paths"
-	"vpnkit/internal/rules"
 	"vpnkit/internal/service"
 	"vpnkit/internal/store"
 )
@@ -29,91 +22,19 @@ type BootstrapDeps struct {
 }
 
 // MaybeBootstrap returns a tea.Cmd that performs first-run setup only if needed.
-// It emits BootstrapProgressMsg at each phase; the top-level Model can render them.
+// It emits a single BootstrapProgressMsg with Phase=ready or error. Detailed
+// per-step output is captured into the error's Note for surfacing in the
+// Service tab.
 func MaybeBootstrap(d BootstrapDeps) tea.Cmd {
 	return func() tea.Msg {
-		// 1. Ensure XDG dirs exist.
-		if err := d.Paths.Ensure(); err != nil {
-			return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("paths: %w", err)}
-		}
-		// 2. Install mihomo if missing.
-		if _, err := os.Stat(d.Paths.MihomoBinary()); errors.Is(err, fs.ErrNotExist) {
-			if d.InstallFunc == nil {
-				d.InstallFunc = installer.Install
-			}
-			_, err := d.InstallFunc(installer.Options{
-				Dst:     d.Paths.MihomoBinary(),
-				APIBase: "",
-			}, nil)
-			if err != nil {
-				return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("install: %w", err)}
-			}
-		}
-		// 3. Generate config.yaml if missing. Port reconciliation happens earlier
-		// (synchronously, in app.Run) so profMgr sees the final ports.
-		if _, err := os.Stat(d.Paths.MihomoConfigFile()); errors.Is(err, fs.ErrNotExist) {
-			data, err := config.BuildSkeleton(config.SkeletonInput{
-				MixedPort:        d.Store.Cfg.MixedPort,
-				ControllerPort:   d.Store.Cfg.ControllerPort,
-				ControllerSecret: d.Store.Cfg.ControllerSecret,
-				RuleTemplate:     d.Store.Cfg.LegacyRuleTemplate,
-				ProxyUser:        d.Store.Cfg.ProxyUser,
-				ProxyPass:        d.Store.Cfg.ProxyPass,
-			})
-			if err != nil {
-				return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("config: %w", err)}
-			}
-			if err := config.AtomicWrite(d.Paths.MihomoConfigFile(), data, 0o600); err != nil {
-				return BootstrapProgressMsg{Phase: "error", Err: err}
-			}
-		}
-		// 3.5. Pre-seed GeoIP / GeoSite data files. mihomo's built-in
-		// downloader hardcodes a 90s deadline and does NOT honor HTTP(S)_PROXY,
-		// so on China-network hosts the first launch deadlocks. Fetching the
-		// files ourselves with netx.SmartClient (which uses a live env proxy
-		// when reachable) sidesteps both problems. Failure here is non-fatal:
-		// mihomo will still try the download on its own at startup, and even
-		// if that also fails the user can fix it manually without reinstalling.
-		if _, err := installer.EnsureGeo(d.Paths.MihomoConfig, nil); err != nil {
-			fmt.Fprintf(os.Stderr, "vpnkit: geo pre-seed had errors (non-fatal): %v\n", err)
-		}
-
-		// 3.6. Pre-seed rule-set text files from vpnkit's embedded
-		// snapshot into ~/.config/mihomo/ruleset/. Without this mihomo
-		// would have to fetch every RULE-SET from jsdelivr at first
-		// boot — on slow / GFW'd networks that can take minutes and
-		// the user perceives "rules never appear". Idempotent: existing
-		// files are left alone so subsequent mihomo refreshes survive.
-		// Non-fatal: if writing fails, mihomo will fall back to its
-		// own fetch loop and the user gets the rc.5 behavior.
-		if _, err := rules.WriteRulesetsTo(filepath.Join(d.Paths.MihomoConfig, "ruleset")); err != nil {
-			fmt.Fprintf(os.Stderr, "vpnkit: ruleset seed had errors (non-fatal): %v\n", err)
-		}
-
-		// 4. Install + start the service.
-		ctx := context.Background()
-		if err := d.Service.Install(ctx); err != nil {
-			return BootstrapProgressMsg{Phase: "error", Err: fmt.Errorf("service install: %w", err)}
-		}
-		// systemd Install already does enable --now; PID Install is a no-op so we Start.
-		_ = d.Service.Start(ctx)
-		// Give the service a moment to crash on first launch (network blocked, bad config, etc.).
-		time.Sleep(3 * time.Second)
-		status, _ := d.Service.Status(ctx)
-		if !status.Running {
-			var logTail string
-			if reader, err := d.Service.Logs(ctx, false); err == nil && reader != nil {
-				if data, err := io.ReadAll(io.LimitReader(reader, 4096)); err == nil {
-					logTail = string(data)
-				}
-				reader.Close()
-			}
+		var buf bytes.Buffer
+		if err := RunBootstrap(context.Background(), d, io.MultiWriter(&buf)); err != nil {
 			return BootstrapProgressMsg{
 				Phase: "error",
-				Note:  "mihomo failed to start (see Service tab logs)",
-				Err:   fmt.Errorf("mihomo not running after start. Last log lines:\n%s", logTail),
+				Note:  buf.String(),
+				Err:   err,
 			}
 		}
-		return BootstrapProgressMsg{Phase: "ready"}
+		return BootstrapProgressMsg{Phase: "ready", Note: buf.String()}
 	}
 }

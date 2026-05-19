@@ -30,20 +30,9 @@ func Run(version string) error {
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
-	// Detect service mode on first run.
-	if st.Cfg.ServiceMode == "" {
-		mode := service.Detect(nil)
-		st.Cfg.ServiceMode = string(mode)
-		_ = st.Save()
-	}
-	svc := service.New(service.Mode(st.Cfg.ServiceMode), service.Config{
-		BinaryPath:  p.MihomoBinary(),
-		ConfigDir:   p.MihomoConfig,
-		PIDFilePath: p.PIDFile(),
-		LogFilePath: p.MihomoLog(),
-		UnitPath:    p.SystemdUnit(),
-		MixedPort:   st.Cfg.MixedPort,
-	})
+	// Detect service mode on first run + build the manager. Shared with
+	// dispatchInit so the TUI and CLI bootstrap agree on backend selection.
+	svc := NewServiceManager(p, st)
 	// Reconcile ports against the local OS before profMgr captures them. Skip
 	// when our mihomo is already running (its bound ports are presumably the saved ones).
 	if err := reconcilePorts(svc, st, p.MihomoConfigFile()); err != nil {

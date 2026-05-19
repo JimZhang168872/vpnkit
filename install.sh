@@ -127,11 +127,16 @@ mkdir -p "$DEST"
 install -m 0755 "$tmp/vpnkit" "$DEST/vpnkit"
 log "📦 installed $VERSION → $DEST/vpnkit"
 
-# ───────── init config ─────────
-log "🛠️  initializing config …"
+# ───────── init + bootstrap ─────────
+# `vpnkit init` now also downloads mihomo, seeds Geo data, installs the
+# systemd-user (or PID-file) service, and starts it. The total runtime is
+# ~10-60s depending on network. Pre-rc.5 init was config-only and left users
+# with `mihomo: not installed` until they manually launched the TUI; that
+# split surprised people and broke the "curl | bash → done" expectation.
+log "🛠️  initializing config + downloading mihomo …"
 init_args=()
 [ -n "$backup_file" ] && [ -f "$backup_file" ] && init_args+=(--restore "$backup_file")
-"$DEST/vpnkit" init "${init_args[@]}" || warn "init returned non-zero"
+"$DEST/vpnkit" init "${init_args[@]}" || warn "init returned non-zero (mihomo may not be running — see output above)"
 
 # ───────── done ─────────
 log ""
