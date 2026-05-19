@@ -197,9 +197,11 @@ vpnkit active --json          # → {"active_source":"doge","kind":"subscription
 **节点 ref** 可以是短名（如 `JP-A`）或命名空间形式（`group:JP-A`）。短名遇到
 多组同名时报错 —— 写脚本时建议总是用命名空间。
 
-**`add`** 解析任意 6 种支持协议的 proxy URI（ss / vmess / vless / trojan /
-hysteria2 / tuic）。`--group` 默认 `local`，如果不存在会自动建组。`--via`
-就是设 [Local node Via](#核心概念)，写到 mihomo 的 `dialer-proxy`。
+**`add`** 解析任意 7 种支持协议的 proxy URI（ss / vmess / vless / trojan /
+hysteria2 / tuic / socks5）。`--group` 默认 `local`，如果不存在会自动建组。
+`--via` 就是设 [Local node Via](#核心概念)，写到 mihomo 的 `dialer-proxy`。
+传入不带前缀的 Via 名（例如 `--via Hub`）会在 assemble 时自动 namespace
+到 `local:Hub`，不需要你手写 `local:` 前缀。
 
 **`edit`** 认识的 key：`name`, `group`, `via`, `server`, `port`, `proto`。
 其他（如 `password=...`, `cipher=...`）都进 `Fields` blob —— 协议特定字段
@@ -253,14 +255,28 @@ JSON：`{"group": "doge", "current": "doge:HK-01", "nodes": [{"name":
 的名字（订阅 / 本地节点都是 `<group>:<原名>` 命名空间形式 —— 跟
 `vpnkit nodes` 显示的一致）。
 
-### `vpnkit init [--force]`
+### `vpnkit init [--force] [--skip-bootstrap]`
 
-无参数：缺则生成 `~/.config/vpnkit/config.toml`，挑空闲 TCP 端口给 mixed-port
-和 controller-port，生成随机 controller secret + proxy basic-auth creds。
-有 store 就不动。
+默认调用一次干完一整套首装：
 
-带 `--force`：把现有 store 备份到 `config.toml.bak.<ts>`，重新生成。修复
-损坏 store / 一键重置 secret 用。
+1. 缺则生成 `~/.config/vpnkit/config.toml`（随机端口、controller secret、
+   proxy 基本认证凭据）。
+2. 缺则写 `~/.config/mihomo/config.yaml` 骨架。
+3. 缺则下载 `mihomo` 到 `~/.local/bin/mihomo`。
+4. 预拉 `~/.config/mihomo/{GeoIP,GeoSite,country.mmdb,…}`，避开 GFW 下首次
+   mihomo 启动 90 秒 MMDB 死锁。
+5. 从内嵌快照预拉 `~/.config/mihomo/ruleset/*.txt`。
+6. 安装 service 后端（有 `systemctl --user` 走 systemd-user unit；否则
+   PID 文件后端），并启动。
+7. 稍等一会儿，确认 mihomo 真的跑起来了。
+
+重复跑安全：每一步都是幂等的。
+
+| Flag | 作用 |
+|---|---|
+| `--force` | 现有 store 备份到 `config.toml.bak.<unix-nano>`，重新生成（轮换 secret 或修复损坏 store） |
+| `--skip-bootstrap` | 只跑 1 + 2（写 config），不下载 mihomo、不预拉 geo/ruleset、不动 service。适合 CI / 打包场景 |
+| `--non-interactive` | no-op（init 从来不会交互式提问） |
 
 ### `vpnkit uninstall [--yes] [--purge] [--keep-mihomo] [--keep-profiles=true|false] [--backup-dir DIR]`
 

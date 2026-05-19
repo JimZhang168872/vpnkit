@@ -3,8 +3,72 @@
 ## v1.0.0 — 2026-05-19
 
 First stable release of the v1.0 architecture. The active-source routing
-model, embedded rule-set snapshot, bilingual docs, and ~80 stability
-fixes from the rc.4 → rc.7 cycle are all in.
+model, embedded rule-set snapshot, bilingual docs, ~80 stability fixes
+from the rc.4 → rc.7 cycle, and **9 install-flow / traffic-flow bugs
+caught by the rc.4 → rc.10 QA loop** are all in.
+
+### Install + traffic QA loop fixes (since rc.3)
+
+These are end-to-end install / traffic regressions caught by the two
+Docker / real-host QA scripts in `scripts/qa-install-loop.sh` and
+`scripts/qa-traffic-loop.sh`. See
+[`docs/superpowers/specs/2026-05-19-install-qa-loop-design.md`](docs/superpowers/specs/2026-05-19-install-qa-loop-design.md)
+for the loop design.
+
+- **`vpnkit init` now does the full bootstrap.** Pre-rc.5 init only
+  wrote config files; the mihomo binary download, GeoIP/GeoSite pre-seed,
+  ruleset pre-seed, systemd-user unit install, and service start were
+  all deferred to the first TUI launch. That left `curl install.sh |
+  bash` users with `vpnkit --version` printing "mihomo binary: not
+  installed" and no working service until they happened to launch the
+  TUI. Now `vpnkit init` (and therefore install.sh) runs the whole
+  bootstrap synchronously. Add `--skip-bootstrap` to opt out (only
+  writes configs).
+- **install.sh + uninstall now clean `mihomo.service.d/`.** The drop-in
+  directory survived previous removals; hand-applied env overlays from
+  past sessions kept overriding the unit-template's fresh
+  `Environment=` lines after a reinstall. Both `install.sh`'s cleanup
+  branch and `vpnkit uninstall` now `rm -rf` the `.d/` directory.
+- **Subscription `Result` is now disk-cached.** Pre-rc.7
+  `Pipeline.subResults` was an in-memory map populated only by the
+  process that ran `subs update`. Every other CLI mutation (`subs add`
+  / `active` / `local-nodes add` / `mode` / …) started with an empty
+  map, so the freshly-assembled config.yaml DROPPED the subscription's
+  proxies and proxy-groups — but `🚀 Proxy` still referenced
+  `<active>-auto`, and mihomo `PUT /configs` returned `400 "group not
+  found"` on every mutation. Cached as JSON at
+  `~/.cache/vpnkit/sub-cache/<urlencoded-name>.json`. `subs rm`
+  deletes its own cache entry.
+- **`vpnkit local-nodes add socks5://...` is supported.** Was rejected
+  with "unsupported scheme". Real-world QA: providers commonly hand
+  out a socks5 hop as the jump server for a proxy chain.
+- **`subs list --json` / `local-nodes list --json` now emit snake_case
+  keys.** Previously emitted PascalCase from the raw store struct
+  (`Name`, `URL`, `NodeCount`), inconsistent with every other JSON
+  surface in vpnkit. Scripts that `jq '.[].node_count'` etc. now work.
+- **`dialer-proxy` auto-namespaces.** Local nodes can chain through
+  another node via `--via <name>`. Pre-rc.8 we emitted the unqualified
+  name into `dialer-proxy`, but mihomo's flat namespace knows nodes
+  only as `<group>:<original-name>`. Result: `proxy [local:HOP]
+  dialer-proxy [Hub] not found` 400 on PUT. Assembler now resolves
+  unqualified Via against the emitted name map and rewrites to the
+  namespaced form. Group names and built-ins (DIRECT/REJECT) stay
+  unchanged.
+- **Active source with 0 nodes no longer poisons `🚀 Proxy`.**
+  `topProxyMembersFor` now requires the active group to be both enabled
+  AND have ≥ 1 node before emitting `[<name>-auto, <name>, DIRECT]`;
+  otherwise falls back to `[DIRECT]`. Matches `emitPair`'s 0-node
+  skip; eliminates the dangling reference after the very first
+  `subs add` (before any `subs update`).
+- **Stale `GlobalTarget` no longer prepends a phantom name.**
+  `DeleteSubscription` now clears `GlobalTarget` when it pointed at
+  the deleted source (or its `-auto` variant), and the assembler's
+  new `globalTargetExists` guard refuses to call `withTargetFirst`
+  with a value that isn't a real DIRECT/REJECT/helper/sub/local-group
+  /leaf-proxy name.
+- **`vpnkit init` test coverage tightened.** `TestDispatchInit*` use
+  `--skip-bootstrap` to avoid pulling mihomo over the network and
+  modifying the host's user systemd state during `go test`.
 
 ### Major features (since v1.0.0-rc.3)
 

@@ -211,11 +211,13 @@ flip is live within seconds.
 (`group:JP-A`). Short refs error out as ambiguous if multiple groups have
 a node by that name — always namespace when scripting.
 
-**`add`** parses a proxy URI in any of the six supported schemes (ss /
-vmess / vless / trojan / hysteria2 / tuic). `--group` defaults to `local`
-and auto-creates the group if it doesn't exist. `--via` sets the
-[Local node Via](#key-concepts) field, written through to mihomo as
-`dialer-proxy`.
+**`add`** parses a proxy URI in any of the seven supported schemes
+(ss / vmess / vless / trojan / hysteria2 / tuic / socks5). `--group`
+defaults to `local` and auto-creates the group if it doesn't exist.
+`--via` sets the [Local node Via](#key-concepts) field, written through
+to mihomo as `dialer-proxy`. The unqualified Via name (e.g. `--via Hub`)
+auto-resolves to its namespaced form (`local:Hub`) at assemble time, so
+you don't need to type `local:` prefixes.
 
 **`edit`** recognized keys: `name`, `group`, `via`, `server`, `port`, and
 `proto`. Anything else (e.g. `password=...`, `cipher=...`) is written into
@@ -274,15 +276,29 @@ Calls mihomo's `PUT /proxies/<group>` to switch the active member. Node
 name must be the mihomo-side name (namespaced as `<group>:<original>`
 for subscription / local nodes — same as what shows in `vpnkit nodes`).
 
-### `vpnkit init [--force]`
+### `vpnkit init [--force] [--skip-bootstrap]`
 
-Without args: creates `~/.config/vpnkit/config.toml` if missing, picks
-free TCP ports for mixed-port + controller-port, generates a random
-controller secret + proxy basic-auth creds. No-op on existing store.
+Default invocation runs the full one-shot install:
 
-With `--force`: backs up the existing store to `config.toml.bak.<ts>` and
-regenerates everything. Use to recover from a corrupt store or to rotate
-all secrets at once.
+1. Create `~/.config/vpnkit/config.toml` (random ports, random
+   controller secret, random proxy basic-auth creds) if missing.
+2. Write `~/.config/mihomo/config.yaml` skeleton if missing.
+3. Download `mihomo` to `~/.local/bin/mihomo` if missing.
+4. Pre-seed `~/.config/mihomo/{GeoIP,GeoSite,country.mmdb,…}` so the
+   first mihomo launch never deadlocks on a 90 s MMDB download under
+   GFW.
+5. Pre-seed `~/.config/mihomo/ruleset/*.txt` from the embedded snapshot.
+6. Install the service (systemd-user unit on hosts with `systemctl
+   --user`; PID-file backend otherwise) and start it.
+7. Wait briefly + verify mihomo is actually running.
+
+Re-running is safe: every step is idempotent.
+
+| Flag | Effect |
+|---|---|
+| `--force` | back up existing store to `config.toml.bak.<unix-nano>` and regenerate (use to rotate secrets or recover from a corrupt store) |
+| `--skip-bootstrap` | only do step 1 + 2 (configs); do NOT download mihomo, pre-seed geo/rulesets, or touch the service. Useful in CI / packaging where you want vpnkit's binary in place but defer the heavy work. |
+| `--non-interactive` | no-op (init never prompts) |
 
 ### `vpnkit uninstall [--yes] [--purge] [--keep-mihomo] [--keep-profiles=true|false] [--backup-dir DIR]`
 
