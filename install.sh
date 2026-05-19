@@ -43,7 +43,11 @@ esac
 # ───────── version resolve ─────────
 if [ -z "${VERSION:-}" ]; then
   log "🔎 resolving latest release …"
-  VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  VERSION=$(curl -fsSL \
+      --retry 5 --retry-delay 2 --retry-max-time 60 \
+      --retry-all-errors --retry-connrefused \
+      --connect-timeout 30 \
+      "https://api.github.com/repos/$REPO/releases/latest" \
     | grep -oP '"tag_name":\s*"\K[^"]+' || true)
 fi
 if [ -z "${VERSION:-}" ]; then
@@ -117,10 +121,24 @@ BASE="https://github.com/$REPO/releases/download/$VERSION"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# fetch wraps curl with retries: --retry handles HTTP 5xx, --retry-all-errors
+# (curl 7.71+) also retries on TLS/connect/SSL_SYSCALL failures that happen
+# under GFW interference, and --retry-connrefused covers proxy upstream
+# transient closes. Failure after retries falls through to the caller's || .
+fetch() {
+  local url="$1" out="$2"
+  curl -fsSL \
+       --retry 5 --retry-delay 2 --retry-max-time 120 \
+       --retry-all-errors --retry-connrefused \
+       --connect-timeout 30 \
+       -o "$out" "$url"
+}
+
 log "⬇️  downloading $TARBALL …"
-curl -fsSL -o "$tmp/$TARBALL" "$BASE/$TARBALL" \
-  || fail "download failed (configure HTTPS_PROXY if you're behind a restricted network)"
-curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || fail "checksum download failed"
+fetch "$BASE/$TARBALL" "$tmp/$TARBALL" \
+  || fail "download failed after retries (configure HTTPS_PROXY to a working proxy if you're behind a restricted network, or pick a different egress node in vpnkit if the current one is flaky)"
+fetch "$BASE/SHA256SUMS" "$tmp/SHA256SUMS" \
+  || fail "checksum download failed after retries"
 
 if ( cd "$tmp" && grep " $TARBALL\$" SHA256SUMS | sha256sum -c - >/dev/null ); then
   log "✅ checksum verified"
