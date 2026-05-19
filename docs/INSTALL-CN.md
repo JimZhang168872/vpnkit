@@ -5,6 +5,38 @@
 
 ---
 
+## ⚠️ 已经撞墙的看这里(2 行救场)
+
+如果你设了 `HTTPS_PROXY=http://127.0.0.1:7897`(或别的本地代理),跑
+`vpnkit init` 还是报这种错:
+
+```
+vpnkit init: bootstrap: install mihomo: install: download:
+  download https://github.com/MetaCubeX/mihomo/releases/download/v1.19.25/...:
+  Get "...": dial tcp 20.205.243.166:443: i/o timeout
+```
+
+这是**已知设计限制**(见 § 0)。直接用下面这两行救:
+
+```bash
+# 1. 用你的代理把 mihomo 下到位 (走 curl 会读 HTTPS_PROXY,通的)
+MIHOMO_VER=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+  | sed -nE 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
+curl -fL --retry 5 --retry-all-errors --retry-delay 2 \
+  -o /tmp/mihomo.gz \
+  "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-linux-${ARCH}-${MIHOMO_VER}.gz"
+mkdir -p ~/.local/bin && gunzip -c /tmp/mihomo.gz > ~/.local/bin/mihomo && chmod +x ~/.local/bin/mihomo
+
+# 2. 重跑 init —— 看到 mihomo 已存在就跳过下载,bootstrap 走完
+vpnkit init
+```
+
+预期输出里能看到 `✅ mihomo binary already present (~/.local/bin/mihomo)`
+就说明躲过 NoProxy 那一步了,后面 geo / ruleset / service start 都会成功。
+
+---
+
 ## 0. 一个鸡生蛋的问题
 
 vpnkit 本身是个**代理管理器**,装它需要从 `github.com` 拉两个东西:
@@ -341,11 +373,32 @@ proxyconnect tcp: dial tcp 127.0.0.1:52697: connect: connection refused
 - 代理换了端口 → 重新 `vpnkit env --shell zsh` / 看你代理客户端当前端口
 - vpnkit-managed mihomo 刚 reload 短暂下线 → 等几秒重试
 
-### `vpnkit init` 卡在 "downloading mihomo"
+### `vpnkit init` 卡在 "downloading mihomo" / `dial tcp ... i/o timeout`
 
-bootstrap 在直连 `github.com/MetaCubeX/mihomo/releases/...`,被 GFW 掐。
-**先按路径 A / 路径 B 手动把 mihomo 放到 `~/.local/bin/mihomo`**,再重跑
-`vpnkit init` 即可。
+完整报错通常长这样:
+
+```
+vpnkit init: bootstrap: install mihomo: install: download:
+  download https://github.com/MetaCubeX/mihomo/releases/download/vX.Y.Z/...:
+  Get "...": dial tcp 20.205.243.166:443: i/o timeout
+```
+
+或者:
+
+```
+... proxyconnect tcp: dial tcp 127.0.0.1:XXXX: connect: connection refused
+```
+
+这是 vpnkit 设计上的一个粗糙处:**`vpnkit init` 的 mihomo 下载这一步
+故意不读 `HTTP_PROXY`/`HTTPS_PROXY`**(为了避免 v0.9.x 的 chicken-and-egg
+死锁 —— env proxy 历史上常指向 vpnkit 自己的 mihomo,但 mihomo 还没装
+就用它会自循环挂死)。结果就是即使你设了一个跟 vpnkit 完全无关的工作
+代理(比如 clash-verge 在 7897),init 还是会绕过它直连 github.com → GFW
+切断 → i/o timeout。
+
+**修复:跳到本文档顶部 [⚠️ 已经撞墙的看这里](#-已经撞墙的看这里2-行救场)
+那 2 行救场命令**,先用你的代理手动 dl mihomo 放到 `~/.local/bin/mihomo`,
+再重跑 `vpnkit init` 看到 `✅ mihomo binary already present` 就过了。
 
 ### `mihomo failed to start` / `geo pre-seed had errors`
 
