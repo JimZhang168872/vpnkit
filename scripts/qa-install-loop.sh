@@ -39,8 +39,20 @@ fi
 echo "🐳 round running with VERSION=$VERSION"
 echo "   log → $LOG"
 
+# If the host has a proxy configured (common behind GFW), forward it into the
+# container. We use --network=host so 127.0.0.1:PORT proxies work as-is — this
+# mirrors what a real user behind GFW does (run install.sh with their local
+# clash/mihomo at 127.0.0.1 listening).
+proxy_args=()
+if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then
+  px="${HTTPS_PROXY:-${https_proxy:-}}"
+  proxy_args+=(--network=host -e "HTTPS_PROXY=$px" -e "HTTP_PROXY=${HTTP_PROXY:-$px}" -e "NO_PROXY=${NO_PROXY:-127.0.0.1,localhost}")
+  echo "   proxy: $px (via --network=host)"
+fi
+
 set +e
 docker run --rm \
+  "${proxy_args[@]}" \
   -e VERSION="$VERSION" \
   -v "$IN_SCRIPT:/tmp/qa-install.in.sh:ro" \
   ubuntu:22.04 \
@@ -51,7 +63,14 @@ docker run --rm \
     apt-get install -qq -y curl ca-certificates coreutils tar bash sudo >/dev/null
     useradd -m -s /bin/bash tester
     install -m 0755 -o tester -g tester /tmp/qa-install.in.sh /home/tester/qa-install.in.sh
-    su tester -c "VERSION=\"$VERSION\" /home/tester/qa-install.in.sh"
+    # Forward proxy env to tester user shell (su drops most env by default).
+    if [ -n "${HTTPS_PROXY:-}" ]; then
+      printf "export HTTPS_PROXY=%q\nexport HTTP_PROXY=%q\nexport NO_PROXY=%q\n" \
+        "$HTTPS_PROXY" "${HTTP_PROXY:-$HTTPS_PROXY}" "${NO_PROXY:-127.0.0.1,localhost}" \
+        >> /home/tester/.bashrc
+      chown tester:tester /home/tester/.bashrc
+    fi
+    su - tester -c "VERSION=\"$VERSION\" HTTPS_PROXY=\"${HTTPS_PROXY:-}\" HTTP_PROXY=\"${HTTP_PROXY:-}\" NO_PROXY=\"${NO_PROXY:-}\" /home/tester/qa-install.in.sh"
   ' 2>&1 | tee "$LOG"
 exit_code=${PIPESTATUS[0]}
 set -e
