@@ -33,5 +33,8 @@ release:
     owner: JimZhang168872
     name: vpnkit
   draft: false
-  prerelease: auto
+  # Stable releases (v1.0.0, v1.0.1, …) ship as non-prerelease.
+  # When tagging a pre-release (rc.X, beta.X), bump this back to `auto`
+  # or pass `--release-notes` overrides for that one tag.
+  prerelease: false
   mode: replace

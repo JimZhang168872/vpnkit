@@ -1,5 +1,115 @@
 # Changelog
 
+## v1.0.0 — 2026-05-19
+
+First stable release of the v1.0 architecture. The active-source routing
+model, embedded rule-set snapshot, bilingual docs, and ~80 stability
+fixes from the rc.4 → rc.7 cycle are all in.
+
+### Major features (since v1.0.0-rc.3)
+
+- **Active source routing model.** One subscription OR one local-nodes
+  group drives both the emitted rule list and `🚀 Proxy`'s membership.
+  Switch with `vpnkit active <name>` or in Settings → Active Source.
+  When the active source ships no rules of its own (every local-nodes
+  group, plus subs that fetch as a single URI), the embedded
+  loyalsoldier template fills in. The Groups tab marks the active
+  source with `★`.
+- **Node delay testing.** `vpnkit test <group> [<node>]` (CLI) and `t`
+  in the Groups tab (TUI) actively probe each member's latency in
+  parallel. Falls back through `/group/<name>-auto/delay`,
+  `/group/<name>/delay`, then per-member `/proxies/<member>/delay`, so
+  it works against vpnkit-generated Selectors AND user-authored
+  url-test groups. See `docs/USAGE.md` → Active delay test for the deep
+  dive.
+- **Per-node `Via` chained egress.** Set on any local node (form's last
+  field or `vpnkit local-nodes add --via=<proxy>`). Writes through to
+  mihomo's `dialer-proxy` so the node dials out through another
+  proxy/group first. Survives subscription refresh because it lives on
+  the node, not on a separate `extensions/` table. The pre-v1
+  `Extensions` subsystem is removed.
+- **Embedded loyalsoldier rule-set snapshot.** vpnkit ships 13
+  pre-fetched `.txt.gz` files in `internal/rules/rulesets/` (~2 MB gz
+  in-binary; ~8 MB unpacked on disk). Bootstrap writes them to
+  `~/.config/mihomo/ruleset/` before mihomo's first launch — RULE-SET
+  rules work immediately on slow / GFW'd networks, no waiting on
+  jsdelivr. mihomo's own `interval: 86400` refresh keeps the on-disk
+  copies current.
+- **Bilingual technical reference.** [`docs/USAGE.md`](docs/USAGE.md)
+  and [`docs/USAGE_zh.md`](docs/USAGE_zh.md) are the comprehensive
+  reference (every command, every TUI key, every JSON schema, store
+  TOML layout, troubleshooting). The v0 → v1 migration guide is
+  bilingual too.
+- **Top-level + per-subverb `--help`.** `vpnkit --help` / `-h` / `help`
+  prints the verb summary. Each category (`vpnkit subs --help`,
+  `vpnkit local-nodes --help`, …) prints its own usage.
+
+### CLI improvements
+
+- `vpnkit active [<name>] [--json]` — the new routing primitive.
+  Validates that `<name>` is an enabled subscription or local group.
+- `vpnkit target` validates against the known source set; garbage like
+  `"PROXY"` or `"../../etc/passwd"` is rejected at set time.
+- Concurrent mutations are serialized via a POSIX flock on
+  `~/.config/vpnkit/config.toml.lock`. 50 parallel `vpnkit subs add &`
+  workers all land cleanly; read verbs bypass the lock and never starve.
+- Mutation verbs reject `--json` with a clear error listing which verbs
+  DO support JSON. Read-verb runtime failures emit
+  `{"error":"…"}` JSON to stdout (parseable by consumer scripts).
+- `vpnkit env --shell` validates `bash` / `zsh` / `fish`; unknown
+  shells get a loud error instead of silent bash fallback. Output
+  values are single-quoted so passwords with `$` / backtick survive
+  `eval`.
+- Default subscription User-Agent is `mihomo/v1.19.25` (replaces the
+  pre-v1 `clash-verge` UA that some providers gate on).
+- `subs update <name>` warns when a feed returns 0 nodes (almost always
+  a sign of UA gating, malformed YAML, or an error page).
+- Name validation across the board: subs + local-groups names reject
+  shell metacharacters (`$ \` ; | & …`), reserved names (`DIRECT`,
+  `REJECT`, `GLOBAL` — case-insensitive), and exceed 64 runes.
+- `local-nodes mv` requires the destination group to exist (no more
+  typo-creates-phantom-group). `local-rules add` validates the target
+  + per-type payload (CIDR / regex / port).
+- Unknown top-level verbs report a clear "unknown command" instead of
+  cryptic `/dev/tty` errors.
+
+### TUI improvements
+
+- **Settings → Active Source** sub-page picks active in 2 keys.
+- **Settings → Routing** + **Active Source** apply asynchronously — a
+  long mihomo reload doesn't freeze the bubbletea event loop.
+- **Settings → Service / Mihomo Core** action keys (`s`/`S`/`r`/`u`)
+  also run async; UI stays responsive during systemctl calls and
+  binary downloads.
+- **Groups tab** right pane scrolls instead of truncating — a 50-node
+  subscription's cursor stays visible past row 22. Indicator shows
+  `[N-M/total]`. Same scrolling lands on **Sources** sub-pages.
+- **Rules tab** sub-page toggle key is `T` (capital). `Tab` and
+  `Shift+Tab` are reserved for the global tab cycler.
+- **Logs tab** `p` toggles pause; header shows `[PAUSED]` when frozen.
+- **`?`** flashes a keymap hint; `r` / `m` / `:` flash navigation
+  hints (previously dead bindings).
+- **Sources Local Nodes form** masks `password` / `uuid` /
+  `obfs-password` as bullets so over-the-shoulder reading doesn't leak
+  secrets.
+- **Validation** in the form: ports must be 1-65535, protocol-specific
+  required fields are enforced before save.
+- **`Ctrl+C`** always quits, even from inside a form input.
+- **Minimum terminal**: 60×16. Below that a "terminal too narrow"
+  gate replaces a broken layout.
+- **About page** shows the vpnkit version + commit prominently.
+
+### Compatibility
+
+- Schema unchanged (still v2). Stores from v1.0.0-rc.\* upgrade in
+  place; on first launch `vpnkit` automatically derives `active_source`
+  from the legacy `global_target = "<name>-auto"` field. No user action
+  required.
+- v0.10.x → v1.0.0 is still the same breaking jump documented in
+  [`docs/UPGRADE-v1.md`](docs/UPGRADE-v1.md).
+
+---
+
 ## v1.0.0-rc.6 — 2026-05-18
 
 ### Added
